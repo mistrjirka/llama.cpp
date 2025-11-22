@@ -472,7 +472,11 @@ static size_t gguf_try_fast_copy(FILE * f_input,
         // 1GB is a safe chunk size
         const size_t chunk = std::min<size_t>(remaining, 1u << 30);
         
+        // Hint that we will need this chunk soon
+        posix_fadvise(fd_in, in_off, chunk, POSIX_FADV_WILLNEED);
+
         ssize_t res = -1;
+        off_t in_off_before = in_off;
 
         // Try copy_file_range first (supports reflink)
 #ifdef __NR_copy_file_range
@@ -480,6 +484,8 @@ static size_t gguf_try_fast_copy(FILE * f_input,
 #endif
         
         if (res > 0) {
+            // Hint that we are done with this chunk of input
+            posix_fadvise(fd_in, in_off_before, res, POSIX_FADV_DONTNEED);
             remaining -= res;
             continue;
         }
@@ -501,6 +507,8 @@ static size_t gguf_try_fast_copy(FILE * f_input,
 
         res = ::sendfile(fd_out, fd_in, &in_off, chunk);
         if (res > 0) {
+            // Hint that we are done with this chunk of input
+            posix_fadvise(fd_in, in_off_before, res, POSIX_FADV_DONTNEED);
             out_off += res;
             remaining -= res;
             continue;
