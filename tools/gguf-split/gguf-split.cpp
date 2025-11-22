@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <cerrno>
+#include <chrono>
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -27,6 +28,8 @@
     #include <unistd.h>
     #if defined(__linux__)
         #include <sys/sendfile.h>
+        #include <sys/syscall.h>
+        #include <fcntl.h>
     #endif
 #endif
 
@@ -456,27 +459,69 @@ static size_t gguf_try_fast_copy(FILE * f_input,
         return 0;
     }
 
-    const off_t offset_start = static_cast<off_t>(size_to_i64(in_offset));
-    off_t in_off = offset_start;
+    // Advise the kernel that we are going to read/write sequentially
+    posix_fadvise(fd_in, in_offset, n_bytes, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(fd_out, out_offset, n_bytes, POSIX_FADV_SEQUENTIAL);
+
+    off_t in_off = static_cast<off_t>(size_to_i64(in_offset));
+    off_t out_off = static_cast<off_t>(size_to_i64(out_offset));
     size_t remaining = n_bytes;
 
     while (remaining > 0) {
-        const size_t to_copy = std::min<size_t>(remaining, static_cast<size_t>(1u << 30));
-        const ssize_t sent = ::sendfile(fd_out, fd_in, &in_off, to_copy);
-        if (sent == -1) {
+        // Cap the copy size to avoid overflow issues with ssize_t
+        // 1GB is a safe chunk size
+        const size_t chunk = std::min<size_t>(remaining, 1u << 30);
+        
+        ssize_t res = -1;
+
+        // Try copy_file_range first (supports reflink)
+#ifdef __NR_copy_file_range
+        res = syscall(__NR_copy_file_range, fd_in, &in_off, fd_out, &out_off, chunk, 0);
+#endif
+        
+        if (res > 0) {
+            remaining -= res;
+            continue;
+        }
+
+        // Fallback logging for copy_file_range
+        static bool logged_cfr_fallback = false;
+        if (!logged_cfr_fallback) {
+#ifdef __NR_copy_file_range
+             fprintf(stderr, "%s: copy_file_range failed: %s, falling back to sendfile\n", __func__, std::strerror(errno));
+#endif
+             logged_cfr_fallback = true;
+        }
+
+        // Fallback to sendfile
+        // sendfile writes to current offset of fd_out, so we must seek
+        if (lseek(fd_out, out_off, SEEK_SET) == (off_t)-1) {
+            break;
+        }
+
+        res = ::sendfile(fd_out, fd_in, &in_off, chunk);
+        if (res > 0) {
+            out_off += res;
+            remaining -= res;
+            continue;
+        }
+
+        // Fallback logging for sendfile
+        static bool logged_sf_fallback = false;
+        if (!logged_sf_fallback) {
+             fprintf(stderr, "%s: sendfile failed: %s, falling back to read/write\n", __func__, std::strerror(errno));
+             logged_sf_fallback = true;
+        }
+
+        if (res == -1) {
             if (errno == EINTR || errno == EAGAIN) {
                 continue;
             }
-            if (errno == EINVAL || errno == ENOSYS || errno == EOPNOTSUPP || errno == EBADF) {
-                break;
-            }
-            fprintf(stderr, "%s: sendfile failed: %s\n", __func__, std::strerror(errno));
             break;
         }
-        if (sent == 0) {
+        if (res == 0) {
             break;
         }
-        remaining -= static_cast<size_t>(sent);
     }
 
     const size_t fast_copied = n_bytes - remaining;
@@ -647,9 +692,10 @@ static void gguf_merge_first_pass(merge_state & state) {
     }
 }
 
-static void gguf_merge_second_pass(merge_state & state, FILE * fout, std::vector<uint8_t> & buffer) {
+static size_t gguf_merge_second_pass(merge_state & state, FILE * fout, std::vector<uint8_t> & buffer) {
     char split_path[PATH_MAX] = {0};
     size_t out_offset = fout != NULL ? gguf_get_meta_size(state.ctx_out) : 0;
+    size_t total_bytes = 0;
 
     for (int i_split = 0; i_split < state.n_split; ++i_split) {
         auto * ctx_gguf = state.ctx_ggufs[i_split];
@@ -689,6 +735,7 @@ static void gguf_merge_second_pass(merge_state & state, FILE * fout, std::vector
         const size_t payload = file_size - data_offset;
         gguf_merge_copy_payload(f_input, fout, data_offset, out_offset, payload, buffer);
         out_offset += payload;
+        total_bytes += payload;
 
         gguf_free(ctx_gguf);
         ggml_free(ctx_meta);
@@ -700,6 +747,7 @@ static void gguf_merge_second_pass(merge_state & state, FILE * fout, std::vector
 
     state.ctx_ggufs.clear();
     state.ctx_metas.clear();
+    return total_bytes;
 }
 
 static void gguf_split(const split_params & split_params) {
@@ -772,7 +820,9 @@ static void gguf_merge(const split_params & split_params) {
     }
 
     std::vector<uint8_t> copy_buffer;
-    gguf_merge_second_pass(state, fout, copy_buffer);
+    auto t_start = std::chrono::high_resolution_clock::now();
+    size_t total_bytes = gguf_merge_second_pass(state, fout, copy_buffer);
+    auto t_end = std::chrono::high_resolution_clock::now();
 
     if (!split_params.dry_run) {
         if (std::fflush(fout) != 0) {
@@ -791,6 +841,10 @@ static void gguf_merge(const split_params & split_params) {
             exit(EXIT_FAILURE);
         }
         std::fclose(fout);
+        
+        double duration = std::chrono::duration<double>(t_end - t_start).count();
+        fprintf(stderr, "%s: merged %.2f MB in %.2f s (%.2f MB/s)\n", 
+                __func__, total_bytes / 1024.0 / 1024.0, duration, (total_bytes / 1024.0 / 1024.0) / duration);
     }
 
     gguf_free(state.ctx_out);
