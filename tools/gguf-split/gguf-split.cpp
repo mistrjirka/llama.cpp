@@ -443,12 +443,33 @@ struct split_strategy {
 
 static constexpr size_t GGUF_MERGE_COPY_CHUNK = 8u * 1024 * 1024;
 
+static void print_progress(size_t current, size_t total) {
+    if (total == 0) return;
+    int percentage = (int)(100.0 * current / total);
+    if (percentage > 100) percentage = 100;
+    
+    fprintf(stderr, "\rMerging: [");
+    int bar_width = 50;
+    int pos = bar_width * current / total;
+    if (pos > bar_width) pos = bar_width;
+    
+    for (int i = 0; i < bar_width; ++i) {
+        if (i < pos) fprintf(stderr, "=");
+        else if (i == pos) fprintf(stderr, ">");
+        else fprintf(stderr, " ");
+    }
+    fprintf(stderr, "] %3d%%", percentage);
+    fflush(stderr);
+}
+
 #if defined(__linux__)
 static size_t gguf_try_fast_copy(FILE * f_input,
         FILE * f_output,
         size_t in_offset,
         size_t out_offset,
-        size_t n_bytes) {
+        size_t n_bytes,
+        size_t * progress_current,
+        size_t progress_total) {
     if (n_bytes == 0) {
         return 0;
     }
@@ -487,6 +508,10 @@ static size_t gguf_try_fast_copy(FILE * f_input,
             // Hint that we are done with this chunk of input
             posix_fadvise(fd_in, in_off_before, res, POSIX_FADV_DONTNEED);
             remaining -= res;
+            if (progress_current) {
+                *progress_current += res;
+                print_progress(*progress_current, progress_total);
+            }
             continue;
         }
 
@@ -511,6 +536,10 @@ static size_t gguf_try_fast_copy(FILE * f_input,
             posix_fadvise(fd_in, in_off_before, res, POSIX_FADV_DONTNEED);
             out_off += res;
             remaining -= res;
+            if (progress_current) {
+                *progress_current += res;
+                print_progress(*progress_current, progress_total);
+            }
             continue;
         }
 
@@ -542,7 +571,7 @@ static size_t gguf_try_fast_copy(FILE * f_input,
     return fast_copied;
 }
 #else
-static size_t gguf_try_fast_copy(FILE *, FILE *, size_t, size_t, size_t) {
+static size_t gguf_try_fast_copy(FILE *, FILE *, size_t, size_t, size_t, size_t *, size_t) {
     return 0;
 }
 #endif
@@ -555,6 +584,7 @@ struct merge_state {
     char split_prefix[PATH_MAX] = {0};
     int n_split = 1;
     int total_tensors = 0;
+    size_t total_bytes = 0;
 
     merge_state(const split_params & params) : params(params) {}
 };
@@ -589,7 +619,9 @@ static void gguf_merge_copy_payload(FILE * f_input,
         size_t in_offset,
         size_t out_offset,
         size_t n_bytes,
-        std::vector<uint8_t> & buffer) {
+        std::vector<uint8_t> & buffer,
+        size_t * progress_current,
+        size_t progress_total) {
 
     if (n_bytes == 0 || f_output == NULL) {
         return;
@@ -606,7 +638,7 @@ static void gguf_merge_copy_payload(FILE * f_input,
     }
     file_seek_checked(f_output, out_offset);
 
-    const size_t fast_copied = gguf_try_fast_copy(f_input, f_output, in_offset, out_offset, n_bytes);
+    const size_t fast_copied = gguf_try_fast_copy(f_input, f_output, in_offset, out_offset, n_bytes, progress_current, progress_total);
 
     size_t remaining = n_bytes - fast_copied;
     size_t read_pos = in_offset + fast_copied;
@@ -626,6 +658,10 @@ static void gguf_merge_copy_payload(FILE * f_input,
             exit(EXIT_FAILURE);
         }
         remaining -= to_copy;
+        if (progress_current) {
+            *progress_current += to_copy;
+            print_progress(*progress_current, progress_total);
+        }
     }
 }
 
@@ -693,6 +729,7 @@ static void gguf_merge_first_pass(merge_state & state) {
             const char * t_name = gguf_get_tensor_name(ctx_gguf, i_tensor);
             struct ggml_tensor * t = ggml_get_tensor(ctx_meta, t_name);
             gguf_add_tensor(state.ctx_out, t);
+            state.total_bytes += GGML_PAD(ggml_nbytes(t), GGUF_DEFAULT_ALIGNMENT);
         }
         state.total_tensors += n_tensors;
 
@@ -704,6 +741,7 @@ static size_t gguf_merge_second_pass(merge_state & state, FILE * fout, std::vect
     char split_path[PATH_MAX] = {0};
     size_t out_offset = fout != NULL ? gguf_get_meta_size(state.ctx_out) : 0;
     size_t total_bytes = 0;
+    size_t current_bytes = 0;
 
     for (int i_split = 0; i_split < state.n_split; ++i_split) {
         auto * ctx_gguf = state.ctx_ggufs[i_split];
@@ -727,7 +765,7 @@ static size_t gguf_merge_second_pass(merge_state & state, FILE * fout, std::vect
             exit(EXIT_FAILURE);
         }
 
-        fprintf(stderr, "%s: writing tensors %s ...", __func__, split_path);
+        // fprintf(stderr, "%s: writing tensors %s ...", __func__, split_path);
 
         const size_t file_size = file_get_size(f_input);
         const size_t data_offset = gguf_get_data_offset(ctx_gguf);
@@ -741,7 +779,7 @@ static size_t gguf_merge_second_pass(merge_state & state, FILE * fout, std::vect
         }
 
         const size_t payload = file_size - data_offset;
-        gguf_merge_copy_payload(f_input, fout, data_offset, out_offset, payload, buffer);
+        gguf_merge_copy_payload(f_input, fout, data_offset, out_offset, payload, buffer, &current_bytes, state.total_bytes);
         out_offset += payload;
         total_bytes += payload;
 
@@ -750,8 +788,9 @@ static size_t gguf_merge_second_pass(merge_state & state, FILE * fout, std::vect
         state.ctx_ggufs[i_split] = NULL;
         state.ctx_metas[i_split] = NULL;
         std::fclose(f_input);
-        fprintf(stderr, "\033[3Ddone\n");
+        // fprintf(stderr, "\033[3Ddone\n");
     }
+    fprintf(stderr, "\n"); // End progress bar line
 
     state.ctx_ggufs.clear();
     state.ctx_metas.clear();
