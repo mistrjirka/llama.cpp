@@ -357,6 +357,196 @@ struct split_strategy {
     }
 };
 
+static constexpr size_t GGUF_MERGE_COPY_CHUNK = 8u * 1024 * 1024;
+
+struct merge_state {
+    const split_params & params;
+    struct gguf_context * ctx_out = NULL;
+    std::vector<gguf_context *> ctx_ggufs;
+    std::vector<ggml_context *> ctx_metas;
+    char split_prefix[PATH_MAX] = {0};
+    int n_split = 1;
+    int total_tensors = 0;
+
+    merge_state(const split_params & params) : params(params) {}
+};
+
+static void gguf_merge_release_split_contexts(merge_state & state) {
+    for (auto & ctx : state.ctx_ggufs) {
+        if (ctx != NULL) {
+            gguf_free(ctx);
+            ctx = NULL;
+        }
+    }
+    for (auto & ctx : state.ctx_metas) {
+        if (ctx != NULL) {
+            ggml_free(ctx);
+            ctx = NULL;
+        }
+    }
+    state.ctx_ggufs.clear();
+    state.ctx_metas.clear();
+}
+
+static void gguf_merge_fail(merge_state & state) {
+    gguf_merge_release_split_contexts(state);
+    if (state.ctx_out != NULL) {
+        gguf_free(state.ctx_out);
+        state.ctx_out = NULL;
+    }
+}
+
+static void gguf_merge_copy_payload(std::ifstream & f_input,
+        std::ofstream & f_output,
+        size_t offset,
+        size_t n_bytes,
+        std::vector<uint8_t> & buffer) {
+
+    if (n_bytes == 0) {
+        return;
+    }
+
+    const size_t chunk = std::min(n_bytes, GGUF_MERGE_COPY_CHUNK);
+    if (buffer.size() < chunk) {
+        buffer.resize(chunk);
+    }
+
+    f_input.seekg(offset, std::ios::beg);
+    size_t remaining = n_bytes;
+    while (remaining > 0) {
+        const size_t to_copy = std::min(remaining, buffer.size());
+        f_input.read(reinterpret_cast<char *>(buffer.data()), to_copy);
+        f_output.write(reinterpret_cast<const char *>(buffer.data()), to_copy);
+        remaining -= to_copy;
+    }
+}
+
+static void gguf_merge_first_pass(merge_state & state) {
+    char split_path[PATH_MAX] = {0};
+    strncpy(split_path, state.params.input.c_str(), sizeof(split_path) - 1);
+
+    for (int i_split = 0; i_split < state.n_split; ++i_split) {
+        struct ggml_context * ctx_meta = NULL;
+
+        struct gguf_init_params params = {
+            /*.no_alloc = */ true,
+            /*.ctx      = */ &ctx_meta,
+        };
+
+        if (i_split > 0) {
+            llama_split_path(split_path, sizeof(split_path), state.split_prefix, i_split, state.n_split);
+        }
+        fprintf(stderr, "%s: reading metadata %s ...", __func__, split_path);
+
+        auto * ctx_gguf = gguf_init_from_file(split_path, params);
+        if (!ctx_gguf) {
+            fprintf(stderr, "\n%s:  failed to load input GGUF from %s\n", __func__, state.params.input.c_str());
+            ggml_free(ctx_meta);
+            gguf_merge_fail(state);
+            exit(EXIT_FAILURE);
+        }
+        state.ctx_ggufs.push_back(ctx_gguf);
+        state.ctx_metas.push_back(ctx_meta);
+
+        if (i_split == 0) {
+            auto key_n_split = gguf_find_key(ctx_gguf, LLM_KV_SPLIT_COUNT);
+            if (key_n_split < 0) {
+                fprintf(stderr,
+                        "\n%s: input file does not contain %s metadata\n",
+                        __func__,
+                        LLM_KV_SPLIT_COUNT);
+                gguf_merge_fail(state);
+                exit(EXIT_FAILURE);
+            }
+
+            state.n_split = gguf_get_val_u16(ctx_gguf, key_n_split);
+            if (state.n_split < 1) {
+                fprintf(stderr,
+                        "\n%s: input file does not contain a valid split count %d\n",
+                        __func__,
+                        state.n_split);
+                gguf_merge_fail(state);
+                exit(EXIT_FAILURE);
+            }
+
+            if (!llama_split_prefix(state.split_prefix, sizeof(state.split_prefix), split_path, i_split, state.n_split)) {
+                fprintf(stderr, "\n%s: unexpected input file name: %s i_split=%d n_split=%d\n",
+                        __func__, split_path, i_split, state.n_split);
+                gguf_merge_fail(state);
+                exit(EXIT_FAILURE);
+            }
+
+            gguf_set_val_u16(ctx_gguf, LLM_KV_SPLIT_COUNT, 0);
+            gguf_set_kv(state.ctx_out, ctx_gguf);
+        }
+
+        auto n_tensors = gguf_get_n_tensors(ctx_gguf);
+        for (int i_tensor = 0; i_tensor < n_tensors; i_tensor++) {
+            const char * t_name = gguf_get_tensor_name(ctx_gguf, i_tensor);
+            struct ggml_tensor * t = ggml_get_tensor(ctx_meta, t_name);
+            gguf_add_tensor(state.ctx_out, t);
+        }
+        state.total_tensors += n_tensors;
+
+        fprintf(stderr, "\033[3Ddone\n");
+    }
+}
+
+static void gguf_merge_second_pass(merge_state & state, std::ofstream * fout, std::vector<uint8_t> & buffer) {
+    char split_path[PATH_MAX] = {0};
+
+    for (int i_split = 0; i_split < state.n_split; ++i_split) {
+        auto * ctx_gguf = state.ctx_ggufs[i_split];
+        auto * ctx_meta = state.ctx_metas[i_split];
+
+        if (fout == NULL) {
+            gguf_free(ctx_gguf);
+            ggml_free(ctx_meta);
+            state.ctx_ggufs[i_split] = NULL;
+            state.ctx_metas[i_split] = NULL;
+            continue;
+        }
+
+        llama_split_path(split_path, sizeof(split_path), state.split_prefix, i_split, state.n_split);
+        std::ifstream f_input(split_path, std::ios::binary);
+        if (!f_input.is_open()) {
+            fprintf(stderr, "%s:  failed to open input GGUF from %s\n", __func__, split_path);
+            gguf_merge_release_split_contexts(state);
+            fout->close();
+            gguf_free(state.ctx_out);
+            exit(EXIT_FAILURE);
+        }
+
+        fprintf(stderr, "%s: writing tensors %s ...", __func__, split_path);
+
+        f_input.seekg(0, std::ios::end);
+        const size_t file_size = (size_t) f_input.tellg();
+        f_input.seekg(0, std::ios::beg);
+
+        const size_t data_offset = gguf_get_data_offset(ctx_gguf);
+        if (file_size < data_offset) {
+            fprintf(stderr, "\n%s: invalid data offset in %s\n", __func__, split_path);
+            f_input.close();
+            gguf_merge_release_split_contexts(state);
+            fout->close();
+            gguf_free(state.ctx_out);
+            exit(EXIT_FAILURE);
+        }
+
+        gguf_merge_copy_payload(f_input, *fout, data_offset, file_size - data_offset, buffer);
+
+        gguf_free(ctx_gguf);
+        ggml_free(ctx_meta);
+        state.ctx_ggufs[i_split] = NULL;
+        state.ctx_metas[i_split] = NULL;
+        f_input.close();
+        fprintf(stderr, "\033[3Ddone\n");
+    }
+
+    state.ctx_ggufs.clear();
+    state.ctx_metas.clear();
+}
+
 static void gguf_split(const split_params & split_params) {
     struct ggml_context * ctx_meta = NULL;
 
@@ -399,171 +589,44 @@ static void gguf_merge(const split_params & split_params) {
     fprintf(stderr, "%s: %s -> %s\n",
             __func__, split_params.input.c_str(),
             split_params.output.c_str());
-    int n_split = 1;
-    int total_tensors = 0;
-
     // avoid overwriting existing output file
     if (std::ifstream(split_params.output.c_str())) {
         fprintf(stderr, "%s: output file %s already exists\n", __func__, split_params.output.c_str());
         exit(EXIT_FAILURE);
     }
 
-
-    auto * ctx_out = gguf_init_empty();
-
-    std::vector<uint8_t> read_data;
-    std::vector<ggml_context *> ctx_metas;
-    std::vector<gguf_context *> ctx_ggufs;
-
-    char split_path[PATH_MAX] = {0};
-    strncpy(split_path, split_params.input.c_str(), sizeof(split_path) - 1);
-    char split_prefix[PATH_MAX] = {0};
-
-    // First pass to find KV and tensors metadata
-    for (int i_split = 0; i_split < n_split; i_split++) {
-        struct ggml_context * ctx_meta = NULL;
-
-        struct gguf_init_params params = {
-            /*.no_alloc = */ true,
-            /*.ctx      = */ &ctx_meta,
-        };
-
-        if (i_split > 0) {
-            llama_split_path(split_path, sizeof(split_path), split_prefix, i_split, n_split);
-        }
-        fprintf(stderr, "%s: reading metadata %s ...", __func__, split_path);
-
-        auto * ctx_gguf = gguf_init_from_file(split_path, params);
-        if (!ctx_gguf) {
-            fprintf(stderr, "\n%s:  failed to load input GGUF from %s\n", __func__, split_params.input.c_str());
-            exit(EXIT_FAILURE);
-        }
-        ctx_ggufs.push_back(ctx_gguf);
-        ctx_metas.push_back(ctx_meta);
-
-        if (i_split == 0) {
-            auto key_n_split = gguf_find_key(ctx_gguf, LLM_KV_SPLIT_COUNT);
-            if (key_n_split < 0) {
-                fprintf(stderr,
-                        "\n%s: input file does not contain %s metadata\n",
-                        __func__,
-                        LLM_KV_SPLIT_COUNT);
-                gguf_free(ctx_gguf);
-                ggml_free(ctx_meta);
-                gguf_free(ctx_out);
-                exit(EXIT_FAILURE);
-            }
-
-            n_split = gguf_get_val_u16(ctx_gguf, key_n_split);
-            if (n_split < 1) {
-                fprintf(stderr,
-                        "\n%s: input file does not contain a valid split count %d\n",
-                        __func__,
-                        n_split);
-                gguf_free(ctx_gguf);
-                ggml_free(ctx_meta);
-                gguf_free(ctx_out);
-                exit(EXIT_FAILURE);
-            }
-
-            // Verify the file naming and extract split_prefix
-            if (!llama_split_prefix(split_prefix, sizeof (split_prefix), split_path, i_split, n_split)) {
-                fprintf(stderr, "\n%s: unexpected input file name: %s"
-                                " i_split=%d"
-                                " n_split=%d\n", __func__,
-                        split_path, i_split, n_split);
-                gguf_free(ctx_gguf);
-                ggml_free(ctx_meta);
-                gguf_free(ctx_out);
-                exit(EXIT_FAILURE);
-            }
-
-            // Do not trigger merge if we try to merge again the output
-            gguf_set_val_u16(ctx_gguf, LLM_KV_SPLIT_COUNT, 0);
-
-            // Set metadata from the first split
-            gguf_set_kv(ctx_out, ctx_gguf);
-        }
-
-        auto n_tensors = gguf_get_n_tensors(ctx_gguf);
-        for (int i_tensor = 0; i_tensor < n_tensors; i_tensor++) {
-            const char * t_name = gguf_get_tensor_name(ctx_gguf, i_tensor);
-            struct ggml_tensor * t = ggml_get_tensor(ctx_meta, t_name);
-            gguf_add_tensor(ctx_out, t);
-        }
-        total_tensors += n_tensors;
-
-        fprintf(stderr, "\033[3Ddone\n");
+    merge_state state(split_params);
+    state.ctx_out = gguf_init_empty();
+    if (state.ctx_out == NULL) {
+        fprintf(stderr, "%s: failed to allocate merge context\n", __func__);
+        exit(EXIT_FAILURE);
     }
+
+    gguf_merge_first_pass(state);
+
     std::ofstream fout;
     if (!split_params.dry_run) {
         fout.open(split_params.output.c_str(), std::ios::binary);
-        fout.exceptions(std::ofstream::failbit); // fail fast on write errors
-        // placeholder for the meta data
-        auto meta_size = gguf_get_meta_size(ctx_out);
+        fout.exceptions(std::ofstream::failbit);
+        auto meta_size = gguf_get_meta_size(state.ctx_out);
         ::zeros(fout, meta_size);
     }
 
-    // Write tensors data
-    for (int i_split = 0; i_split < n_split; i_split++) {
-        llama_split_path(split_path, sizeof(split_path), split_prefix, i_split, n_split);
-        std::ifstream f_input(split_path, std::ios::binary);
-        if (!f_input.is_open()) {
-            fprintf(stderr, "%s:  failed to open input GGUF from %s\n", __func__, split_path);
-            for (uint32_t i = 0; i < ctx_ggufs.size(); i++) {
-                gguf_free(ctx_ggufs[i]);
-                ggml_free(ctx_metas[i]);
-            }
-            gguf_free(ctx_out);
-            if (!split_params.dry_run) {
-                fout.close();
-            }
-            exit(EXIT_FAILURE);
-        }
-        fprintf(stderr, "%s: writing tensors %s ...", __func__, split_path);
-
-        auto * ctx_gguf = ctx_ggufs[i_split];
-        auto * ctx_meta = ctx_metas[i_split];
-
-        auto n_tensors = gguf_get_n_tensors(ctx_gguf);
-        for (int i_tensor = 0; i_tensor < n_tensors; i_tensor++) {
-            const char * t_name = gguf_get_tensor_name(ctx_gguf, i_tensor);
-            struct ggml_tensor * t = ggml_get_tensor(ctx_meta, t_name);
-
-            auto n_bytes = ggml_nbytes(t);
-
-            if (read_data.size() < n_bytes) {
-                read_data.resize(n_bytes);
-            }
-
-            auto offset = gguf_get_data_offset(ctx_gguf) + gguf_get_tensor_offset(ctx_gguf, i_tensor);
-            f_input.seekg(offset);
-            f_input.read((char *)read_data.data(), n_bytes);
-            if (!split_params.dry_run) {
-                // write tensor data + padding
-                fout.write((const char *)read_data.data(), n_bytes);
-                zeros(fout, GGML_PAD(n_bytes, GGUF_DEFAULT_ALIGNMENT) - n_bytes);
-            }
-        }
-
-        gguf_free(ctx_gguf);
-        ggml_free(ctx_meta);
-        f_input.close();
-        fprintf(stderr, "\033[3Ddone\n");
-    }
+    std::vector<uint8_t> copy_buffer;
+    gguf_merge_second_pass(state, split_params.dry_run ? NULL : &fout, copy_buffer);
 
     if (!split_params.dry_run) {
-        // go back to beginning of file and write the updated metadata
         fout.seekp(0);
-        std::vector<uint8_t> data(gguf_get_meta_size(ctx_out));
-        gguf_get_meta_data(ctx_out, data.data());
+        std::vector<uint8_t> data(gguf_get_meta_size(state.ctx_out));
+        gguf_get_meta_data(state.ctx_out, data.data());
         fout.write((const char *)data.data(), data.size());
         fout.close();
     }
-    gguf_free(ctx_out);
+
+    gguf_free(state.ctx_out);
 
     fprintf(stderr, "%s: %s merged from %d split with %d tensors.\n",
-            __func__, split_params.output.c_str(), n_split, total_tensors);
+            __func__, split_params.output.c_str(), state.n_split, state.total_tensors);
 }
 
 int main(int argc, const char ** argv) {
