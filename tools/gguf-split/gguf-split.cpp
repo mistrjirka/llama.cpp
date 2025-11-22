@@ -262,7 +262,7 @@ static int64_t file_tell_checked(FILE * file) {
 
 static size_t file_get_size(FILE * file) {
     const int64_t cur = file_tell_checked(file);
-    file_seek_checked(file, 0, SEEK_END);
+    file_seek_checked(file, (int64_t)0, SEEK_END);
     const int64_t size = file_tell_checked(file);
     file_seek_checked(file, cur, SEEK_SET);
     if (size < 0) {
@@ -781,7 +781,7 @@ static void gguf_merge(const split_params & split_params) {
             gguf_merge_fail(state);
             exit(EXIT_FAILURE);
         }
-        file_seek_checked(fout, 0, SEEK_SET);
+        file_seek_checked(fout, (int64_t)0, SEEK_SET);
         std::vector<uint8_t> data(meta_size);
         gguf_get_meta_data(state.ctx_out, data.data());
         if (std::fwrite(data.data(), 1, data.size(), fout) != data.size()) {
