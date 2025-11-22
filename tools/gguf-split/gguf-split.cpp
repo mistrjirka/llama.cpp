@@ -8,11 +8,13 @@
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
-#include <stdexcept>
 #include <cstring>
 #include <fstream>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
+#include <cerrno>
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -20,6 +22,12 @@
         #define PATH_MAX MAX_PATH
     #endif
     #include <io.h>
+#else
+    #include <sys/types.h>
+    #include <unistd.h>
+    #if defined(__linux__)
+        #include <sys/sendfile.h>
+    #endif
 #endif
 
 enum split_operation : uint8_t {
@@ -185,10 +193,83 @@ static bool split_params_parse(int argc, const char ** argv, split_params & para
 }
 
 static void zeros(std::ofstream & file, size_t n) {
-    char zero = 0;
-    for (size_t i = 0; i < n; ++i) {
-        file.write(&zero, 1);
+    if (n == 0) {
+        return;
     }
+    static constexpr size_t ZERO_CHUNK = 64u * 1024;
+    std::vector<char> buffer(std::min(ZERO_CHUNK, n), 0);
+    size_t remaining = n;
+    while (remaining > 0) {
+        const size_t to_write = std::min(remaining, buffer.size());
+        file.write(buffer.data(), to_write);
+        remaining -= to_write;
+    }
+}
+
+static void zeros(FILE * file, size_t n) {
+    if (n == 0) {
+        return;
+    }
+    static constexpr size_t ZERO_CHUNK = 64u * 1024;
+    std::vector<char> buffer(std::min(ZERO_CHUNK, n), 0);
+    size_t remaining = n;
+    while (remaining > 0) {
+        const size_t to_write = std::min(remaining, buffer.size());
+        if (std::fwrite(buffer.data(), 1, to_write, file) != to_write) {
+            fprintf(stderr, "error: failed to write padding bytes: %s\n", std::strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        remaining -= to_write;
+    }
+}
+
+static int64_t size_to_i64(size_t value) {
+    if (value > static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
+        fprintf(stderr, "error: file offset too large: %zu\n", value);
+        exit(EXIT_FAILURE);
+    }
+    return static_cast<int64_t>(value);
+}
+
+static void file_seek_checked(FILE * file, int64_t offset, int whence) {
+#if defined(_WIN32)
+    if (_fseeki64(file, offset, whence) != 0) {
+#else
+    if (fseeko(file, static_cast<off_t>(offset), whence) != 0) {
+#endif
+        fprintf(stderr, "error: seek failed: %s\n", std::strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void file_seek_checked(FILE * file, size_t offset, int whence = SEEK_SET) {
+    file_seek_checked(file, size_to_i64(offset), whence);
+}
+
+static int64_t file_tell_checked(FILE * file) {
+#if defined(_WIN32)
+    const __int64 pos = _ftelli64(file);
+    if (pos == -1) {
+#else
+    const off_t pos = ftello(file);
+    if (pos == static_cast<off_t>(-1)) {
+#endif
+        fprintf(stderr, "error: tell failed: %s\n", std::strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    return static_cast<int64_t>(pos);
+}
+
+static size_t file_get_size(FILE * file) {
+    const int64_t cur = file_tell_checked(file);
+    file_seek_checked(file, 0, SEEK_END);
+    const int64_t size = file_tell_checked(file);
+    file_seek_checked(file, cur, SEEK_SET);
+    if (size < 0) {
+        fprintf(stderr, "error: invalid file size\n");
+        exit(EXIT_FAILURE);
+    }
+    return static_cast<size_t>(size);
 }
 
 struct split_strategy {
@@ -359,6 +440,60 @@ struct split_strategy {
 
 static constexpr size_t GGUF_MERGE_COPY_CHUNK = 8u * 1024 * 1024;
 
+#if defined(__linux__)
+static size_t gguf_try_fast_copy(FILE * f_input,
+        FILE * f_output,
+        size_t in_offset,
+        size_t out_offset,
+        size_t n_bytes) {
+    if (n_bytes == 0) {
+        return 0;
+    }
+
+    const int fd_in = fileno(f_input);
+    const int fd_out = fileno(f_output);
+    if (fd_in == -1 || fd_out == -1) {
+        return 0;
+    }
+
+    const off_t offset_start = static_cast<off_t>(size_to_i64(in_offset));
+    off_t in_off = offset_start;
+    size_t remaining = n_bytes;
+
+    while (remaining > 0) {
+        const size_t to_copy = std::min<size_t>(remaining, static_cast<size_t>(1u << 30));
+        const ssize_t sent = ::sendfile(fd_out, fd_in, &in_off, to_copy);
+        if (sent == -1) {
+            if (errno == EINTR || errno == EAGAIN) {
+                continue;
+            }
+            if (errno == EINVAL || errno == ENOSYS || errno == EOPNOTSUPP || errno == EBADF) {
+                break;
+            }
+            fprintf(stderr, "%s: sendfile failed: %s\n", __func__, std::strerror(errno));
+            break;
+        }
+        if (sent == 0) {
+            break;
+        }
+        remaining -= static_cast<size_t>(sent);
+    }
+
+    const size_t fast_copied = n_bytes - remaining;
+    if (fast_copied > 0) {
+        // sync stdio offsets with the descriptor positions
+        file_seek_checked(f_input, in_offset + fast_copied);
+        file_seek_checked(f_output, out_offset + fast_copied);
+    }
+
+    return fast_copied;
+}
+#else
+static size_t gguf_try_fast_copy(FILE *, FILE *, size_t, size_t, size_t) {
+    return 0;
+}
+#endif
+
 struct merge_state {
     const split_params & params;
     struct gguf_context * ctx_out = NULL;
@@ -396,13 +531,14 @@ static void gguf_merge_fail(merge_state & state) {
     }
 }
 
-static void gguf_merge_copy_payload(std::ifstream & f_input,
-        std::ofstream & f_output,
-        size_t offset,
+static void gguf_merge_copy_payload(FILE * f_input,
+        FILE * f_output,
+        size_t in_offset,
+        size_t out_offset,
         size_t n_bytes,
         std::vector<uint8_t> & buffer) {
 
-    if (n_bytes == 0) {
+    if (n_bytes == 0 || f_output == NULL) {
         return;
     }
 
@@ -411,12 +547,31 @@ static void gguf_merge_copy_payload(std::ifstream & f_input,
         buffer.resize(chunk);
     }
 
-    f_input.seekg(offset, std::ios::beg);
-    size_t remaining = n_bytes;
+    if (std::fflush(f_output) != 0) {
+        fprintf(stderr, "%s: failed to flush output stream: %s\n", __func__, std::strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    file_seek_checked(f_output, out_offset);
+
+    const size_t fast_copied = gguf_try_fast_copy(f_input, f_output, in_offset, out_offset, n_bytes);
+
+    size_t remaining = n_bytes - fast_copied;
+    size_t read_pos = in_offset + fast_copied;
+    size_t write_pos = out_offset + fast_copied;
+
+    file_seek_checked(f_input, read_pos);
+    file_seek_checked(f_output, write_pos);
+
     while (remaining > 0) {
         const size_t to_copy = std::min(remaining, buffer.size());
-        f_input.read(reinterpret_cast<char *>(buffer.data()), to_copy);
-        f_output.write(reinterpret_cast<const char *>(buffer.data()), to_copy);
+        if (std::fread(buffer.data(), 1, to_copy, f_input) != to_copy) {
+            fprintf(stderr, "%s: failed to read input payload: %s\n", __func__, std::strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (std::fwrite(buffer.data(), 1, to_copy, f_output) != to_copy) {
+            fprintf(stderr, "%s: failed to write output payload: %s\n", __func__, std::strerror(errno));
+            exit(EXIT_FAILURE);
+        }
         remaining -= to_copy;
     }
 }
@@ -492,8 +647,9 @@ static void gguf_merge_first_pass(merge_state & state) {
     }
 }
 
-static void gguf_merge_second_pass(merge_state & state, std::ofstream * fout, std::vector<uint8_t> & buffer) {
+static void gguf_merge_second_pass(merge_state & state, FILE * fout, std::vector<uint8_t> & buffer) {
     char split_path[PATH_MAX] = {0};
+    size_t out_offset = fout != NULL ? gguf_get_meta_size(state.ctx_out) : 0;
 
     for (int i_split = 0; i_split < state.n_split; ++i_split) {
         auto * ctx_gguf = state.ctx_ggufs[i_split];
@@ -508,38 +664,37 @@ static void gguf_merge_second_pass(merge_state & state, std::ofstream * fout, st
         }
 
         llama_split_path(split_path, sizeof(split_path), state.split_prefix, i_split, state.n_split);
-        std::ifstream f_input(split_path, std::ios::binary);
-        if (!f_input.is_open()) {
+        FILE * f_input = ggml_fopen(split_path, "rb");
+        if (f_input == NULL) {
             fprintf(stderr, "%s:  failed to open input GGUF from %s\n", __func__, split_path);
             gguf_merge_release_split_contexts(state);
-            fout->close();
+            std::fclose(fout);
             gguf_free(state.ctx_out);
             exit(EXIT_FAILURE);
         }
 
         fprintf(stderr, "%s: writing tensors %s ...", __func__, split_path);
 
-        f_input.seekg(0, std::ios::end);
-        const size_t file_size = (size_t) f_input.tellg();
-        f_input.seekg(0, std::ios::beg);
-
+        const size_t file_size = file_get_size(f_input);
         const size_t data_offset = gguf_get_data_offset(ctx_gguf);
         if (file_size < data_offset) {
             fprintf(stderr, "\n%s: invalid data offset in %s\n", __func__, split_path);
-            f_input.close();
+            std::fclose(f_input);
             gguf_merge_release_split_contexts(state);
-            fout->close();
+            std::fclose(fout);
             gguf_free(state.ctx_out);
             exit(EXIT_FAILURE);
         }
 
-        gguf_merge_copy_payload(f_input, *fout, data_offset, file_size - data_offset, buffer);
+        const size_t payload = file_size - data_offset;
+        gguf_merge_copy_payload(f_input, fout, data_offset, out_offset, payload, buffer);
+        out_offset += payload;
 
         gguf_free(ctx_gguf);
         ggml_free(ctx_meta);
         state.ctx_ggufs[i_split] = NULL;
         state.ctx_metas[i_split] = NULL;
-        f_input.close();
+        std::fclose(f_input);
         fprintf(stderr, "\033[3Ddone\n");
     }
 
@@ -604,23 +759,38 @@ static void gguf_merge(const split_params & split_params) {
 
     gguf_merge_first_pass(state);
 
-    std::ofstream fout;
+    FILE * fout = NULL;
+    const size_t meta_size = gguf_get_meta_size(state.ctx_out);
     if (!split_params.dry_run) {
-        fout.open(split_params.output.c_str(), std::ios::binary);
-        fout.exceptions(std::ofstream::failbit);
-        auto meta_size = gguf_get_meta_size(state.ctx_out);
-        ::zeros(fout, meta_size);
+        fout = ggml_fopen(split_params.output.c_str(), "wb+");
+        if (fout == NULL) {
+            fprintf(stderr, "%s: failed to open output file %s\n", __func__, split_params.output.c_str());
+            gguf_merge_fail(state);
+            exit(EXIT_FAILURE);
+        }
+        zeros(fout, meta_size);
     }
 
     std::vector<uint8_t> copy_buffer;
-    gguf_merge_second_pass(state, split_params.dry_run ? NULL : &fout, copy_buffer);
+    gguf_merge_second_pass(state, fout, copy_buffer);
 
     if (!split_params.dry_run) {
-        fout.seekp(0);
-        std::vector<uint8_t> data(gguf_get_meta_size(state.ctx_out));
+        if (std::fflush(fout) != 0) {
+            fprintf(stderr, "%s: failed to flush output stream: %s\n", __func__, std::strerror(errno));
+            std::fclose(fout);
+            gguf_merge_fail(state);
+            exit(EXIT_FAILURE);
+        }
+        file_seek_checked(fout, 0, SEEK_SET);
+        std::vector<uint8_t> data(meta_size);
         gguf_get_meta_data(state.ctx_out, data.data());
-        fout.write((const char *)data.data(), data.size());
-        fout.close();
+        if (std::fwrite(data.data(), 1, data.size(), fout) != data.size()) {
+            fprintf(stderr, "%s: failed to finalize metadata: %s\n", __func__, std::strerror(errno));
+            std::fclose(fout);
+            gguf_merge_fail(state);
+            exit(EXIT_FAILURE);
+        }
+        std::fclose(fout);
     }
 
     gguf_free(state.ctx_out);
