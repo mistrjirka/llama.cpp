@@ -15,6 +15,14 @@ TOTAL_TOKENS=$((WARMUP_TOKENS + MEASURE_TOKENS))
 CACHE_RESERVE_MIB=${CACHE_RESERVE_MIB:-3072}
 VERTICAL_FIT_TARGET_MIB=${VERTICAL_FIT_TARGET_MIB:-16384}
 MIN_HOT_ROUTES=${MIN_HOT_ROUTES:-4}
+THREADS=${THREADS:-40}
+BATCH_THREADS=${BATCH_THREADS:-48}
+POLL=${POLL:-50}
+CPU_RANGE=${CPU_RANGE:-}
+CPU_STRICT=${CPU_STRICT:-0}
+BATCH_CPU_RANGE=${BATCH_CPU_RANGE:-}
+BATCH_CPU_STRICT=${BATCH_CPU_STRICT:-$CPU_STRICT}
+TRACE_GRAPH_BUILD=${TRACE_GRAPH_BUILD:-1}
 TRACE_PATH=${TRACE_PATH:-}
 STATIC_MAP=${STATIC_MAP:-$PWD/$OUTDIR/static-frequency-map.txt}
 FORCE_TOKENS=${FORCE_TOKENS:-$PWD/$OUTDIR/reference.tokens.txt}
@@ -85,7 +93,7 @@ case "$CASE" in
                 GGML_MOE_DYNAMIC_SKIP_COLD_BRANCH=1
                 GGML_MOE_DYNAMIC_ASYNC_PROMOTION=1
                 GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD=1
-                GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=1
+                "GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=$TRACE_GRAPH_BUILD"
             )
         fi
         ;;
@@ -112,7 +120,7 @@ case "$CASE" in
             GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER=0
             GGML_MOE_DYNAMIC_PREDICT_PREFETCH_TOTAL=0
             GGML_MOE_DYNAMIC_ASYNC_PROMOTION=1
-            GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=1
+            "GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=$TRACE_GRAPH_BUILD"
         )
         ;;
     *)
@@ -125,6 +133,14 @@ esac
 if [ -n "$TRACE_PATH" ]; then
     rm -f "$TRACE_PATH"
     case_env+=("GGML_MOE_DYNAMIC_TRACE=$TRACE_PATH")
+fi
+
+cpu_args=(--poll "$POLL")
+if [ -n "$CPU_RANGE" ]; then
+    cpu_args+=(-Cr "$CPU_RANGE" --cpu-strict "$CPU_STRICT")
+fi
+if [ -n "$BATCH_CPU_RANGE" ]; then
+    cpu_args+=(-Crb "$BATCH_CPU_RANGE" --cpu-strict-batch "$BATCH_CPU_STRICT")
 fi
 
 start_ns=$(date +%s%N)
@@ -145,8 +161,8 @@ env \
     "${common_env[@]}" "${case_env[@]}" \
     timeout 21600s build-v100/bin/llama-completion \
         -m "$MODEL" -f "$PROMPT_FILE" -n "$TOTAL_TOKENS" -c "$CONTEXT" \
-        -b 512 -ub 128 -fa on -dev CUDA0 -t 40 -tb 48 \
-        "${model_args[@]}" -s 1 --temp 0 --ignore-eos \
+        -b 512 -ub 128 -fa on -dev CUDA0 -t "$THREADS" -tb "$BATCH_THREADS" \
+        "${cpu_args[@]}" "${model_args[@]}" -s 1 --temp 0 --ignore-eos \
         --single-turn --no-conversation --no-display-prompt --simple-io -v \
         > "$out" 2> "$err" || rc=$?
 end_ns=$(date +%s%N)
@@ -154,10 +170,12 @@ end_ns=$(date +%s%N)
 kill "$monitor_pid" 2>/dev/null || true
 wait "$monitor_pid" 2>/dev/null || true
 
-python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" <<'PY'
+python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" "$THREADS" "$BATCH_THREADS" "$POLL" "$CPU_RANGE" "$CPU_STRICT" "$BATCH_CPU_RANGE" "$BATCH_CPU_STRICT" "$TRACE_GRAPH_BUILD" <<'PY'
 import hashlib, json, re, statistics, sys
 (case, rep, rc, start_ns, end_ns, err_path, out_path, gpu_path, summary_path,
- expected_runs, context, vertical_fit_target, cache_reserve, min_hot_routes) = sys.argv[1:]
+ expected_runs, context, vertical_fit_target, cache_reserve, min_hot_routes,
+ threads, batch_threads, poll, cpu_range, cpu_strict,
+ batch_cpu_range, batch_cpu_strict, trace_graph_build) = sys.argv[1:]
 text = open(err_path, errors='replace').read()
 
 def last(pattern, default=None):
@@ -221,6 +239,14 @@ result = {
     'vertical_fit_target_mib': int(vertical_fit_target),
     'cache_reserve_mib': int(cache_reserve),
     'min_hot_routes': int(min_hot_routes),
+    'threads': int(threads),
+    'batch_threads': int(batch_threads),
+    'poll': int(poll),
+    'cpu_range': cpu_range or None,
+    'cpu_strict': int(cpu_strict),
+    'batch_cpu_range': batch_cpu_range or None,
+    'batch_cpu_strict': int(batch_cpu_strict),
+    'trace_graph_build': int(trace_graph_build),
     'prompt_tokens': integer(r'prompt eval time\s*=.*?/\s*(\d+) tokens'),
     'prompt_tps': last(r'prompt eval time\s*=.*?([0-9.]+) tokens per second'),
     'measured_runs': measured_runs,
