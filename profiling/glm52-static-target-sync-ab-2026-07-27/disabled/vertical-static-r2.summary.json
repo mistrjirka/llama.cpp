@@ -1,0 +1,73 @@
+{
+  "case": "vertical-static",
+  "rep": 2,
+  "exit": 0,
+  "wall_s": 32.816196657,
+  "sha256": "e165b05c0568da0b099159b3045190e4f33ffbd97698d0a9881b982ead61f514",
+  "context": 2048,
+  "vertical_fit_target_mib": 16384,
+  "cache_reserve_mib": 3072,
+  "min_hot_routes": 4,
+  "threads": 40,
+  "batch_threads": 48,
+  "poll": 50,
+  "cpu_range": null,
+  "cpu_strict": 0,
+  "batch_cpu_range": null,
+  "batch_cpu_strict": 0,
+  "trace_graph_build": 0,
+  "cuda_graphs": 0,
+  "verbose": 0,
+  "skip_static_target_sync": 0,
+  "prompt_tokens": 1,
+  "prompt_tps": null,
+  "measured_runs": 1,
+  "reported_measured_tps": null,
+  "marker_measured_runs": 32,
+  "marker_measured_s": 5.316519,
+  "marker_measured_tps": 6.018976,
+  "timestamp_measured_runs": 0,
+  "timestamp_measured_s": null,
+  "timestamp_measured_tps": null,
+  "effective_measured_runs": 32,
+  "effective_measured_tps": 6.018976,
+  "measured_time_ms": 5316.519,
+  "graph_nodes": null,
+  "graph_splits": null,
+  "cuda_model_buffer_mib": null,
+  "cpu_model_buffer_mib": null,
+  "cache_entries": null,
+  "cache_allocated_mib": null,
+  "cache_line": null,
+  "coverage_line": null,
+  "worker_line": null,
+  "cuda_oom": false,
+  "gpu_samples": 140,
+  "gpu_util_mean": 16.928571428571427,
+  "gpu_util_median": 0.0,
+  "min_free_mib": 1364.0,
+  "max_used_mib": 31131.0,
+  "mean_power_w": 54.1385,
+  "assertions": [
+    {
+      "name": "process_exit",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "measured_token_count",
+      "ok": true,
+      "detail": {
+        "marker": 32,
+        "reported": 1,
+        "timestamp": 0
+      }
+    },
+    {
+      "name": "no_cuda_oom",
+      "ok": true,
+      "detail": false
+    }
+  ],
+  "assertions_passed": true
+}
