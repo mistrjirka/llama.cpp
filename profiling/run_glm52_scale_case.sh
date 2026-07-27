@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+set -u
+
+CASE=${1:-horizontal}
+REP=${2:-1}
+MODEL=${MODEL:-/models/GLM-5.2-UD-IQ2_XXS/UD-IQ2_XXS/GLM-5.2-UD-IQ2_XXS-00001-of-00006.gguf}
+PROMPT_FILE=${PROMPT_FILE:-profiling/glm52-scale-2026-07-27/prompt.txt}
+OUTDIR=${OUTDIR:-profiling/glm52-scale-2026-07-27}
+CONTEXT=${CONTEXT:-2048}
+WARMUP_TOKENS=${WARMUP_TOKENS:-16}
+MEASURE_TOKENS=${MEASURE_TOKENS:-32}
+TOTAL_TOKENS=$((WARMUP_TOKENS + MEASURE_TOKENS))
+CACHE_RESERVE_MIB=${CACHE_RESERVE_MIB:-4096}
+VERTICAL_FIT_TARGET_MIB=${VERTICAL_FIT_TARGET_MIB:-16384}
+MIN_HOT_ROUTES=${MIN_HOT_ROUTES:-4}
+TRACE_PATH=${TRACE_PATH:-}
+STATIC_MAP=${STATIC_MAP:-$PWD/$OUTDIR/static-frequency-map.txt}
+FORCE_TOKENS=${FORCE_TOKENS:-$PWD/$OUTDIR/reference.tokens.txt}
+
+mkdir -p "$OUTDIR"
+stem="$CASE-r$REP"
+out="$OUTDIR/$stem.out"
+err="$OUTDIR/$stem.err"
+gpu="$OUTDIR/$stem.gpu.tsv"
+summary="$OUTDIR/$stem.summary.json"
+rm -f "$out" "$err" "$gpu" "$summary"
+if [ "$CASE" = horizontal ]; then
+    rm -f "$FORCE_TOKENS"
+fi
+
+monitor_gpu() {
+    while true; do
+        printf '%s\t' "$(date +%s.%N)"
+        nvidia-smi -i "${NVIDIA_SMI_GPU_INDEX:-1}" \
+            --query-gpu=memory.used,memory.free,utilization.gpu,utilization.memory,power.draw \
+            --format=csv,noheader,nounits | tr -d ' ' | tr ',' '\t'
+        sleep 0.2
+    done
+}
+monitor_gpu > "$gpu" 2>/dev/null &
+monitor_pid=$!
+
+common_env=(
+    CUDA_VISIBLE_DEVICES=0
+    GGML_CUDA_DISABLE_GRAPHS=1
+    "GGML_COMPLETION_BENCH_WARMUP_TOKENS=$WARMUP_TOKENS"
+)
+case_env=()
+model_args=()
+case "$CASE" in
+    horizontal)
+        common_env+=("GGML_COMPLETION_TOKEN_DUMP=$FORCE_TOKENS")
+        model_args=(-fit on -fitt 4096 -fitc "$CONTEXT")
+        ;;
+    vertical|vertical-nocache|vertical-free)
+        if [ "$CASE" != vertical-free ]; then
+            if [ ! -s "$FORCE_TOKENS" ]; then
+                echo "missing forced token file: $FORCE_TOKENS" >&2
+                kill "$monitor_pid" 2>/dev/null || true
+                exit 2
+            fi
+            common_env+=("GGML_COMPLETION_FORCE_TOKENS=$FORCE_TOKENS")
+        fi
+        model_args=(-fit on -fitt "$VERTICAL_FIT_TARGET_MIB" -fitc "$CONTEXT" --cpu-moe)
+        if [ "$CASE" = vertical ] || [ "$CASE" = vertical-free ]; then
+            case_env=(
+                GGML_EXPERT_CACHE_MIB=auto
+                "GGML_EXPERT_CACHE_RESERVE_MIB=$CACHE_RESERVE_MIB"
+                GGML_MOE_DYNAMIC_SPLIT_SLOTS=auto
+                GGML_MOE_DYNAMIC_THRESHOLD=2
+                "GGML_MOE_DYNAMIC_MIN_HOT_ROUTES=$MIN_HOT_ROUTES"
+                GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN=16
+                GGML_MOE_DYNAMIC_PREFILL_OBSERVE=1
+                GGML_MOE_DYNAMIC_WARM_START_PER_LAYER=8
+                GGML_MOE_DYNAMIC_WARM_START_TOTAL=608
+                GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER=0
+                GGML_MOE_DYNAMIC_PREDICT_PREFETCH_TOTAL=0
+                GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_PER_LAYER=0
+                GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL=0
+                GGML_MOE_DYNAMIC_SEGMENTED_LRU=1
+                GGML_MOE_DYNAMIC_PROTECTED_HITS=2
+                GGML_MOE_DYNAMIC_SKIP_HOT_BRANCH=1
+                GGML_MOE_DYNAMIC_SKIP_COLD_BRANCH=1
+                GGML_MOE_DYNAMIC_ASYNC_PROMOTION=1
+                GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD=1
+                GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=1
+            )
+        fi
+        ;;
+    vertical-static)
+        if [ ! -s "$FORCE_TOKENS" ] || [ ! -s "$STATIC_MAP" ]; then
+            echo "missing forced token file or static map: $FORCE_TOKENS $STATIC_MAP" >&2
+            kill "$monitor_pid" 2>/dev/null || true
+            exit 2
+        fi
+        common_env+=("GGML_COMPLETION_FORCE_TOKENS=$FORCE_TOKENS")
+        model_args=(-fit on -fitt "$VERTICAL_FIT_TARGET_MIB" -fitc "$CONTEXT" --cpu-moe)
+        case_env=(
+            GGML_EXPERT_CACHE_MIB=auto
+            "GGML_EXPERT_CACHE_RESERVE_MIB=$CACHE_RESERVE_MIB"
+            GGML_MOE_DYNAMIC_SPLIT_SLOTS=auto
+            GGML_MOE_DYNAMIC_MIN_COMPLETE_COVERAGE=0
+            GGML_MOE_DYNAMIC_GPU_ROUTE_MAP=1
+            GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK=1
+            "GGML_MOE_DYNAMIC_STATIC_MAP=$STATIC_MAP"
+            GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN=0
+            GGML_MOE_DYNAMIC_PREFILL_OBSERVE=0
+            GGML_MOE_DYNAMIC_WARM_START_PER_LAYER=0
+            GGML_MOE_DYNAMIC_WARM_START_TOTAL=0
+            GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER=0
+            GGML_MOE_DYNAMIC_PREDICT_PREFETCH_TOTAL=0
+            GGML_MOE_DYNAMIC_ASYNC_PROMOTION=1
+            GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=1
+        )
+        ;;
+    *)
+        echo "unknown case: $CASE" >&2
+        kill "$monitor_pid" 2>/dev/null || true
+        exit 2
+        ;;
+esac
+
+if [ -n "$TRACE_PATH" ]; then
+    rm -f "$TRACE_PATH"
+    case_env+=("GGML_MOE_DYNAMIC_TRACE=$TRACE_PATH")
+fi
+
+start_ns=$(date +%s%N)
+rc=0
+env \
+    -u GGML_EXPERT_CACHE_MIB -u GGML_EXPERT_CACHE_RESERVE_MIB -u GGML_EXPERT_CACHE_PROFILE \
+    -u GGML_MOE_DYNAMIC_SPLIT_SLOTS -u GGML_MOE_DYNAMIC_THRESHOLD \
+    -u GGML_MOE_DYNAMIC_MIN_HOT_ROUTES -u GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN \
+    -u GGML_MOE_DYNAMIC_PREFILL_OBSERVE -u GGML_MOE_DYNAMIC_WARM_START_PER_LAYER \
+    -u GGML_MOE_DYNAMIC_WARM_START_TOTAL -u GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER \
+    -u GGML_MOE_DYNAMIC_PREDICT_PREFETCH_TOTAL -u GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_PER_LAYER \
+    -u GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL -u GGML_MOE_DYNAMIC_SEGMENTED_LRU \
+    -u GGML_MOE_DYNAMIC_PROTECTED_HITS -u GGML_MOE_DYNAMIC_SKIP_HOT_BRANCH \
+    -u GGML_MOE_DYNAMIC_SKIP_COLD_BRANCH -u GGML_MOE_DYNAMIC_ASYNC_PROMOTION \
+    -u GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD -u GGML_MOE_DYNAMIC_TRACE \
+    -u GGML_MOE_DYNAMIC_STATIC_MAP -u GGML_MOE_DYNAMIC_GPU_ROUTE_MAP \
+    -u GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK -u GGML_MOE_DYNAMIC_MIN_COMPLETE_COVERAGE \
+    "${common_env[@]}" "${case_env[@]}" \
+    timeout 21600s build-v100/bin/llama-completion \
+        -m "$MODEL" -f "$PROMPT_FILE" -n "$TOTAL_TOKENS" -c "$CONTEXT" \
+        -b 512 -ub 128 -fa on -dev CUDA0 -t 40 -tb 48 \
+        "${model_args[@]}" -s 1 --temp 0 --ignore-eos \
+        --single-turn --no-conversation --no-display-prompt --simple-io -v \
+        > "$out" 2> "$err" || rc=$?
+end_ns=$(date +%s%N)
+
+kill "$monitor_pid" 2>/dev/null || true
+wait "$monitor_pid" 2>/dev/null || true
+
+python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" <<'PY'
+import hashlib, json, re, statistics, sys
+(case, rep, rc, start_ns, end_ns, err_path, out_path, gpu_path, summary_path,
+ expected_runs, context, vertical_fit_target, cache_reserve, min_hot_routes) = sys.argv[1:]
+text = open(err_path, errors='replace').read()
+
+def last(pattern, default=None):
+    values = re.findall(pattern, text)
+    return values[-1] if values else default
+
+def integer(pattern, default=0):
+    value = last(pattern)
+    return int(value) if value is not None else default
+
+samples=[]
+for line in open(gpu_path, errors='replace'):
+    fields=line.strip().split('\t')
+    if len(fields)!=6:
+        continue
+    try:
+        samples.append(tuple(map(float, fields)))
+    except ValueError:
+        pass
+
+measured_runs = integer(r'(?<!prompt )eval time\s*=.*?/\s*(\d+) runs')
+reported_tps = last(r'(?<!prompt )eval time\s*=.*?([0-9.]+) tokens per second')
+
+# `llama_perf_context_reset()` currently loses decode accounting for some
+# CPU-MoE graph layouts. Derive a second measurement from verbose monotonic
+# timestamps so the fallback is explicit rather than silently reporting zero.
+def timestamp_seconds(stamp):
+    fields = [int(x) for x in stamp.split('.')]
+    if len(fields) != 4:
+        return None
+    minutes, seconds, milliseconds, microseconds = fields
+    return minutes * 60.0 + seconds + milliseconds / 1000.0 + microseconds / 1e6
+
+warmup = re.search(
+    r'(?m)^(\d+\.\d+\.\d+\.\d+) I llama_completion: benchmark decode warmup complete',
+    text)
+timestamp_runs = 0
+timestamp_elapsed_s = None
+timestamp_tps = None
+if warmup:
+    tail = text[warmup.end():]
+    completions = re.findall(r'(?m)^(\d+\.\d+\.\d+\.\d+) D n_past = \d+', tail)
+    timestamp_runs = len(completions)
+    if completions:
+        begin = timestamp_seconds(warmup.group(1))
+        end = timestamp_seconds(completions[-1])
+        if begin is not None and end is not None and end > begin:
+            timestamp_elapsed_s = end - begin
+            timestamp_tps = timestamp_runs / timestamp_elapsed_s
+
+effective_tps = float(reported_tps) if reported_tps is not None and measured_runs == int(expected_runs) else timestamp_tps
+effective_runs = measured_runs if measured_runs == int(expected_runs) else timestamp_runs
+allocation = last(r'expert-cache: entries=(\d+) allocated=([0-9.]+) MiB')
+result = {
+    'case': case,
+    'rep': int(rep),
+    'exit': int(rc),
+    'wall_s': (int(end_ns)-int(start_ns))/1e9,
+    'sha256': hashlib.sha256(open(out_path,'rb').read()).hexdigest(),
+    'context': int(context),
+    'vertical_fit_target_mib': int(vertical_fit_target),
+    'cache_reserve_mib': int(cache_reserve),
+    'min_hot_routes': int(min_hot_routes),
+    'prompt_tokens': integer(r'prompt eval time\s*=.*?/\s*(\d+) tokens'),
+    'prompt_tps': last(r'prompt eval time\s*=.*?([0-9.]+) tokens per second'),
+    'measured_runs': measured_runs,
+    'reported_measured_tps': float(reported_tps) if reported_tps is not None else None,
+    'timestamp_measured_runs': timestamp_runs,
+    'timestamp_measured_s': timestamp_elapsed_s,
+    'timestamp_measured_tps': timestamp_tps,
+    'effective_measured_runs': effective_runs,
+    'effective_measured_tps': effective_tps,
+    'measured_time_ms': last(r'total time\s*=\s*([0-9.]+) ms'),
+    'graph_nodes': last(r'sched_reserve: graph nodes\s*=\s*([^\n]+)'),
+    'graph_splits': last(r'sched_reserve: graph splits\s*=\s*([^\n]+)'),
+    'cuda_model_buffer_mib': last(r'CUDA0 model buffer size\s*=\s*([0-9.]+) MiB'),
+    'cpu_model_buffer_mib': last(r'CPU(?:_Mapped)? model buffer size\s*=\s*([0-9.]+) MiB'),
+    'cache_entries': int(allocation[0]) if allocation else None,
+    'cache_allocated_mib': float(allocation[1]) if allocation else None,
+    'cache_line': last(r'(moe-dynamic-cache:.*)'),
+    'coverage_line': last(r'(moe-dynamic-coverage:.*)'),
+    'worker_line': last(r'(moe-promotion-worker:.*)'),
+    'cuda_oom': bool(re.search(r'cudaMalloc failed|out of memory', text, re.I)),
+    'gpu_samples': len(samples),
+    'gpu_util_mean': statistics.mean(x[3] for x in samples) if samples else None,
+    'gpu_util_median': statistics.median(x[3] for x in samples) if samples else None,
+    'min_free_mib': min((x[2] for x in samples), default=None),
+    'max_used_mib': max((x[1] for x in samples), default=None),
+    'mean_power_w': statistics.mean(x[5] for x in samples) if samples else None,
+}
+assertions = [
+    {'name':'process_exit','ok':int(rc)==0,'detail':int(rc)},
+    {'name':'measured_token_count','ok':effective_runs==int(expected_runs),'detail':{'reported':measured_runs,'timestamp':timestamp_runs}},
+    {'name':'no_cuda_oom','ok':not result['cuda_oom'],'detail':result['cuda_oom']},
+]
+if case in ('vertical', 'vertical-free', 'vertical-static'):
+    assertions.extend([
+        {'name':'cache_allocated','ok':result['cache_entries'] is not None and result['cache_entries']>0,'detail':result['cache_entries']},
+        {'name':'coverage_present','ok':result['coverage_line'] is not None,'detail':result['coverage_line']},
+    ])
+result['assertions'] = assertions
+result['assertions_passed'] = all(x['ok'] for x in assertions)
+with open(summary_path,'w') as f:
+    json.dump(result,f,indent=2)
+print(json.dumps(result,indent=2))
+if not result['assertions_passed']:
+    raise SystemExit(3)
+PY
+summary_rc=$?
+if [ "$rc" -ne 0 ]; then exit "$rc"; fi
+exit "$summary_rc"

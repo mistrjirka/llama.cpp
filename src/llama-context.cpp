@@ -1,6 +1,7 @@
 #include "llama-context.h"
 
 #include "ggml.h"
+#include "ggml-backend.h"
 #include "llama-arch.h"
 #include "llama-graph.h"
 #include "llama-impl.h"
@@ -568,6 +569,15 @@ void llama_context::resolve_fused_ops(const llama_memory_context_i * mctx, uint3
         resolve(llm_fused_op_dsv4_hc_post_probe, cparams.fused_dsv4_hc_post);
         cparams.auto_fhc = false;
     }
+}
+
+void llama_context::force_sched_reserve() {
+    // Runtime graph-shaping controls are not part of llm_graph_params, so the
+    // previous decode graph would otherwise be considered reusable even after
+    // the scheduler reservation changes. Invalidate both layers explicitly.
+    gf_res_prev->reset();
+    sched_need_reserve = true;
+    sched_reserve();
 }
 
 void llama_context::sched_reserve() {
@@ -2416,10 +2426,24 @@ llm_graph_params llama_context::graph_params(
                       const llama_ubatch & ubatch,
             const llama_memory_context_i * mctx,
                           llm_graph_type   gtype) const {
+    std::vector<uint8_t> moe_dynamic_cache_eligible(model.layers.size(), 0);
+    auto host_resident = [](const ggml_tensor * tensor) {
+        return tensor != nullptr && tensor->buffer != nullptr &&
+            ggml_backend_buffer_is_host(tensor->buffer);
+    };
+    for (size_t il = 0; il < model.layers.size(); ++il) {
+        const auto & layer = model.layers[il];
+        moe_dynamic_cache_eligible[il] =
+            host_resident(layer.ffn_gate_exps) &&
+            host_resident(layer.ffn_up_exps) &&
+            host_resident(layer.ffn_down_exps);
+    }
+
     return {
         /*.arch        =*/ model.arch,
         /*.hparams     =*/ model.hparams,
         /*.cparams     =*/ cparams,
+        /*.moe_dynamic_cache_eligible =*/ std::move(moe_dynamic_cache_eligible),
         /*.ubatch      =*/ ubatch,
         /*.gtype       =*/ gtype,
         /*.sched       =*/ sched.get(),
@@ -3211,6 +3235,7 @@ void llama_context::perf_reset() {
     t_eval_us   = n_eval = 0;
     t_p_eval_us = n_p_eval = 0;
     n_reused    = 0;
+    ggml_backend_sched_reset_expert_cache_profile(sched.get());
 }
 
 llama_memory_breakdown llama_context::memory_breakdown() const {
@@ -4111,6 +4136,12 @@ void llama_perf_context_print(const llama_context * ctx) {
 
 void llama_perf_context_reset(llama_context * ctx) {
     ctx->perf_reset();
+}
+
+void llama_context_force_graph_rebuild(llama_context * ctx) {
+    GGML_ASSERT(ctx != nullptr);
+    ctx->synchronize();
+    ctx->force_sched_reserve();
 }
 
 //

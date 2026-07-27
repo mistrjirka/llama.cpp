@@ -1,0 +1,68 @@
+{
+  "case": "vertical-static",
+  "rep": 9,
+  "exit": 0,
+  "wall_s": 47.5252482,
+  "sha256": "e6d5d540c6b4b4d645045ddc7ddcb2c94794cb46b7bd7e4f92446dfc916d7140",
+  "context": 2048,
+  "vertical_fit_target_mib": 16384,
+  "cache_reserve_mib": 4096,
+  "min_hot_routes": 4,
+  "prompt_tokens": 1,
+  "prompt_tps": null,
+  "measured_runs": 1,
+  "reported_measured_tps": null,
+  "timestamp_measured_runs": 32,
+  "timestamp_measured_s": 6.195855999999999,
+  "timestamp_measured_tps": 5.164742369738742,
+  "effective_measured_runs": 32,
+  "effective_measured_tps": 5.164742369738742,
+  "measured_time_ms": "6195.90",
+  "graph_nodes": "7134 (with bs=128), 7734 (with bs=1)",
+  "graph_splits": "227 (with bs=128), 152 (with bs=1)",
+  "cuda_model_buffer_mib": "14102.60",
+  "cpu_model_buffer_mib": "36372.88",
+  "cache_entries": 225,
+  "cache_allocated_mib": 13723.41,
+  "cache_line": "moe-dynamic-cache: layers=75 admissions=0 resident-hits=0 resident-misses=0 resident-hit-rate=0.0000 executed-gpu-routes=0 cpu-routes=0 execution-hit-rate=0.0000 ready-slots=1262 copying-slots=0 split-enabled=0/0",
+  "coverage_line": "moe-dynamic-coverage: full-gpu-expert-layers=0/0 cpu-dependent-layers=0 full-gpu-expert-path-tokens=0/0 mean-cpu-dependent-layers=0.0000 prefill-batches=0 prefill-ready-routes=0/0 ready-route-hist=[] gpu-route-hist=[]",
+  "worker_line": "moe-promotion-worker: jobs=3786 batches=162 urgent-jobs=0 urgent-batches=0 bytes=13723.41 MiB staging-bytes=7828.12 MiB staging-copy=1046.151 ms host-issue=1718.161 ms sync=32.850 ms queue-delay=2584521.925 ms max-depth=2430",
+  "cuda_oom": false,
+  "gpu_samples": 204,
+  "gpu_util_mean": 33.122549019607845,
+  "gpu_util_median": 29.0,
+  "min_free_mib": 1914.0,
+  "max_used_mib": 30581.0,
+  "mean_power_w": 61.732254901960786,
+  "assertions": [
+    {
+      "name": "process_exit",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "measured_token_count",
+      "ok": true,
+      "detail": {
+        "reported": 1,
+        "timestamp": 32
+      }
+    },
+    {
+      "name": "no_cuda_oom",
+      "ok": true,
+      "detail": false
+    },
+    {
+      "name": "cache_allocated",
+      "ok": true,
+      "detail": 225
+    },
+    {
+      "name": "coverage_present",
+      "ok": true,
+      "detail": "moe-dynamic-coverage: full-gpu-expert-layers=0/0 cpu-dependent-layers=0 full-gpu-expert-path-tokens=0/0 mean-cpu-dependent-layers=0.0000 prefill-batches=0 prefill-ready-routes=0/0 ready-route-hist=[] gpu-route-hist=[]"
+    }
+  ],
+  "assertions_passed": true
+}

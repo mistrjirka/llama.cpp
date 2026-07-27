@@ -89,6 +89,7 @@ void ggml_cuda_mul_mat_q(
 
     cudaStream_t stream = ctx.stream();
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+    const bool masked = ggml_get_op_params_i32(dst, 0) != 0;
 
     const size_t ts_src0 = ggml_type_size(src0->type);
     const size_t ts_src1 = ggml_type_size(src1->type);
@@ -188,6 +189,14 @@ void ggml_cuda_mul_mat_q(
     // gate/up activations are broadcast across experts (ne11 == 1): quantize each token once and
     // scatter to its slots. ids_src1 then holds the inverse map (token slot -> compact row).
     const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;
+    if (masked) {
+        // The helper writes only valid compact routes. Initialize masked inverse-map entries to -1
+        // so scatter quantizers can skip them. For the forward map, initialize the unused compact
+        // tail to row zero; expert_bounds excludes it from all matrix work.
+        CUDA_CHECK(cudaMemsetAsync(
+            ids_src1.get(), dedup_bcast ? 0xFF : 0x00, ne_get_rows*sizeof(int32_t), stream));
+        CUDA_CHECK(cudaMemsetAsync(ids_dst.get(), 0x00, ne_get_rows*sizeof(int32_t), stream));
+    }
 
     {
         GGML_ASSERT(ids->nb[0] == ggml_element_size(ids));

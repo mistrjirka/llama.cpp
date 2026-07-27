@@ -4,10 +4,14 @@
 #include "log.h"
 #include "sampling.h"
 #include "llama.h"
+#include "ggml-backend.h"
 #include "chat.h"
 
+#include <cinttypes>
 #include <clocale>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -153,6 +157,53 @@ int llama_completion(int argc, char ** argv) {
 
     llama_memory_t mem = llama_get_memory(ctx);
     const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    // Diagnostic-only teacher-forced logits capture. These environment variables are
+    // intentionally not exposed as user-facing CLI flags.
+    const char * logits_dump_path = std::getenv("GGML_COMPLETION_LOGITS_DUMP");
+    const char * token_dump_path = std::getenv("GGML_COMPLETION_TOKEN_DUMP");
+    const char * force_tokens_path = std::getenv("GGML_COMPLETION_FORCE_TOKENS");
+    std::ofstream logits_dump;
+    std::ofstream token_dump;
+    std::vector<llama_token> forced_tokens;
+    size_t forced_token_index = 0;
+    uint64_t diagnostic_generation_step = 0;
+    const char * benchmark_warmup_tokens_env = std::getenv("GGML_COMPLETION_BENCH_WARMUP_TOKENS");
+    const uint64_t benchmark_warmup_tokens = benchmark_warmup_tokens_env != nullptr
+        ? (uint64_t) std::max<int64_t>(0, std::strtoll(benchmark_warmup_tokens_env, nullptr, 10))
+        : 0;
+    bool benchmark_measurement_started = benchmark_warmup_tokens == 0;
+    const int32_t diagnostic_n_vocab = llama_vocab_n_tokens(vocab);
+    if (logits_dump_path != nullptr && logits_dump_path[0] != '\0') {
+        logits_dump.open(logits_dump_path, std::ios::binary | std::ios::trunc);
+        if (!logits_dump) {
+            LOG_ERR("%s: unable to open logits dump %s\n", __func__, logits_dump_path);
+            return 1;
+        }
+        const uint32_t magic = 0x4d4f454c; // "LEOM" in little endian
+        const uint32_t version = 1;
+        logits_dump.write((const char *) &magic, sizeof(magic));
+        logits_dump.write((const char *) &version, sizeof(version));
+        logits_dump.write((const char *) &diagnostic_n_vocab, sizeof(diagnostic_n_vocab));
+    }
+    if (token_dump_path != nullptr && token_dump_path[0] != '\0') {
+        token_dump.open(token_dump_path, std::ios::out | std::ios::trunc);
+        if (!token_dump) {
+            LOG_ERR("%s: unable to open token dump %s\n", __func__, token_dump_path);
+            return 1;
+        }
+    }
+    if (force_tokens_path != nullptr && force_tokens_path[0] != '\0') {
+        std::ifstream forced_input(force_tokens_path);
+        if (!forced_input) {
+            LOG_ERR("%s: unable to open forced token file %s\n", __func__, force_tokens_path);
+            return 1;
+        }
+        int64_t token = 0;
+        while (forced_input >> token) {
+            forced_tokens.push_back((llama_token) token);
+        }
+    }
 
     // note: the time for chat template initialization is not negligible:
     auto chat_templates = common_chat_templates_init(model, params.chat_template);
@@ -706,7 +757,58 @@ int llama_completion(int argc, char ** argv) {
 
         if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
 
-            const llama_token id = common_sampler_sample(smpl, ctx, -1);
+            llama_token id = 0;
+            if (forced_token_index < forced_tokens.size()) {
+                id = forced_tokens[forced_token_index++];
+            } else {
+                id = common_sampler_sample(smpl, ctx, -1);
+            }
+
+            if (logits_dump.is_open()) {
+                float * logits = llama_get_logits_ith(ctx, -1);
+                if (logits == nullptr) {
+                    LOG_ERR("%s: logits are unavailable at generated step %" PRIu64 "\n",
+                        __func__, diagnostic_generation_step);
+                    return 1;
+                }
+                logits_dump.write((const char *) &diagnostic_generation_step, sizeof(diagnostic_generation_step));
+                logits_dump.write((const char *) &id, sizeof(id));
+                logits_dump.write((const char *) logits, (size_t) diagnostic_n_vocab * sizeof(float));
+            }
+            if (token_dump.is_open()) {
+                token_dump << id << '\n';
+                token_dump.flush();
+            }
+            diagnostic_generation_step++;
+            if (!benchmark_measurement_started &&
+                diagnostic_generation_step >= benchmark_warmup_tokens) {
+                const char * gpu_route_map_after_warmup =
+                    std::getenv("GGML_COMPLETION_GPU_ROUTE_MAP_AFTER_WARMUP");
+                const bool rebuild_for_gpu_route_map =
+                    gpu_route_map_after_warmup != nullptr && atoi(gpu_route_map_after_warmup) != 0;
+                if (rebuild_for_gpu_route_map) {
+                    ggml_backend_moe_dynamic_trace_marker("warmup_complete_before_graph_rebuild");
+#ifdef _WIN32
+                    _putenv_s("GGML_MOE_DYNAMIC_FORCE_GPU_ONLY", "1");
+                    _putenv_s("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP", "1");
+                    _putenv_s("GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN", "0");
+                    _putenv_s("GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER", "0");
+#else
+                    setenv("GGML_MOE_DYNAMIC_FORCE_GPU_ONLY", "1", 1);
+                    setenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP", "1", 1);
+                    setenv("GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN", "0", 1);
+                    setenv("GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER", "0", 1);
+#endif
+                    llama_context_force_graph_rebuild(ctx);
+                    ggml_backend_moe_dynamic_trace_marker("measurement_graph_rebuild_complete");
+                }
+                llama_perf_context_reset(ctx);
+                benchmark_measurement_started = true;
+                LOG_INF(
+                    "%s: benchmark decode warmup complete after %" PRIu64
+                    " tokens; performance counters reset with expert cache preserved\n",
+                    __func__, benchmark_warmup_tokens);
+            }
 
             common_sampler_accept(smpl, id, /* accept_grammar= */ true);
 

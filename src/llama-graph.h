@@ -676,6 +676,10 @@ struct llm_graph_params {
     llama_hparams hparams;
     llama_cparams cparams;
 
+    // One entry per transformer layer. A non-zero value means the canonical
+    // gate/up/down expert tensors are host-resident and can back a dynamic GPU cache.
+    std::vector<uint8_t> moe_dynamic_cache_eligible;
+
     llama_ubatch ubatch; // note: intentionally make a copy
 
     llm_graph_type gtype;
@@ -887,6 +891,7 @@ struct llm_graph_context {
 
     const llama_hparams & hparams;
     const llama_cparams & cparams;
+    const std::vector<uint8_t> & moe_dynamic_cache_eligible;
     const llama_ubatch  & ubatch;
 
     const int64_t n_embd;

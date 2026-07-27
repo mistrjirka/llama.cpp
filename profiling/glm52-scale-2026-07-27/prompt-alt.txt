@@ -1,0 +1,1 @@
+Design a lock-free bounded multi-producer multi-consumer queue in C++20. Discuss memory ordering, ABA hazards, shutdown semantics, and provide a practical test strategy.

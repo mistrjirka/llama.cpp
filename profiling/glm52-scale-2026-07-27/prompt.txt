@@ -1,0 +1,1 @@
+Implement a robust Python LRU cache with O(1) get and put operations. Explain the invariants, then provide tested code.

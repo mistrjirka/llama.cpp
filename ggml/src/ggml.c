@@ -3352,6 +3352,33 @@ struct ggml_tensor * ggml_mul_mat_id(
     return result;
 }
 
+void ggml_mul_mat_id_set_masked(
+        struct ggml_tensor * tensor,
+        bool                 masked) {
+    GGML_ASSERT(tensor->op == GGML_OP_MUL_MAT_ID);
+    ggml_set_op_params_i32(tensor, 0, masked ? 1 : 0);
+}
+
+void ggml_mul_mat_id_set_dynamic_slot_map(
+        struct ggml_tensor * tensor,
+        int32_t              layer,
+        int32_t              n_expert) {
+    GGML_ASSERT(tensor->op == GGML_OP_MUL_MAT_ID);
+    GGML_ASSERT(layer >= 0 && n_expert > 0);
+    ggml_set_op_params_i32(tensor, 2, layer + 1);
+    ggml_set_op_params_i32(tensor, 3, n_expert);
+}
+
+void ggml_mul_mat_id_set_dynamic_miss_mask(
+        struct ggml_tensor * tensor,
+        int32_t              layer,
+        int32_t              n_expert) {
+    GGML_ASSERT(tensor->op == GGML_OP_MUL_MAT_ID);
+    GGML_ASSERT(layer >= 0 && n_expert > 0);
+    ggml_set_op_params_i32(tensor, 4, layer + 1);
+    ggml_set_op_params_i32(tensor, 5, n_expert);
+}
+
 // ggml_out_prod
 
 static inline bool ggml_can_out_prod(const struct ggml_tensor * t0, const struct ggml_tensor * t1) {

@@ -1,0 +1,68 @@
+{
+  "case": "vertical-free",
+  "rep": 11,
+  "exit": 0,
+  "wall_s": 145.429027898,
+  "sha256": "f9bf53322afac7315504a414b9801ee2bad649776625105ad2b2d14d36c9f2e4",
+  "context": 2048,
+  "vertical_fit_target_mib": 16384,
+  "cache_reserve_mib": 4096,
+  "min_hot_routes": 1,
+  "prompt_tokens": 1,
+  "prompt_tps": null,
+  "measured_runs": 448,
+  "reported_measured_tps": 4.25,
+  "timestamp_measured_runs": 448,
+  "timestamp_measured_s": 105.64900899999998,
+  "timestamp_measured_tps": 4.240456245074671,
+  "effective_measured_runs": 448,
+  "effective_measured_tps": 4.25,
+  "measured_time_ms": "105650.19",
+  "graph_nodes": "7284 (with bs=128), 8034 (with bs=1)",
+  "graph_splits": "302",
+  "cuda_model_buffer_mib": "14102.60",
+  "cpu_model_buffer_mib": "36372.88",
+  "cache_entries": 225,
+  "cache_allocated_mib": 13723.41,
+  "cache_line": "moe-dynamic-cache: layers=75 admissions=5179 resident-hits=89391 resident-misses=217225 resident-hit-rate=0.2915 executed-gpu-routes=89391 cpu-routes=217225 execution-hit-rate=0.2915 ready-slots=1262 copying-slots=0 split-enabled=34226/38327",
+  "coverage_line": "moe-dynamic-coverage: full-gpu-expert-layers=6/38327 cpu-dependent-layers=38321 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=74.9883 prefill-batches=148 prefill-ready-routes=0/17168 ready-route-hist=[0:4101,1:7820,2:9581,3:8620,4:5276,5:2241,6:582,7:100,8:6] gpu-route-hist=[0:4101,1:7820,2:9581,3:8620,4:5276,5:2241,6:582,7:100,8:6]",
+  "worker_line": "moe-promotion-worker: jobs=15537 batches=9069 urgent-jobs=0 urgent-batches=0 bytes=56382.09 MiB staging-bytes=32135.06 MiB staging-copy=3525.560 ms host-issue=8147.367 ms sync=1817.242 ms queue-delay=424623.657 ms max-depth=744",
+  "cuda_oom": false,
+  "gpu_samples": 622,
+  "gpu_util_mean": 25.580385852090032,
+  "gpu_util_median": 28.0,
+  "min_free_mib": 1988.0,
+  "max_used_mib": 30507.0,
+  "mean_power_w": 62.864180064308684,
+  "assertions": [
+    {
+      "name": "process_exit",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "measured_token_count",
+      "ok": true,
+      "detail": {
+        "reported": 448,
+        "timestamp": 448
+      }
+    },
+    {
+      "name": "no_cuda_oom",
+      "ok": true,
+      "detail": false
+    },
+    {
+      "name": "cache_allocated",
+      "ok": true,
+      "detail": 225
+    },
+    {
+      "name": "coverage_present",
+      "ok": true,
+      "detail": "moe-dynamic-coverage: full-gpu-expert-layers=6/38327 cpu-dependent-layers=38321 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=74.9883 prefill-batches=148 prefill-ready-routes=0/17168 ready-route-hist=[0:4101,1:7820,2:9581,3:8620,4:5276,5:2241,6:582,7:100,8:6] gpu-route-hist=[0:4101,1:7820,2:9581,3:8620,4:5276,5:2241,6:582,7:100,8:6]"
+    }
+  ],
+  "assertions_passed": true
+}

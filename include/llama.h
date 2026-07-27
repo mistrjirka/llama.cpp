@@ -1559,6 +1559,10 @@ extern "C" {
     LLAMA_API void                           llama_perf_context_print(const struct llama_context * ctx);
     LLAMA_API void                           llama_perf_context_reset(      struct llama_context * ctx);
 
+    // Experimental: rebuild and reserve the backend graph after changing
+    // runtime graph-shaping controls between benchmark phases.
+    LLAMA_API void                           llama_context_force_graph_rebuild(struct llama_context * ctx);
+
     // NOTE: the following work only with samplers constructed via llama_sampler_chain_init
     LLAMA_API struct llama_perf_sampler_data llama_perf_sampler      (const struct llama_sampler * chain);
     LLAMA_API void                           llama_perf_sampler_print(const struct llama_sampler * chain);

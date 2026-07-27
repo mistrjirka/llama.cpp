@@ -1,0 +1,3990 @@
+{
+  "primary_trace": "profiling/glm52-scale-2026-07-27/routes96.jsonl",
+  "primary_step_range": [
+    3,
+    97
+  ],
+  "shift_trace": "profiling/glm52-scale-2026-07-27/routes-alt96.jsonl",
+  "methodology": {
+    "evaluation": "route is scored against current residency before online score update",
+    "base_map": "measured GLM static-frequency ranking with actual 13/14/17 per-layer capacities",
+    "adaptation": "protected static core plus decayed-frequency adaptive tail",
+    "publication": "coarse token epochs with global migration budget, hysteresis, and minimum residence",
+    "limitation": "residency simulation only; does not model graph/map epoch publication or transfer overlap"
+  },
+  "configuration": {
+    "train_tokens": 62,
+    "tail_slots": [
+      1,
+      2,
+      4
+    ],
+    "epochs": [
+      8,
+      16
+    ],
+    "migration_budgets": [
+      1,
+      2,
+      4
+    ],
+    "ratios": [
+      1.15
+    ],
+    "min_residences": [
+      8
+    ],
+    "decay": 0.98
+  },
+  "studies": [
+    {
+      "label": "primary_trace_post_training",
+      "tokens": 33,
+      "static_baseline": {
+        "routes": 19800,
+        "hits": 5708,
+        "coverage": 0.2882828282828283
+      },
+      "results": [
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5736,
+          "coverage": 0.2896969696969697,
+          "core_coverage": 0.28055555555555556,
+          "tail_coverage": 0.009141414141414141,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 45.25,
+          "useful_tail_experts": 56,
+          "replaced_before_first_hit": 3,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 33,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2896969696969697
+            }
+          ],
+          "coverage_gain_over_static": 0.0014141414141413677,
+          "incremental_hits_per_transfer": 7.0
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5740,
+          "coverage": 0.2898989898989899,
+          "core_coverage": 0.28055555555555556,
+          "tail_coverage": 0.009343434343434343,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 23.125,
+          "useful_tail_experts": 57,
+          "replaced_before_first_hit": 6,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 38,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              73,
+              1
+            ],
+            [
+              26,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2898989898989899
+            }
+          ],
+          "coverage_gain_over_static": 0.001616161616161571,
+          "incremental_hits_per_transfer": 4.0
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5766,
+          "coverage": 0.2912121212121212,
+          "core_coverage": 0.28055555555555556,
+          "tail_coverage": 0.010656565656565656,
+          "transfers": 16,
+          "transfers_per_token": 0.48484848484848486,
+          "tail_hits_per_transfer": 13.1875,
+          "useful_tail_experts": 64,
+          "replaced_before_first_hit": 9,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 46,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              73,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              77,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              48,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2912121212121212
+            }
+          ],
+          "coverage_gain_over_static": 0.0029292929292928926,
+          "incremental_hits_per_transfer": 3.625
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5716,
+          "coverage": 0.2886868686868687,
+          "core_coverage": 0.28055555555555556,
+          "tail_coverage": 0.008131313131313132,
+          "transfers": 2,
+          "transfers_per_token": 0.06060606060606061,
+          "tail_hits_per_transfer": 80.5,
+          "useful_tail_experts": 54,
+          "replaced_before_first_hit": 1,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 11,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2886868686868687
+            }
+          ],
+          "coverage_gain_over_static": 0.00040404040404040664,
+          "incremental_hits_per_transfer": 4.0
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5726,
+          "coverage": 0.28919191919191917,
+          "core_coverage": 0.28055555555555556,
+          "tail_coverage": 0.008636363636363636,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 42.75,
+          "useful_tail_experts": 55,
+          "replaced_before_first_hit": 3,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 12,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28919191919191917
+            }
+          ],
+          "coverage_gain_over_static": 0.0009090909090908594,
+          "incremental_hits_per_transfer": 4.5
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5736,
+          "coverage": 0.2896969696969697,
+          "core_coverage": 0.28055555555555556,
+          "tail_coverage": 0.009141414141414141,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 22.625,
+          "useful_tail_experts": 56,
+          "replaced_before_first_hit": 6,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 14,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              77,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              73,
+              1
+            ],
+            [
+              26,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2896969696969697
+            }
+          ],
+          "coverage_gain_over_static": 0.0014141414141413677,
+          "incremental_hits_per_transfer": 3.5
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5736,
+          "coverage": 0.2896969696969697,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.01919191919191919,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 95.0,
+          "useful_tail_experts": 111,
+          "replaced_before_first_hit": 3,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 7,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              40,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2896969696969697
+            }
+          ],
+          "coverage_gain_over_static": 0.0014141414141413677,
+          "incremental_hits_per_transfer": 7.0
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5741,
+          "coverage": 0.28994949494949496,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.019444444444444445,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 48.125,
+          "useful_tail_experts": 112,
+          "replaced_before_first_hit": 7,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 9,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              73,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28994949494949496
+            }
+          ],
+          "coverage_gain_over_static": 0.0016666666666666496,
+          "incremental_hits_per_transfer": 4.125
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5773,
+          "coverage": 0.2915656565656566,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.02106060606060606,
+          "transfers": 16,
+          "transfers_per_token": 0.48484848484848486,
+          "tail_hits_per_transfer": 26.0625,
+          "useful_tail_experts": 119,
+          "replaced_before_first_hit": 9,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 9,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              73,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              77,
+              1
+            ],
+            [
+              30,
+              1
+            ],
+            [
+              76,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              40,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2915656565656566
+            }
+          ],
+          "coverage_gain_over_static": 0.003282828282828276,
+          "incremental_hits_per_transfer": 4.0625
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5720,
+          "coverage": 0.28888888888888886,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.018383838383838384,
+          "transfers": 2,
+          "transfers_per_token": 0.06060606060606061,
+          "tail_hits_per_transfer": 182.0,
+          "useful_tail_experts": 109,
+          "replaced_before_first_hit": 2,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 2,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              40,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28888888888888886
+            }
+          ],
+          "coverage_gain_over_static": 0.0006060606060605545,
+          "incremental_hits_per_transfer": 6.0
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5728,
+          "coverage": 0.28929292929292927,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.018787878787878787,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 93.0,
+          "useful_tail_experts": 110,
+          "replaced_before_first_hit": 4,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 2,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28929292929292927
+            }
+          ],
+          "coverage_gain_over_static": 0.001010101010100961,
+          "incremental_hits_per_transfer": 5.0
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5738,
+          "coverage": 0.2897979797979798,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.019292929292929292,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 47.75,
+          "useful_tail_experts": 111,
+          "replaced_before_first_hit": 8,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 3,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              77,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              73,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2897979797979798
+            }
+          ],
+          "coverage_gain_over_static": 0.0015151515151514694,
+          "incremental_hits_per_transfer": 3.75
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5738,
+          "coverage": 0.2897979797979798,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.03494949494949495,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 173.0,
+          "useful_tail_experts": 200,
+          "replaced_before_first_hit": 4,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              30,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2897979797979798
+            }
+          ],
+          "coverage_gain_over_static": 0.0015151515151514694,
+          "incremental_hits_per_transfer": 7.5
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5750,
+          "coverage": 0.2904040404040404,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.035555555555555556,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 88.0,
+          "useful_tail_experts": 203,
+          "replaced_before_first_hit": 8,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              30,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              50,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2904040404040404
+            }
+          ],
+          "coverage_gain_over_static": 0.0021212121212120794,
+          "incremental_hits_per_transfer": 5.25
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5791,
+          "coverage": 0.2924747474747475,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.037626262626262626,
+          "transfers": 16,
+          "transfers_per_token": 0.48484848484848486,
+          "tail_hits_per_transfer": 46.5625,
+          "useful_tail_experts": 209,
+          "replaced_before_first_hit": 14,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              73,
+              1
+            ],
+            [
+              30,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              77,
+              1
+            ],
+            [
+              76,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              29,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2924747474747475
+            }
+          ],
+          "coverage_gain_over_static": 0.004191919191919191,
+          "incremental_hits_per_transfer": 5.1875
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5720,
+          "coverage": 0.28888888888888886,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.03404040404040404,
+          "transfers": 2,
+          "transfers_per_token": 0.06060606060606061,
+          "tail_hits_per_transfer": 337.0,
+          "useful_tail_experts": 198,
+          "replaced_before_first_hit": 2,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              64,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28888888888888886
+            }
+          ],
+          "coverage_gain_over_static": 0.0006060606060605545,
+          "incremental_hits_per_transfer": 6.0
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5728,
+          "coverage": 0.28929292929292927,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.034444444444444444,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 170.5,
+          "useful_tail_experts": 199,
+          "replaced_before_first_hit": 4,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              30,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28929292929292927
+            }
+          ],
+          "coverage_gain_over_static": 0.001010101010100961,
+          "incremental_hits_per_transfer": 5.0
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5744,
+          "coverage": 0.2901010101010101,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.03525252525252525,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 87.25,
+          "useful_tail_experts": 201,
+          "replaced_before_first_hit": 8,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              30,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              31,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2901010101010101
+            }
+          ],
+          "coverage_gain_over_static": 0.0018181818181817744,
+          "incremental_hits_per_transfer": 4.5
+        }
+      ],
+      "pareto_frontier": [
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5720,
+          "coverage": 0.28888888888888886,
+          "core_coverage": 0.2705050505050505,
+          "tail_coverage": 0.018383838383838384,
+          "transfers": 2,
+          "transfers_per_token": 0.06060606060606061,
+          "tail_hits_per_transfer": 182.0,
+          "useful_tail_experts": 109,
+          "replaced_before_first_hit": 2,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 2,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              40,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28888888888888886
+            }
+          ],
+          "coverage_gain_over_static": 0.0006060606060605545,
+          "incremental_hits_per_transfer": 6.0
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5720,
+          "coverage": 0.28888888888888886,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.03404040404040404,
+          "transfers": 2,
+          "transfers_per_token": 0.06060606060606061,
+          "tail_hits_per_transfer": 337.0,
+          "useful_tail_experts": 198,
+          "replaced_before_first_hit": 2,
+          "epochs": 2,
+          "epochs_with_changes": 2,
+          "proposals_considered": 150,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              53,
+              1
+            ],
+            [
+              64,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.28888888888888886
+            }
+          ],
+          "coverage_gain_over_static": 0.0006060606060605545,
+          "incremental_hits_per_transfer": 6.0
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5738,
+          "coverage": 0.2897979797979798,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.03494949494949495,
+          "transfers": 4,
+          "transfers_per_token": 0.12121212121212122,
+          "tail_hits_per_transfer": 173.0,
+          "useful_tail_experts": 200,
+          "replaced_before_first_hit": 4,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              30,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2897979797979798
+            }
+          ],
+          "coverage_gain_over_static": 0.0015151515151514694,
+          "incremental_hits_per_transfer": 7.5
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5750,
+          "coverage": 0.2904040404040404,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.035555555555555556,
+          "transfers": 8,
+          "transfers_per_token": 0.24242424242424243,
+          "tail_hits_per_transfer": 88.0,
+          "useful_tail_experts": 203,
+          "replaced_before_first_hit": 8,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              30,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              29,
+              1
+            ],
+            [
+              40,
+              1
+            ],
+            [
+              50,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2904040404040404
+            }
+          ],
+          "coverage_gain_over_static": 0.0021212121212120794,
+          "incremental_hits_per_transfer": 5.25
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 19800,
+          "hits": 5791,
+          "coverage": 0.2924747474747475,
+          "core_coverage": 0.2548484848484848,
+          "tail_coverage": 0.037626262626262626,
+          "transfers": 16,
+          "transfers_per_token": 0.48484848484848486,
+          "tail_hits_per_transfer": 46.5625,
+          "useful_tail_experts": 209,
+          "replaced_before_first_hit": 14,
+          "epochs": 4,
+          "epochs_with_changes": 4,
+          "proposals_considered": 300,
+          "rejected_hysteresis": 0,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              18,
+              1
+            ],
+            [
+              75,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              73,
+              1
+            ],
+            [
+              30,
+              1
+            ],
+            [
+              50,
+              1
+            ],
+            [
+              77,
+              1
+            ],
+            [
+              76,
+              1
+            ],
+            [
+              64,
+              1
+            ],
+            [
+              29,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 33,
+              "coverage": 0.2924747474747475
+            }
+          ],
+          "coverage_gain_over_static": 0.004191919191919191,
+          "incremental_hits_per_transfer": 5.1875
+        }
+      ],
+      "best_under_transfer_budget": [
+        {
+          "budget": 0.1,
+          "result": {
+            "tail_slots": 2,
+            "epoch_tokens": 16,
+            "migrations_per_epoch": 1,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 19800,
+            "hits": 5720,
+            "coverage": 0.28888888888888886,
+            "core_coverage": 0.2705050505050505,
+            "tail_coverage": 0.018383838383838384,
+            "transfers": 2,
+            "transfers_per_token": 0.06060606060606061,
+            "tail_hits_per_transfer": 182.0,
+            "useful_tail_experts": 109,
+            "replaced_before_first_hit": 2,
+            "epochs": 2,
+            "epochs_with_changes": 2,
+            "proposals_considered": 150,
+            "rejected_hysteresis": 2,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                53,
+                1
+              ],
+              [
+                40,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 33,
+                "coverage": 0.28888888888888886
+              }
+            ],
+            "coverage_gain_over_static": 0.0006060606060605545,
+            "incremental_hits_per_transfer": 6.0
+          }
+        },
+        {
+          "budget": 0.25,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 2,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 19800,
+            "hits": 5750,
+            "coverage": 0.2904040404040404,
+            "core_coverage": 0.2548484848484848,
+            "tail_coverage": 0.035555555555555556,
+            "transfers": 8,
+            "transfers_per_token": 0.24242424242424243,
+            "tail_hits_per_transfer": 88.0,
+            "useful_tail_experts": 203,
+            "replaced_before_first_hit": 8,
+            "epochs": 4,
+            "epochs_with_changes": 4,
+            "proposals_considered": 300,
+            "rejected_hysteresis": 0,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                18,
+                1
+              ],
+              [
+                75,
+                1
+              ],
+              [
+                53,
+                1
+              ],
+              [
+                30,
+                1
+              ],
+              [
+                64,
+                1
+              ],
+              [
+                29,
+                1
+              ],
+              [
+                40,
+                1
+              ],
+              [
+                50,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 33,
+                "coverage": 0.2904040404040404
+              }
+            ],
+            "coverage_gain_over_static": 0.0021212121212120794,
+            "incremental_hits_per_transfer": 5.25
+          }
+        },
+        {
+          "budget": 0.5,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 19800,
+            "hits": 5791,
+            "coverage": 0.2924747474747475,
+            "core_coverage": 0.2548484848484848,
+            "tail_coverage": 0.037626262626262626,
+            "transfers": 16,
+            "transfers_per_token": 0.48484848484848486,
+            "tail_hits_per_transfer": 46.5625,
+            "useful_tail_experts": 209,
+            "replaced_before_first_hit": 14,
+            "epochs": 4,
+            "epochs_with_changes": 4,
+            "proposals_considered": 300,
+            "rejected_hysteresis": 0,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                18,
+                1
+              ],
+              [
+                75,
+                1
+              ],
+              [
+                53,
+                1
+              ],
+              [
+                73,
+                1
+              ],
+              [
+                30,
+                1
+              ],
+              [
+                50,
+                1
+              ],
+              [
+                77,
+                1
+              ],
+              [
+                76,
+                1
+              ],
+              [
+                64,
+                1
+              ],
+              [
+                29,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 33,
+                "coverage": 0.2924747474747475
+              }
+            ],
+            "coverage_gain_over_static": 0.004191919191919191,
+            "incremental_hits_per_transfer": 5.1875
+          }
+        },
+        {
+          "budget": 1.0,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 19800,
+            "hits": 5791,
+            "coverage": 0.2924747474747475,
+            "core_coverage": 0.2548484848484848,
+            "tail_coverage": 0.037626262626262626,
+            "transfers": 16,
+            "transfers_per_token": 0.48484848484848486,
+            "tail_hits_per_transfer": 46.5625,
+            "useful_tail_experts": 209,
+            "replaced_before_first_hit": 14,
+            "epochs": 4,
+            "epochs_with_changes": 4,
+            "proposals_considered": 300,
+            "rejected_hysteresis": 0,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                18,
+                1
+              ],
+              [
+                75,
+                1
+              ],
+              [
+                53,
+                1
+              ],
+              [
+                73,
+                1
+              ],
+              [
+                30,
+                1
+              ],
+              [
+                50,
+                1
+              ],
+              [
+                77,
+                1
+              ],
+              [
+                76,
+                1
+              ],
+              [
+                64,
+                1
+              ],
+              [
+                29,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 33,
+                "coverage": 0.2924747474747475
+              }
+            ],
+            "coverage_gain_over_static": 0.004191919191919191,
+            "incremental_hits_per_transfer": 5.1875
+          }
+        },
+        {
+          "budget": 2.0,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 19800,
+            "hits": 5791,
+            "coverage": 0.2924747474747475,
+            "core_coverage": 0.2548484848484848,
+            "tail_coverage": 0.037626262626262626,
+            "transfers": 16,
+            "transfers_per_token": 0.48484848484848486,
+            "tail_hits_per_transfer": 46.5625,
+            "useful_tail_experts": 209,
+            "replaced_before_first_hit": 14,
+            "epochs": 4,
+            "epochs_with_changes": 4,
+            "proposals_considered": 300,
+            "rejected_hysteresis": 0,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                18,
+                1
+              ],
+              [
+                75,
+                1
+              ],
+              [
+                53,
+                1
+              ],
+              [
+                73,
+                1
+              ],
+              [
+                30,
+                1
+              ],
+              [
+                50,
+                1
+              ],
+              [
+                77,
+                1
+              ],
+              [
+                76,
+                1
+              ],
+              [
+                64,
+                1
+              ],
+              [
+                29,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 33,
+                "coverage": 0.2924747474747475
+              }
+            ],
+            "coverage_gain_over_static": 0.004191919191919191,
+            "incremental_hits_per_transfer": 5.1875
+          }
+        },
+        {
+          "budget": 4.0,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 19800,
+            "hits": 5791,
+            "coverage": 0.2924747474747475,
+            "core_coverage": 0.2548484848484848,
+            "tail_coverage": 0.037626262626262626,
+            "transfers": 16,
+            "transfers_per_token": 0.48484848484848486,
+            "tail_hits_per_transfer": 46.5625,
+            "useful_tail_experts": 209,
+            "replaced_before_first_hit": 14,
+            "epochs": 4,
+            "epochs_with_changes": 4,
+            "proposals_considered": 300,
+            "rejected_hysteresis": 0,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                18,
+                1
+              ],
+              [
+                75,
+                1
+              ],
+              [
+                53,
+                1
+              ],
+              [
+                73,
+                1
+              ],
+              [
+                30,
+                1
+              ],
+              [
+                50,
+                1
+              ],
+              [
+                77,
+                1
+              ],
+              [
+                76,
+                1
+              ],
+              [
+                64,
+                1
+              ],
+              [
+                29,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 33,
+                "coverage": 0.2924747474747475
+              }
+            ],
+            "coverage_gain_over_static": 0.004191919191919191,
+            "incremental_hits_per_transfer": 5.1875
+          }
+        }
+      ]
+    },
+    {
+      "label": "secondary_trace_shift",
+      "tokens": 95,
+      "static_baseline": {
+        "routes": 57000,
+        "hits": 15770,
+        "coverage": 0.27666666666666667
+      },
+      "results": [
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16041,
+          "coverage": 0.28142105263157896,
+          "core_coverage": 0.2664385964912281,
+          "tail_coverage": 0.014982456140350877,
+          "transfers": 11,
+          "transfers_per_token": 0.11578947368421053,
+          "tail_hits_per_transfer": 77.63636363636364,
+          "useful_tail_experts": 77,
+          "replaced_before_first_hit": 4,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 151,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              57,
+              1
+            ],
+            [
+              58,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              48,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.2911458333333333
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2613440860215054
+            }
+          ],
+          "coverage_gain_over_static": 0.004754385964912289,
+          "incremental_hits_per_transfer": 24.636363636363637
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16255,
+          "coverage": 0.28517543859649125,
+          "core_coverage": 0.2664385964912281,
+          "tail_coverage": 0.01873684210526316,
+          "transfers": 22,
+          "transfers_per_token": 0.23157894736842105,
+          "tail_hits_per_transfer": 48.54545454545455,
+          "useful_tail_experts": 86,
+          "replaced_before_first_hit": 9,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 197,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              43,
+              1
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              61,
+              1
+            ],
+            [
+              20,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29294270833333336
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2691397849462366
+            }
+          ],
+          "coverage_gain_over_static": 0.008508771929824577,
+          "incremental_hits_per_transfer": 22.045454545454547
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16476,
+          "coverage": 0.2890526315789474,
+          "core_coverage": 0.2664385964912281,
+          "tail_coverage": 0.022614035087719298,
+          "transfers": 44,
+          "transfers_per_token": 0.4631578947368421,
+          "tail_hits_per_transfer": 29.295454545454547,
+          "useful_tail_experts": 99,
+          "replaced_before_first_hit": 15,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 286,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              52,
+              2
+            ],
+            [
+              72,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              25,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              20,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.2950520833333333
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.27666666666666667
+            }
+          ],
+          "coverage_gain_over_static": 0.012385964912280722,
+          "incremental_hits_per_transfer": 16.045454545454547
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 15914,
+          "coverage": 0.2791929824561403,
+          "core_coverage": 0.2664385964912281,
+          "tail_coverage": 0.01275438596491228,
+          "transfers": 5,
+          "transfers_per_token": 0.05263157894736842,
+          "tail_hits_per_transfer": 145.4,
+          "useful_tail_experts": 74,
+          "replaced_before_first_hit": 1,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 43,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              69,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              20,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.28989583333333335
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.25709677419354837
+            }
+          ],
+          "coverage_gain_over_static": 0.0025263157894736543,
+          "incremental_hits_per_transfer": 28.8
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16013,
+          "coverage": 0.28092982456140353,
+          "core_coverage": 0.2664385964912281,
+          "tail_coverage": 0.014491228070175438,
+          "transfers": 10,
+          "transfers_per_token": 0.10526315789473684,
+          "tail_hits_per_transfer": 82.6,
+          "useful_tail_experts": 76,
+          "replaced_before_first_hit": 4,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 53,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              69,
+              1
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              57,
+              1
+            ],
+            [
+              58,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              48,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.290703125
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.260752688172043
+            }
+          ],
+          "coverage_gain_over_static": 0.004263157894736858,
+          "incremental_hits_per_transfer": 24.3
+        },
+        {
+          "tail_slots": 1,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16207,
+          "coverage": 0.2843333333333333,
+          "core_coverage": 0.2664385964912281,
+          "tail_coverage": 0.017894736842105262,
+          "transfers": 20,
+          "transfers_per_token": 0.21052631578947367,
+          "tail_hits_per_transfer": 51.0,
+          "useful_tail_experts": 84,
+          "replaced_before_first_hit": 8,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 69,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              69,
+              1
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              61,
+              1
+            ],
+            [
+              58,
+              1
+            ],
+            [
+              57,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29205729166666666
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.26838709677419353
+            }
+          ],
+          "coverage_gain_over_static": 0.007666666666666655,
+          "incremental_hits_per_transfer": 21.85
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16068,
+          "coverage": 0.28189473684210525,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.02607017543859649,
+          "transfers": 11,
+          "transfers_per_token": 0.11578947368421053,
+          "tail_hits_per_transfer": 135.0909090909091,
+          "useful_tail_experts": 143,
+          "replaced_before_first_hit": 5,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 42,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              63,
+              2
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              57,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              49,
+              1
+            ],
+            [
+              20,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29125
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2625806451612903
+            }
+          ],
+          "coverage_gain_over_static": 0.005228070175438582,
+          "incremental_hits_per_transfer": 27.09090909090909
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16286,
+          "coverage": 0.28571929824561404,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.029894736842105262,
+          "transfers": 22,
+          "transfers_per_token": 0.23157894736842105,
+          "tail_hits_per_transfer": 77.45454545454545,
+          "useful_tail_experts": 150,
+          "replaced_before_first_hit": 10,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 51,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              61,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29244791666666664
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.27182795698924733
+            }
+          ],
+          "coverage_gain_over_static": 0.009052631578947368,
+          "incremental_hits_per_transfer": 23.454545454545453
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16479,
+          "coverage": 0.28910526315789475,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.033280701754385966,
+          "transfers": 44,
+          "transfers_per_token": 0.4631578947368421,
+          "tail_hits_per_transfer": 43.11363636363637,
+          "useful_tail_experts": 166,
+          "replaced_before_first_hit": 18,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 68,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              48,
+              2
+            ],
+            [
+              43,
+              2
+            ],
+            [
+              53,
+              2
+            ],
+            [
+              19,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              52,
+              2
+            ],
+            [
+              60,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              74,
+              2
+            ],
+            [
+              25,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29484375
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.27725806451612905
+            }
+          ],
+          "coverage_gain_over_static": 0.012438596491228082,
+          "incremental_hits_per_transfer": 16.113636363636363
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 15927,
+          "coverage": 0.27942105263157896,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.023596491228070175,
+          "transfers": 5,
+          "transfers_per_token": 0.05263157894736842,
+          "tail_hits_per_transfer": 269.0,
+          "useful_tail_experts": 139,
+          "replaced_before_first_hit": 2,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 7,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              69,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              53,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.2900260416666667
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2575268817204301
+            }
+          ],
+          "coverage_gain_over_static": 0.002754385964912287,
+          "incremental_hits_per_transfer": 31.4
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16019,
+          "coverage": 0.28103508771929825,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.025210526315789475,
+          "transfers": 10,
+          "transfers_per_token": 0.10526315789473684,
+          "tail_hits_per_transfer": 143.7,
+          "useful_tail_experts": 142,
+          "replaced_before_first_hit": 4,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 8,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              63,
+              2
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              57,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              49,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.290703125
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2610752688172043
+            }
+          ],
+          "coverage_gain_over_static": 0.004368421052631577,
+          "incremental_hits_per_transfer": 24.9
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16233,
+          "coverage": 0.28478947368421054,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.028964912280701756,
+          "transfers": 20,
+          "transfers_per_token": 0.21052631578947367,
+          "tail_hits_per_transfer": 82.55,
+          "useful_tail_experts": 147,
+          "replaced_before_first_hit": 10,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 12,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              49,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29223958333333333
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.26940860215053763
+            }
+          ],
+          "coverage_gain_over_static": 0.008122807017543865,
+          "incremental_hits_per_transfer": 23.15
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16063,
+          "coverage": 0.2818070175438597,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.047719298245614036,
+          "transfers": 11,
+          "transfers_per_token": 0.11578947368421053,
+          "tail_hits_per_transfer": 247.27272727272728,
+          "useful_tail_experts": 280,
+          "replaced_before_first_hit": 8,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 15,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              3
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              49,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29125
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.26231182795698926
+            }
+          ],
+          "coverage_gain_over_static": 0.005140350877193001,
+          "incremental_hits_per_transfer": 26.636363636363637
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16304,
+          "coverage": 0.28603508771929825,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.05194736842105263,
+          "transfers": 22,
+          "transfers_per_token": 0.23157894736842105,
+          "tail_hits_per_transfer": 134.5909090909091,
+          "useful_tail_experts": 288,
+          "replaced_before_first_hit": 13,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 16,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              3
+            ],
+            [
+              48,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              53,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29359375
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.27043010752688174
+            }
+          ],
+          "coverage_gain_over_static": 0.009368421052631581,
+          "incremental_hits_per_transfer": 24.272727272727273
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16522,
+          "coverage": 0.28985964912280704,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.0557719298245614,
+          "transfers": 44,
+          "transfers_per_token": 0.4631578947368421,
+          "tail_hits_per_transfer": 72.25,
+          "useful_tail_experts": 301,
+          "replaced_before_first_hit": 28,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 12,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              48,
+              3
+            ],
+            [
+              19,
+              3
+            ],
+            [
+              43,
+              2
+            ],
+            [
+              53,
+              2
+            ],
+            [
+              62,
+              2
+            ],
+            [
+              60,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              37,
+              2
+            ],
+            [
+              74,
+              2
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29528645833333333
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2786559139784946
+            }
+          ],
+          "coverage_gain_over_static": 0.013192982456140367,
+          "incremental_hits_per_transfer": 17.09090909090909
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 15896,
+          "coverage": 0.27887719298245617,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.044789473684210525,
+          "transfers": 5,
+          "transfers_per_token": 0.05263157894736842,
+          "tail_hits_per_transfer": 510.6,
+          "useful_tail_experts": 276,
+          "replaced_before_first_hit": 5,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 1,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              53,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29018229166666665
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.25553763440860217
+            }
+          ],
+          "coverage_gain_over_static": 0.002210526315789496,
+          "incremental_hits_per_transfer": 25.2
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16040,
+          "coverage": 0.2814035087719298,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.047315789473684214,
+          "transfers": 10,
+          "transfers_per_token": 0.10526315789473684,
+          "tail_hits_per_transfer": 269.7,
+          "useful_tail_experts": 280,
+          "replaced_before_first_hit": 7,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 1,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              49,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29072916666666665
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2621505376344086
+            }
+          ],
+          "coverage_gain_over_static": 0.00473684210526315,
+          "incremental_hits_per_transfer": 27.0
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16250,
+          "coverage": 0.2850877192982456,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.051,
+          "transfers": 20,
+          "transfers_per_token": 0.21052631578947367,
+          "tail_hits_per_transfer": 145.35,
+          "useful_tail_experts": 285,
+          "replaced_before_first_hit": 13,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 1,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              3
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              48,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.2925
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.26978494623655913
+            }
+          ],
+          "coverage_gain_over_static": 0.00842105263157894,
+          "incremental_hits_per_transfer": 24.0
+        }
+      ],
+      "pareto_frontier": [
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 15927,
+          "coverage": 0.27942105263157896,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.023596491228070175,
+          "transfers": 5,
+          "transfers_per_token": 0.05263157894736842,
+          "tail_hits_per_transfer": 269.0,
+          "useful_tail_experts": 139,
+          "replaced_before_first_hit": 2,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 7,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              69,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              53,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.2900260416666667
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2575268817204301
+            }
+          ],
+          "coverage_gain_over_static": 0.002754385964912287,
+          "incremental_hits_per_transfer": 31.4
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16040,
+          "coverage": 0.2814035087719298,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.047315789473684214,
+          "transfers": 10,
+          "transfers_per_token": 0.10526315789473684,
+          "tail_hits_per_transfer": 269.7,
+          "useful_tail_experts": 280,
+          "replaced_before_first_hit": 7,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 1,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              63,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              49,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29072916666666665
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2621505376344086
+            }
+          ],
+          "coverage_gain_over_static": 0.00473684210526315,
+          "incremental_hits_per_transfer": 27.0
+        },
+        {
+          "tail_slots": 2,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 1,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16068,
+          "coverage": 0.28189473684210525,
+          "core_coverage": 0.2558245614035088,
+          "tail_coverage": 0.02607017543859649,
+          "transfers": 11,
+          "transfers_per_token": 0.11578947368421053,
+          "tail_hits_per_transfer": 135.0909090909091,
+          "useful_tail_experts": 143,
+          "replaced_before_first_hit": 5,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 42,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              63,
+              2
+            ],
+            [
+              48,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              19,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              67,
+              1
+            ],
+            [
+              57,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              49,
+              1
+            ],
+            [
+              20,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29125
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2625806451612903
+            }
+          ],
+          "coverage_gain_over_static": 0.005228070175438582,
+          "incremental_hits_per_transfer": 27.09090909090909
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 16,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16250,
+          "coverage": 0.2850877192982456,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.051,
+          "transfers": 20,
+          "transfers_per_token": 0.21052631578947367,
+          "tail_hits_per_transfer": 145.35,
+          "useful_tail_experts": 285,
+          "replaced_before_first_hit": 13,
+          "epochs": 5,
+          "epochs_with_changes": 5,
+          "proposals_considered": 375,
+          "rejected_hysteresis": 1,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              3
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              53,
+              1
+            ],
+            [
+              48,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.2925
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.26978494623655913
+            }
+          ],
+          "coverage_gain_over_static": 0.00842105263157894,
+          "incremental_hits_per_transfer": 24.0
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 2,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16304,
+          "coverage": 0.28603508771929825,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.05194736842105263,
+          "transfers": 22,
+          "transfers_per_token": 0.23157894736842105,
+          "tail_hits_per_transfer": 134.5909090909091,
+          "useful_tail_experts": 288,
+          "replaced_before_first_hit": 13,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 16,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              19,
+              3
+            ],
+            [
+              48,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              43,
+              1
+            ],
+            [
+              69,
+              1
+            ],
+            [
+              18,
+              1
+            ],
+            [
+              20,
+              1
+            ],
+            [
+              60,
+              1
+            ],
+            [
+              53,
+              1
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29359375
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.27043010752688174
+            }
+          ],
+          "coverage_gain_over_static": 0.009368421052631581,
+          "incremental_hits_per_transfer": 24.272727272727273
+        },
+        {
+          "tail_slots": 4,
+          "epoch_tokens": 8,
+          "migrations_per_epoch": 4,
+          "admission_ratio": 1.15,
+          "min_residence": 8,
+          "decay": 0.98,
+          "routes": 57000,
+          "hits": 16522,
+          "coverage": 0.28985964912280704,
+          "core_coverage": 0.23408771929824562,
+          "tail_coverage": 0.0557719298245614,
+          "transfers": 44,
+          "transfers_per_token": 0.4631578947368421,
+          "tail_hits_per_transfer": 72.25,
+          "useful_tail_experts": 301,
+          "replaced_before_first_hit": 28,
+          "epochs": 11,
+          "epochs_with_changes": 11,
+          "proposals_considered": 825,
+          "rejected_hysteresis": 12,
+          "rejected_min_residence": 0,
+          "most_migrated_layers": [
+            [
+              48,
+              3
+            ],
+            [
+              19,
+              3
+            ],
+            [
+              43,
+              2
+            ],
+            [
+              53,
+              2
+            ],
+            [
+              62,
+              2
+            ],
+            [
+              60,
+              2
+            ],
+            [
+              63,
+              2
+            ],
+            [
+              67,
+              2
+            ],
+            [
+              37,
+              2
+            ],
+            [
+              74,
+              2
+            ]
+          ],
+          "coverage_by_64_token_window": [
+            {
+              "token_end": 64,
+              "coverage": 0.29528645833333333
+            },
+            {
+              "token_end": 95,
+              "coverage": 0.2786559139784946
+            }
+          ],
+          "coverage_gain_over_static": 0.013192982456140367,
+          "incremental_hits_per_transfer": 17.09090909090909
+        }
+      ],
+      "best_under_transfer_budget": [
+        {
+          "budget": 0.1,
+          "result": {
+            "tail_slots": 2,
+            "epoch_tokens": 16,
+            "migrations_per_epoch": 1,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 57000,
+            "hits": 15927,
+            "coverage": 0.27942105263157896,
+            "core_coverage": 0.2558245614035088,
+            "tail_coverage": 0.023596491228070175,
+            "transfers": 5,
+            "transfers_per_token": 0.05263157894736842,
+            "tail_hits_per_transfer": 269.0,
+            "useful_tail_experts": 139,
+            "replaced_before_first_hit": 2,
+            "epochs": 5,
+            "epochs_with_changes": 5,
+            "proposals_considered": 375,
+            "rejected_hysteresis": 7,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                69,
+                1
+              ],
+              [
+                19,
+                1
+              ],
+              [
+                63,
+                1
+              ],
+              [
+                67,
+                1
+              ],
+              [
+                53,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 64,
+                "coverage": 0.2900260416666667
+              },
+              {
+                "token_end": 95,
+                "coverage": 0.2575268817204301
+              }
+            ],
+            "coverage_gain_over_static": 0.002754385964912287,
+            "incremental_hits_per_transfer": 31.4
+          }
+        },
+        {
+          "budget": 0.25,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 2,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 57000,
+            "hits": 16304,
+            "coverage": 0.28603508771929825,
+            "core_coverage": 0.23408771929824562,
+            "tail_coverage": 0.05194736842105263,
+            "transfers": 22,
+            "transfers_per_token": 0.23157894736842105,
+            "tail_hits_per_transfer": 134.5909090909091,
+            "useful_tail_experts": 288,
+            "replaced_before_first_hit": 13,
+            "epochs": 11,
+            "epochs_with_changes": 11,
+            "proposals_considered": 825,
+            "rejected_hysteresis": 16,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                19,
+                3
+              ],
+              [
+                48,
+                2
+              ],
+              [
+                63,
+                2
+              ],
+              [
+                67,
+                2
+              ],
+              [
+                43,
+                1
+              ],
+              [
+                69,
+                1
+              ],
+              [
+                18,
+                1
+              ],
+              [
+                20,
+                1
+              ],
+              [
+                60,
+                1
+              ],
+              [
+                53,
+                1
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 64,
+                "coverage": 0.29359375
+              },
+              {
+                "token_end": 95,
+                "coverage": 0.27043010752688174
+              }
+            ],
+            "coverage_gain_over_static": 0.009368421052631581,
+            "incremental_hits_per_transfer": 24.272727272727273
+          }
+        },
+        {
+          "budget": 0.5,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 57000,
+            "hits": 16522,
+            "coverage": 0.28985964912280704,
+            "core_coverage": 0.23408771929824562,
+            "tail_coverage": 0.0557719298245614,
+            "transfers": 44,
+            "transfers_per_token": 0.4631578947368421,
+            "tail_hits_per_transfer": 72.25,
+            "useful_tail_experts": 301,
+            "replaced_before_first_hit": 28,
+            "epochs": 11,
+            "epochs_with_changes": 11,
+            "proposals_considered": 825,
+            "rejected_hysteresis": 12,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                48,
+                3
+              ],
+              [
+                19,
+                3
+              ],
+              [
+                43,
+                2
+              ],
+              [
+                53,
+                2
+              ],
+              [
+                62,
+                2
+              ],
+              [
+                60,
+                2
+              ],
+              [
+                63,
+                2
+              ],
+              [
+                67,
+                2
+              ],
+              [
+                37,
+                2
+              ],
+              [
+                74,
+                2
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 64,
+                "coverage": 0.29528645833333333
+              },
+              {
+                "token_end": 95,
+                "coverage": 0.2786559139784946
+              }
+            ],
+            "coverage_gain_over_static": 0.013192982456140367,
+            "incremental_hits_per_transfer": 17.09090909090909
+          }
+        },
+        {
+          "budget": 1.0,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 57000,
+            "hits": 16522,
+            "coverage": 0.28985964912280704,
+            "core_coverage": 0.23408771929824562,
+            "tail_coverage": 0.0557719298245614,
+            "transfers": 44,
+            "transfers_per_token": 0.4631578947368421,
+            "tail_hits_per_transfer": 72.25,
+            "useful_tail_experts": 301,
+            "replaced_before_first_hit": 28,
+            "epochs": 11,
+            "epochs_with_changes": 11,
+            "proposals_considered": 825,
+            "rejected_hysteresis": 12,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                48,
+                3
+              ],
+              [
+                19,
+                3
+              ],
+              [
+                43,
+                2
+              ],
+              [
+                53,
+                2
+              ],
+              [
+                62,
+                2
+              ],
+              [
+                60,
+                2
+              ],
+              [
+                63,
+                2
+              ],
+              [
+                67,
+                2
+              ],
+              [
+                37,
+                2
+              ],
+              [
+                74,
+                2
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 64,
+                "coverage": 0.29528645833333333
+              },
+              {
+                "token_end": 95,
+                "coverage": 0.2786559139784946
+              }
+            ],
+            "coverage_gain_over_static": 0.013192982456140367,
+            "incremental_hits_per_transfer": 17.09090909090909
+          }
+        },
+        {
+          "budget": 2.0,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 57000,
+            "hits": 16522,
+            "coverage": 0.28985964912280704,
+            "core_coverage": 0.23408771929824562,
+            "tail_coverage": 0.0557719298245614,
+            "transfers": 44,
+            "transfers_per_token": 0.4631578947368421,
+            "tail_hits_per_transfer": 72.25,
+            "useful_tail_experts": 301,
+            "replaced_before_first_hit": 28,
+            "epochs": 11,
+            "epochs_with_changes": 11,
+            "proposals_considered": 825,
+            "rejected_hysteresis": 12,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                48,
+                3
+              ],
+              [
+                19,
+                3
+              ],
+              [
+                43,
+                2
+              ],
+              [
+                53,
+                2
+              ],
+              [
+                62,
+                2
+              ],
+              [
+                60,
+                2
+              ],
+              [
+                63,
+                2
+              ],
+              [
+                67,
+                2
+              ],
+              [
+                37,
+                2
+              ],
+              [
+                74,
+                2
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 64,
+                "coverage": 0.29528645833333333
+              },
+              {
+                "token_end": 95,
+                "coverage": 0.2786559139784946
+              }
+            ],
+            "coverage_gain_over_static": 0.013192982456140367,
+            "incremental_hits_per_transfer": 17.09090909090909
+          }
+        },
+        {
+          "budget": 4.0,
+          "result": {
+            "tail_slots": 4,
+            "epoch_tokens": 8,
+            "migrations_per_epoch": 4,
+            "admission_ratio": 1.15,
+            "min_residence": 8,
+            "decay": 0.98,
+            "routes": 57000,
+            "hits": 16522,
+            "coverage": 0.28985964912280704,
+            "core_coverage": 0.23408771929824562,
+            "tail_coverage": 0.0557719298245614,
+            "transfers": 44,
+            "transfers_per_token": 0.4631578947368421,
+            "tail_hits_per_transfer": 72.25,
+            "useful_tail_experts": 301,
+            "replaced_before_first_hit": 28,
+            "epochs": 11,
+            "epochs_with_changes": 11,
+            "proposals_considered": 825,
+            "rejected_hysteresis": 12,
+            "rejected_min_residence": 0,
+            "most_migrated_layers": [
+              [
+                48,
+                3
+              ],
+              [
+                19,
+                3
+              ],
+              [
+                43,
+                2
+              ],
+              [
+                53,
+                2
+              ],
+              [
+                62,
+                2
+              ],
+              [
+                60,
+                2
+              ],
+              [
+                63,
+                2
+              ],
+              [
+                67,
+                2
+              ],
+              [
+                37,
+                2
+              ],
+              [
+                74,
+                2
+              ]
+            ],
+            "coverage_by_64_token_window": [
+              {
+                "token_end": 64,
+                "coverage": 0.29528645833333333
+              },
+              {
+                "token_end": 95,
+                "coverage": 0.2786559139784946
+              }
+            ],
+            "coverage_gain_over_static": 0.013192982456140367,
+            "incremental_hits_per_transfer": 17.09090909090909
+          }
+        }
+      ]
+    }
+  ]
+}

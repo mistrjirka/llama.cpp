@@ -1564,6 +1564,14 @@ static void ggml_compute_forward_mul_mat_id(
     // row groups
     const int n_ids = ids->ne[0]; // n_expert_used
     const int n_as  = ne02;       // n_expert
+    const bool masked = ggml_get_op_params_i32(dst, 0) != 0;
+    const int32_t dynamic_miss_layer_plus_one = ggml_get_op_params_i32(dst, 4);
+    const int32_t dynamic_miss_n_expert = ggml_get_op_params_i32(dst, 5);
+    const bool dynamic_miss_mask = dynamic_miss_layer_plus_one > 0;
+    if (dynamic_miss_mask) {
+        GGML_ASSERT(masked);
+        GGML_ASSERT(dynamic_miss_n_expert == n_as);
+    }
 
     void * wdata_cur = params->wdata;
 
@@ -1579,6 +1587,10 @@ static void ggml_compute_forward_mul_mat_id(
 
     char (*atomic_current_chunk)[CACHE_LINE_SIZE] = // [n_as]
         incr_ptr_aligned(&wdata_cur, CACHE_LINE_SIZE * n_as, CACHE_LINE_SIZE);
+
+    int32_t * dynamic_slot_map = dynamic_miss_mask
+        ? incr_ptr_aligned(&wdata_cur, n_as * sizeof(int32_t), sizeof(int64_t))
+        : NULL;
 
     GGML_ASSERT(params->wsize >= (size_t)((char *) wdata_cur - (char *) params->wdata));
 
@@ -1622,17 +1634,39 @@ static void ggml_compute_forward_mul_mat_id(
     if (ith == 0) {
         // initialize matrix_row_counts
         memset(matrix_row_counts, 0, n_as*sizeof(int64_t));
+        bool has_masked_routes = false;
+        if (dynamic_miss_mask) {
+            const bool have_slot_map = ggml_backend_moe_dynamic_get_slot_map(
+                dynamic_miss_layer_plus_one - 1, dynamic_slot_map, dynamic_miss_n_expert);
+            GGML_ASSERT(have_slot_map);
+        }
 
         // group rows by src0 matrix
         for (int64_t iid1 = 0; iid1 < ids->ne[1]; ++iid1) {
             for (int id = 0; id < n_ids; ++id) {
                 const int32_t i02 = *(const int32_t *) ((const char *) ids->data + iid1*ids->nb[1] + id*ids->nb[0]);
 
-                assert(i02 >= 0 && i02 < n_as);
+                if (i02 < 0) {
+                    GGML_ASSERT(masked && i02 == -1);
+                    has_masked_routes = true;
+                    continue;
+                }
+                GGML_ASSERT(i02 < n_as);
+                if (dynamic_miss_mask && dynamic_slot_map[i02] >= 0) {
+                    has_masked_routes = true;
+                    continue;
+                }
 
                 MMID_MATRIX_ROW(i02, matrix_row_counts[i02]) = (struct mmid_row_mapping) {id, iid1};
                 matrix_row_counts[i02] += 1;
             }
+        }
+
+        // The split cold branch is marked as masked even on tokens where every
+        // route remains on CPU. Avoid a full destination write in that common
+        // case; it is needed only when skipped routes must explicitly be zero.
+        if (has_masked_routes) {
+            memset(dst->data, 0, ggml_nbytes(dst));
         }
     }
 
@@ -2871,6 +2905,10 @@ struct ggml_cplan ggml_graph_plan(
                         cur += n_as*ids->ne[0]*ids->ne[1]*sizeof(struct mmid_row_mapping) + sizeof(int64_t);
                         // atomic_current_chunk
                         cur += CACHE_LINE_SIZE*n_as + CACHE_LINE_SIZE;
+                        // optional immutable dynamic-residency map for the exact cold branch
+                        if (ggml_get_op_params_i32(node, 4) > 0) {
+                            cur += n_as*sizeof(int32_t) + sizeof(int64_t);
+                        }
                     } break;
                 case GGML_OP_OUT_PROD:
                     {

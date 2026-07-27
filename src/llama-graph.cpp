@@ -15,10 +15,16 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <memory>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 // dedup helpers
@@ -1324,6 +1330,7 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     arch             (params.arch),
     hparams          (params.hparams),
     cparams          (params.cparams),
+    moe_dynamic_cache_eligible(params.moe_dynamic_cache_eligible),
     ubatch           (params.ubatch),
     n_embd           (hparams.n_embd),
     n_layer          (hparams.n_layer()),
@@ -1752,6 +1759,280 @@ ggml_tensor * llm_graph_context::build_ffn(
     return cur;
 }
 
+static int64_t llm_graph_moe_static_split_slots() {
+    const char * value = std::getenv("GGML_MOE_STATIC_SPLIT_SLOTS");
+    if (value == nullptr || value[0] == '\0') {
+        return 0;
+    }
+    char * end = nullptr;
+    const long long parsed = std::strtoll(value, &end, 10);
+    return end != value && *end == '\0' && parsed > 0 ? parsed : 0;
+}
+
+struct llm_graph_moe_static_mask_params {
+    bool keep_hot = false;
+    std::vector<int32_t> slot_by_expert;
+};
+
+struct llm_graph_moe_static_map_registry {
+    std::mutex mutex;
+    std::string loaded_path;
+    std::vector<std::vector<int32_t>> experts_by_layer;
+    std::unordered_map<std::string, std::unique_ptr<llm_graph_moe_static_mask_params>> params;
+};
+
+static llm_graph_moe_static_map_registry & llm_graph_moe_static_map_registry_get() {
+    static llm_graph_moe_static_map_registry registry;
+    return registry;
+}
+
+static void llm_graph_moe_static_map_load(
+        llm_graph_moe_static_map_registry & registry,
+        const std::string & path) {
+    if (registry.loaded_path == path) {
+        return;
+    }
+
+    registry.loaded_path = path;
+    registry.experts_by_layer.clear();
+    registry.params.clear();
+    if (path.empty()) {
+        return;
+    }
+
+    std::ifstream input(path);
+    if (!input) {
+        LLAMA_LOG_WARN("moe static split: unable to open expert map %s; using identity mapping\n", path.c_str());
+        return;
+    }
+
+    std::string line;
+    while (std::getline(input, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        std::istringstream stream(line);
+        int layer = -1;
+        stream >> layer;
+        if (layer < 0) {
+            continue;
+        }
+        if ((size_t) layer >= registry.experts_by_layer.size()) {
+            registry.experts_by_layer.resize((size_t) layer + 1);
+        }
+        int expert = -1;
+        while (stream >> expert) {
+            registry.experts_by_layer[(size_t) layer].push_back(expert);
+        }
+    }
+}
+
+static llm_graph_moe_static_mask_params * llm_graph_moe_static_mask_params_get(
+        int layer,
+        int32_t n_expert,
+        int32_t n_hot,
+        bool keep_hot) {
+    auto & registry = llm_graph_moe_static_map_registry_get();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+
+    const char * path_env = std::getenv("GGML_MOE_STATIC_SPLIT_MAP");
+    const std::string path = path_env != nullptr ? path_env : "";
+    llm_graph_moe_static_map_load(registry, path);
+
+    const std::string key = path + ":" + std::to_string(layer) + ":" +
+        std::to_string(n_expert) + ":" + std::to_string(n_hot) + ":" +
+        (keep_hot ? "hot" : "cold");
+    auto found = registry.params.find(key);
+    if (found != registry.params.end()) {
+        return found->second.get();
+    }
+
+    auto params = std::make_unique<llm_graph_moe_static_mask_params>();
+    params->keep_hot = keep_hot;
+    params->slot_by_expert.assign((size_t) n_expert, -1);
+
+    std::vector<uint8_t> used((size_t) n_expert, 0);
+    int32_t slot = 0;
+    if (layer >= 0 && (size_t) layer < registry.experts_by_layer.size()) {
+        for (int32_t expert : registry.experts_by_layer[(size_t) layer]) {
+            if (slot >= n_hot) {
+                break;
+            }
+            if (expert < 0 || expert >= n_expert || used[(size_t) expert]) {
+                continue;
+            }
+            params->slot_by_expert[(size_t) expert] = slot++;
+            used[(size_t) expert] = 1;
+        }
+    }
+    for (int32_t expert = 0; expert < n_expert && slot < n_hot; ++expert) {
+        if (used[(size_t) expert]) {
+            continue;
+        }
+        params->slot_by_expert[(size_t) expert] = slot++;
+    }
+
+    auto * result = params.get();
+    registry.params.emplace(key, std::move(params));
+    return result;
+}
+
+static bool llm_graph_moe_dynamic_layer_selected(int32_t layer) {
+    const char * value = std::getenv("GGML_MOE_DYNAMIC_SPLIT_LAYERS");
+    if (value == nullptr || value[0] == '\0') {
+        return true;
+    }
+
+    std::istringstream stream(value);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+        const size_t dash = token.find('-');
+        if (dash == std::string::npos) {
+            char * end = nullptr;
+            const long parsed = std::strtol(token.c_str(), &end, 10);
+            if (end != token.c_str() && *end == '\0' && parsed == layer) {
+                return true;
+            }
+            continue;
+        }
+        const std::string first_text = token.substr(0, dash);
+        const std::string last_text = token.substr(dash + 1);
+        char * first_end = nullptr;
+        char * last_end = nullptr;
+        const long first = std::strtol(first_text.c_str(), &first_end, 10);
+        const long last = std::strtol(last_text.c_str(), &last_end, 10);
+        if (first_end != first_text.c_str() && *first_end == '\0' &&
+            last_end != last_text.c_str() && *last_end == '\0' &&
+            layer >= std::min(first, last) && layer <= std::max(first, last)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int64_t llm_graph_moe_dynamic_split_slots() {
+    const char * value = std::getenv("GGML_MOE_DYNAMIC_SPLIT_SLOTS");
+    if (value == nullptr || value[0] == '\0') {
+        return 0;
+    }
+    if (std::strcmp(value, "auto") == 0 || std::strcmp(value, "max") == 0) {
+        return -1;
+    }
+    char * end = nullptr;
+    const long long parsed = std::strtoll(value, &end, 10);
+    return end != value && *end == '\0' && parsed > 0 ? parsed : 0;
+}
+
+struct llm_graph_moe_dynamic_mask_params {
+    int32_t layer = -1;
+    int32_t n_expert = 0;
+    int32_t n_slots = 0;
+    int32_t n_routes_per_token = 0;
+};
+
+static llm_graph_moe_dynamic_mask_params * llm_graph_moe_dynamic_mask_params_get(
+        int32_t layer,
+        int32_t n_expert,
+        int32_t n_slots,
+        int32_t n_routes_per_token) {
+    static std::mutex mutex;
+    static std::unordered_map<std::string, std::unique_ptr<llm_graph_moe_dynamic_mask_params>> params;
+    std::lock_guard<std::mutex> lock(mutex);
+    const std::string key = std::to_string(layer) + ":" + std::to_string(n_expert) + ":" +
+        std::to_string(n_slots) + ":" + std::to_string(n_routes_per_token);
+    auto found = params.find(key);
+    if (found != params.end()) {
+        return found->second.get();
+    }
+    auto value = std::make_unique<llm_graph_moe_dynamic_mask_params>();
+    value->layer = layer;
+    value->n_expert = n_expert;
+    value->n_slots = n_slots;
+    value->n_routes_per_token = n_routes_per_token;
+    auto * result = value.get();
+    params.emplace(key, std::move(value));
+    return result;
+}
+
+static void llm_graph_moe_dynamic_observe(
+        ggml_tensor * dst,
+        const ggml_tensor * src,
+        int ith,
+        int nth,
+        void * userdata) {
+    GGML_UNUSED(nth);
+    if (ith != 0) {
+        return;
+    }
+    GGML_ASSERT(src->type == GGML_TYPE_I32 && dst->type == GGML_TYPE_I32);
+    GGML_ASSERT(ggml_is_contiguous(src) && ggml_is_contiguous(dst));
+    const auto * params = (const llm_graph_moe_dynamic_mask_params *) userdata;
+    GGML_ASSERT(params != nullptr);
+    const int64_t n_ids = ggml_nelements(src);
+    memcpy(dst->data, src->data, (size_t) n_ids * sizeof(int32_t));
+    ggml_backend_moe_dynamic_observe_routes(
+        params->layer,
+        params->n_expert,
+        params->n_slots,
+        params->n_routes_per_token,
+        (const int32_t *) src->data,
+        n_ids);
+}
+
+static void llm_graph_moe_dynamic_mask(
+        ggml_tensor * dst,
+        const ggml_tensor * src,
+        int ith,
+        int nth,
+        void * userdata) {
+    GGML_UNUSED(nth);
+    if (ith != 0) {
+        return;
+    }
+    GGML_ASSERT(src->type == GGML_TYPE_I32 && dst->type == GGML_TYPE_I32);
+    GGML_ASSERT(ggml_is_contiguous(src) && ggml_is_contiguous(dst));
+    GGML_ASSERT(src->ne[1] == 1 && src->ne[0] % 2 == 0);
+    const auto * params = (const llm_graph_moe_dynamic_mask_params *) userdata;
+    GGML_ASSERT(params != nullptr);
+    const int64_t n_ids = src->ne[0] / 2;
+    const int32_t * source = (const int32_t *) src->data;
+    int32_t * target = (int32_t *) dst->data;
+    ggml_backend_moe_dynamic_split_routes(
+        params->layer,
+        params->n_expert,
+        params->n_slots,
+        params->n_routes_per_token,
+        source,
+        n_ids,
+        target,
+        target + n_ids);
+}
+
+static void llm_graph_moe_static_mask(
+        ggml_tensor * dst,
+        const ggml_tensor * src,
+        int ith,
+        int nth,
+        void * userdata) {
+    GGML_ASSERT(src->type == GGML_TYPE_I32 && dst->type == GGML_TYPE_I32);
+    GGML_ASSERT(ggml_is_contiguous(src) && ggml_is_contiguous(dst));
+
+    const auto * params = (const llm_graph_moe_static_mask_params *) userdata;
+    GGML_ASSERT(params != nullptr);
+    const int64_t n = ggml_nelements(src);
+    const int32_t * source = (const int32_t *) src->data;
+    int32_t * target = (int32_t *) dst->data;
+    const int64_t begin = n * ith / nth;
+    const int64_t end = n * (ith + 1) / nth;
+
+    for (int64_t index = begin; index < end; ++index) {
+        const int32_t expert = source[index];
+        GGML_ASSERT(expert >= 0 && (size_t) expert < params->slot_by_expert.size());
+        const int32_t slot = params->slot_by_expert[(size_t) expert];
+        target[index] = params->keep_hot ? slot : (slot >= 0 ? -1 : expert);
+    }
+}
+
 ggml_tensor * llm_graph_context::build_moe_ffn(
          ggml_tensor * cur,
          ggml_tensor * gate_inp,
@@ -1962,6 +2243,418 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
 
     cur = ggml_reshape_3d(ctx0, cur, n_embd, 1, n_tokens);
 
+    const char * skeleton_only_env = std::getenv("GGML_MOE_SKELETON_ONLY");
+    if (skeleton_only_env != nullptr && atoi(skeleton_only_env) != 0) {
+        if (std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD") != nullptr &&
+            atoi(std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD")) != 0) {
+            LLAMA_LOG_INFO(
+                "moe-skeleton-only-build: layer=%d tokens=%lld\n",
+                il, (long long) n_tokens);
+        }
+        ggml_tensor * skeleton_out = ggml_scale(
+            ctx0,
+            ggml_reshape_2d(ctx0, cur, n_embd, n_tokens),
+            0.0f);
+        cb(skeleton_out, "ffn_moe_skeleton_only", il);
+        return skeleton_out;
+    }
+
+    auto dynamic_layer_cache_eligible = [&](int32_t layer) {
+        if (moe_dynamic_cache_eligible.empty()) {
+            return true;
+        }
+        return layer >= 0 && (size_t) layer < moe_dynamic_cache_eligible.size() &&
+            moe_dynamic_cache_eligible[(size_t) layer] != 0;
+    };
+    const bool current_dynamic_layer_cache_eligible = dynamic_layer_cache_eligible(il);
+
+    const int64_t dynamic_slots_request = llm_graph_moe_dynamic_split_slots();
+    int64_t dynamic_split_slots = dynamic_slots_request > 0
+        ? std::min<int64_t>(dynamic_slots_request, n_expert)
+        : 0;
+    if (dynamic_slots_request < 0 && up_exps != nullptr && gate_exps != nullptr && down_exps != nullptr) {
+        const size_t cache_budget = ggml_backend_sched_get_expert_cache_budget(sched);
+        const size_t expert_bundle_bytes = up_exps->nb[2] + gate_exps->nb[2] + down_exps->nb[2];
+        int32_t selected_layers = 0;
+        const int32_t first_moe_layer = std::max<int32_t>(0, hparams.n_layer_dense_lead);
+        for (int32_t layer = first_moe_layer; layer < (int32_t) hparams.n_layer(); ++layer) {
+            selected_layers +=
+                llm_graph_moe_dynamic_layer_selected(layer) &&
+                dynamic_layer_cache_eligible(layer);
+        }
+        if (selected_layers == 0 &&
+            llm_graph_moe_dynamic_layer_selected(il) &&
+            current_dynamic_layer_cache_eligible) {
+            selected_layers = 1;
+        }
+        const size_t per_layer_budget = selected_layers > 0 ? cache_budget / (size_t) selected_layers : 0;
+        if (expert_bundle_bytes > 0) {
+            dynamic_split_slots = std::min<int64_t>(
+                n_expert,
+                (int64_t) (per_layer_budget / expert_bundle_bytes));
+        }
+
+        static std::mutex planner_log_mutex;
+        static std::unordered_set<std::string> planner_logs;
+        std::ostringstream planner_key;
+        planner_key << cache_budget << ':' << expert_bundle_bytes << ':' << selected_layers << ':'
+                    << n_expert << ':' << dynamic_split_slots;
+        std::lock_guard<std::mutex> planner_lock(planner_log_mutex);
+        if (planner_logs.insert(planner_key.str()).second) {
+            LLAMA_LOG_INFO(
+                "moe-dynamic-vram-plan: budget=%.2f MiB selected-layers=%d per-layer=%.2f MiB "
+                "expert-bundle=%.2f MiB slots=%lld/%lld planned=%.2f MiB\n",
+                cache_budget / 1024.0 / 1024.0,
+                selected_layers,
+                per_layer_budget / 1024.0 / 1024.0,
+                expert_bundle_bytes / 1024.0 / 1024.0,
+                (long long) dynamic_split_slots,
+                (long long) n_expert,
+                (double) dynamic_split_slots * (double) expert_bundle_bytes *
+                    (double) selected_layers / 1024.0 / 1024.0);
+        }
+    }
+    const int64_t static_split_slots = std::min<int64_t>(
+        llm_graph_moe_static_split_slots(), n_expert);
+    const bool dynamic_feature_requested =
+        dynamic_split_slots > 0 && dynamic_split_slots <= n_expert &&
+        llm_graph_moe_dynamic_layer_selected(il) &&
+        current_dynamic_layer_cache_eligible &&
+        std::getenv("GGML_EXPERT_CACHE_MIB") != nullptr;
+    const char * dynamic_static_map_env = std::getenv("GGML_MOE_DYNAMIC_STATIC_MAP");
+    const bool dynamic_static_map = dynamic_feature_requested &&
+        dynamic_static_map_env != nullptr && dynamic_static_map_env[0] != '\0' &&
+        ggml_backend_moe_dynamic_prepare_static_map(
+            il, (int32_t) n_expert, (int32_t) dynamic_split_slots);
+    const char * auto_layers_env = std::getenv("GGML_MOE_DYNAMIC_AUTO_LAYERS");
+    const bool dynamic_auto_layers =
+        dynamic_feature_requested && auto_layers_env != nullptr && atoi(auto_layers_env) != 0;
+    const bool dynamic_layer_active = !dynamic_auto_layers ||
+        ggml_backend_moe_dynamic_layer_is_active(
+            il, (int32_t) n_expert, (int32_t) dynamic_split_slots);
+    const bool dynamic_split_requested = dynamic_feature_requested && dynamic_layer_active;
+    const bool static_split_requested = !dynamic_feature_requested &&
+        static_split_slots > 0 && static_split_slots < n_expert &&
+        std::getenv("GGML_EXPERT_CACHE_MIB") != nullptr;
+    const int64_t split_slots = dynamic_feature_requested ? dynamic_split_slots : static_split_slots;
+    const bool split_requested = dynamic_split_requested || static_split_requested;
+    const bool split_arch_supported =
+        arch == LLM_ARCH_QWEN35MOE || arch == LLM_ARCH_GLM_DSA;
+    const bool split_common_supported =
+        split_arch_supported && n_tokens == 1 &&
+        !weight_before_ffn && type_op == LLM_FFN_SILU &&
+        gate_up_exps == nullptr && gate_up_exps_b == nullptr &&
+        up_exps != nullptr && gate_exps != nullptr && down_exps != nullptr &&
+        up_exps_b == nullptr && gate_exps_b == nullptr && down_exps_b == nullptr &&
+        up_exps_s == nullptr && gate_exps_s == nullptr && down_exps_s == nullptr &&
+        (loras == nullptr || loras->empty()) &&
+        up_exps->buffer != nullptr && gate_exps->buffer != nullptr && down_exps->buffer != nullptr &&
+        ggml_backend_buffer_is_host(up_exps->buffer) &&
+        ggml_backend_buffer_is_host(gate_exps->buffer) &&
+        ggml_backend_buffer_is_host(down_exps->buffer);
+    const bool split_supported = split_requested && split_common_supported;
+    const bool dynamic_force_gpu_only_graph = dynamic_split_requested &&
+        std::getenv("GGML_MOE_DYNAMIC_FORCE_GPU_ONLY") != nullptr &&
+        atoi(std::getenv("GGML_MOE_DYNAMIC_FORCE_GPU_ONLY")) != 0;
+    const bool dynamic_exact_cpu_fallback = dynamic_split_requested && dynamic_static_map &&
+        std::getenv("GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK") != nullptr &&
+        atoi(std::getenv("GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK")) != 0;
+    const bool dynamic_gpu_route_map = dynamic_split_requested &&
+        (dynamic_force_gpu_only_graph || dynamic_exact_cpu_fallback) &&
+        std::getenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP") != nullptr &&
+        atoi(std::getenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP")) != 0;
+    const char * prefill_observe_env = std::getenv("GGML_MOE_DYNAMIC_PREFILL_OBSERVE");
+    const bool dynamic_prefill_observe =
+        dynamic_feature_requested && n_tokens > 1 &&
+        (prefill_observe_env == nullptr || atoi(prefill_observe_env) != 0);
+    const bool dynamic_observe_supported = dynamic_prefill_observe ||
+        (dynamic_feature_requested && dynamic_auto_layers && !dynamic_layer_active && split_common_supported);
+
+    if (std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD") != nullptr &&
+        atoi(std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD")) != 0) {
+        LLAMA_LOG_INFO(
+            "moe-graph-build: layer=%d tokens=%lld feature=%d active=%d split-requested=%d "
+            "common-supported=%d split-supported=%d force-gpu-only=%d exact-cpu-fallback=%d "
+            "gpu-route-map=%d static-map=%d slots=%lld\n",
+            il,
+            (long long) n_tokens,
+            dynamic_feature_requested ? 1 : 0,
+            dynamic_layer_active ? 1 : 0,
+            dynamic_split_requested ? 1 : 0,
+            split_common_supported ? 1 : 0,
+            split_supported ? 1 : 0,
+            dynamic_force_gpu_only_graph ? 1 : 0,
+            dynamic_exact_cpu_fallback ? 1 : 0,
+            dynamic_gpu_route_map ? 1 : 0,
+            dynamic_static_map ? 1 : 0,
+            (long long) dynamic_split_slots);
+    }
+
+    if (split_supported) {
+        ggml_backend_t backend_gpu = nullptr;
+        for (int backend_index = 0; backend_index < ggml_backend_sched_get_n_backends(sched); ++backend_index) {
+            ggml_backend_t backend = ggml_backend_sched_get_backend(sched, backend_index);
+            if (ggml_backend_dev_type(ggml_backend_get_device(backend)) == GGML_BACKEND_DEVICE_TYPE_GPU) {
+                backend_gpu = backend;
+                break;
+            }
+        }
+
+        if (backend_gpu != nullptr) {
+            ggml_tensor * selected_hot = nullptr;
+            ggml_tensor * selected_cold = nullptr;
+            if (dynamic_split_requested) {
+                if (dynamic_gpu_route_map) {
+                    selected_hot = selected_experts;
+                    cb(selected_hot, "ffn_moe_dynamic_gpu_mapped_source_ids", il);
+                    if (dynamic_exact_cpu_fallback) {
+                        selected_cold = selected_experts;
+                        cb(selected_cold, "ffn_moe_dynamic_exact_cold_source_ids", il);
+                    }
+                } else {
+                    ggml_tensor * duplicated_ids = ggml_concat(
+                        ctx0, selected_experts, selected_experts, 0);
+                    auto * dynamic_params = llm_graph_moe_dynamic_mask_params_get(
+                        il, (int32_t) n_expert, (int32_t) split_slots, (int32_t) n_expert_used);
+                    ggml_tensor * split_ids = ggml_map_custom1(
+                        ctx0,
+                        duplicated_ids,
+                        llm_graph_moe_dynamic_mask,
+                        1,
+                        dynamic_params);
+                    ggml_backend_sched_set_tensor_backend(sched, duplicated_ids, backend_cpu);
+                    ggml_backend_sched_set_tensor_backend(sched, split_ids, backend_cpu);
+                    selected_hot = ggml_view_2d(
+                        ctx0,
+                        split_ids,
+                        n_expert_used,
+                        n_tokens,
+                        split_ids->nb[1],
+                        0);
+                    selected_cold = ggml_view_2d(
+                        ctx0,
+                        split_ids,
+                        n_expert_used,
+                        n_tokens,
+                        split_ids->nb[1],
+                        n_expert_used * split_ids->nb[0]);
+                    cb(selected_hot, "ffn_moe_dynamic_hot_ids", il);
+                    cb(selected_cold, "ffn_moe_dynamic_cold_ids", il);
+                }
+            } else {
+                auto * hot_mask = llm_graph_moe_static_mask_params_get(
+                    il, (int32_t) n_expert, (int32_t) split_slots, true);
+                auto * cold_mask = llm_graph_moe_static_mask_params_get(
+                    il, (int32_t) n_expert, (int32_t) split_slots, false);
+                selected_hot = ggml_map_custom1(
+                    ctx0,
+                    selected_experts,
+                    llm_graph_moe_static_mask,
+                    GGML_N_TASKS_MAX,
+                    hot_mask);
+                selected_cold = ggml_map_custom1(
+                    ctx0,
+                    selected_experts,
+                    llm_graph_moe_static_mask,
+                    GGML_N_TASKS_MAX,
+                    cold_mask);
+                cb(selected_hot, "ffn_moe_static_hot_ids", il);
+                cb(selected_cold, "ffn_moe_static_cold_ids", il);
+            }
+            if (!dynamic_gpu_route_map) {
+                ggml_backend_sched_set_tensor_backend(sched, selected_hot, backend_cpu);
+                ggml_backend_sched_set_tensor_backend(sched, selected_cold, backend_cpu);
+            }
+
+            auto compact_view = [&](ggml_tensor * tensor, const char * name) {
+                ggml_tensor * view = ggml_view_3d(
+                    ctx0,
+                    tensor,
+                    tensor->ne[0],
+                    tensor->ne[1],
+                    split_slots,
+                    tensor->nb[1],
+                    tensor->nb[2],
+                    0);
+                // After warmup, GPU route mapping consumes these views from the
+                // persistent GPU expert-cache buffer. Marking them GPU-resident then
+                // removes a tiny CPU scheduler island per MoE layer. During warmup,
+                // retain the inherited host placement so the promotion path can still
+                // identify the canonical host source and populate cache slots.
+                if (dynamic_gpu_route_map && !dynamic_static_map) {
+                    ggml_backend_sched_set_tensor_backend(sched, view, backend_gpu);
+                }
+                if (std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD") != nullptr &&
+                    atoi(std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD")) != 0) {
+                    LLAMA_LOG_INFO(
+                        "moe-graph-compact-view: layer=%d name=%s gpu-route-map=%d target=%s source-buffer=%s\n",
+                        il,
+                        name,
+                        dynamic_gpu_route_map ? 1 : 0,
+                        dynamic_gpu_route_map ? ggml_backend_name(backend_gpu) : "inherited",
+                        tensor->buffer != nullptr ? ggml_backend_buffer_name(tensor->buffer) : "none");
+                }
+                cb(view, name, il);
+                return view;
+            };
+
+            ggml_tensor * hot_up_weights = compact_view(
+                up_exps,
+                dynamic_split_requested ? "ffn_moe_dynamic_hot_up_weights" : "ffn_moe_static_hot_up_weights");
+            ggml_tensor * hot_gate_weights = compact_view(
+                gate_exps,
+                dynamic_split_requested ? "ffn_moe_dynamic_hot_gate_weights" : "ffn_moe_static_hot_gate_weights");
+            ggml_tensor * hot_down_weights = compact_view(
+                down_exps,
+                dynamic_split_requested ? "ffn_moe_dynamic_hot_down_weights" : "ffn_moe_static_hot_down_weights");
+
+            auto build_branch = [&](
+                    ggml_tensor * branch_up_weights,
+                    ggml_tensor * branch_gate_weights,
+                    ggml_tensor * branch_down_weights,
+                    ggml_tensor * branch_ids,
+                    ggml_backend_t branch_backend,
+                    bool mask_resident_routes,
+                    const char * prefix) {
+                ggml_tensor * branch_up = build_lora_mm_id(
+                    branch_up_weights, cur, branch_ids, nullptr);
+                ggml_mul_mat_id_set_masked(branch_up, true);
+                if (mask_resident_routes) {
+                    ggml_mul_mat_id_set_dynamic_miss_mask(branch_up, il, (int32_t) n_expert);
+                }
+                if (dynamic_gpu_route_map && branch_backend == backend_gpu) {
+                    ggml_mul_mat_id_set_dynamic_slot_map(branch_up, il, (int32_t) n_expert);
+                }
+                ggml_backend_sched_set_tensor_backend(sched, branch_up, branch_backend);
+
+                ggml_tensor * branch_gate = build_lora_mm_id(
+                    branch_gate_weights, cur, branch_ids, nullptr);
+                ggml_mul_mat_id_set_masked(branch_gate, true);
+                if (mask_resident_routes) {
+                    ggml_mul_mat_id_set_dynamic_miss_mask(branch_gate, il, (int32_t) n_expert);
+                }
+                if (dynamic_gpu_route_map && branch_backend == backend_gpu) {
+                    ggml_mul_mat_id_set_dynamic_slot_map(branch_gate, il, (int32_t) n_expert);
+                }
+                ggml_backend_sched_set_tensor_backend(sched, branch_gate, branch_backend);
+
+                ggml_tensor * branch_activated = ggml_swiglu_split(ctx0, branch_gate, branch_up);
+                ggml_backend_sched_set_tensor_backend(sched, branch_activated, branch_backend);
+
+                ggml_tensor * branch_down = build_lora_mm_id(
+                    branch_down_weights, branch_activated, branch_ids, nullptr);
+                ggml_mul_mat_id_set_masked(branch_down, true);
+                if (mask_resident_routes) {
+                    ggml_mul_mat_id_set_dynamic_miss_mask(branch_down, il, (int32_t) n_expert);
+                }
+                if (dynamic_gpu_route_map && branch_backend == backend_gpu) {
+                    ggml_mul_mat_id_set_dynamic_slot_map(branch_down, il, (int32_t) n_expert);
+                }
+                ggml_backend_sched_set_tensor_backend(sched, branch_down, branch_backend);
+                cb(branch_down, prefix, il);
+                return branch_down;
+            };
+
+            ggml_tensor * hot_out = build_branch(
+                hot_up_weights,
+                hot_gate_weights,
+                hot_down_weights,
+                selected_hot,
+                backend_gpu,
+                false,
+                dynamic_split_requested ? "ffn_moe_dynamic_hot_out" : "ffn_moe_static_hot_out");
+            ggml_tensor * split_experts = hot_out;
+            ggml_backend_t merge_backend = backend_gpu;
+            if (!dynamic_force_gpu_only_graph) {
+                ggml_tensor * cold_out = build_branch(
+                    up_exps,
+                    gate_exps,
+                    down_exps,
+                    selected_cold,
+                    backend_cpu,
+                    dynamic_exact_cpu_fallback,
+                    dynamic_split_requested ? "ffn_moe_dynamic_cold_out" : "ffn_moe_static_cold_out");
+
+                // Merge complementary route outputs before weighting/reduction so the
+                // router multiplication and expert reduction occur once, in the exact
+                // same order as the original unsplit graph.
+                split_experts = ggml_add(ctx0, hot_out, cold_out);
+                merge_backend = dynamic_exact_cpu_fallback ? backend_gpu : backend_cpu;
+            }
+            ggml_backend_sched_set_tensor_backend(sched, split_experts, merge_backend);
+            cb(split_experts,
+                dynamic_force_gpu_only_graph ? "ffn_moe_dynamic_gpu_only_experts" :
+                (dynamic_split_requested ? "ffn_moe_dynamic_split_experts" : "ffn_moe_static_split_experts"),
+                il);
+
+            split_experts = ggml_mul(ctx0, split_experts, weights);
+            ggml_backend_sched_set_tensor_backend(sched, split_experts, merge_backend);
+            cb(split_experts,
+                dynamic_split_requested ? "ffn_moe_dynamic_weighted" : "ffn_moe_static_weighted",
+                il);
+
+            // Match the ordinary MoE reduction exactly. Each route is exclusively
+            // hot or cold, so hot_out + cold_out reconstructs the original routed
+            // tensor before weighting. Preserve the same view/add order used below
+            // to avoid model-level numerical drift and shape mismatches.
+            ggml_build_forward_expand(gf, split_experts);
+            ggml_tensor * split_routes[LLAMA_MAX_EXPERTS] = { nullptr };
+            for (uint32_t route = 0; route < hparams.n_expert_used; ++route) {
+                split_routes[route] = ggml_view_2d(
+                    ctx0,
+                    split_experts,
+                    n_embd,
+                    n_tokens,
+                    split_experts->nb[2],
+                    route * split_experts->nb[1]);
+                ggml_build_forward_expand(gf, split_routes[route]);
+            }
+
+            ggml_tensor * split_out = split_routes[0];
+            for (uint32_t route = 1; route < hparams.n_expert_used; ++route) {
+                split_out = ggml_add(ctx0, split_out, split_routes[route]);
+                ggml_backend_sched_set_tensor_backend(sched, split_out, merge_backend);
+                ggml_build_forward_expand(gf, split_out);
+            }
+            if (hparams.n_expert_used == 1) {
+                split_out = ggml_cont(ctx0, split_out);
+            }
+            ggml_backend_sched_set_tensor_backend(sched, split_out, merge_backend);
+            cb(split_out,
+                dynamic_split_requested ? "ffn_moe_dynamic_split_out" : "ffn_moe_static_split_out",
+                il);
+            return split_out;
+        }
+    }
+
+    if (dynamic_observe_supported) {
+        auto * observe_params = llm_graph_moe_dynamic_mask_params_get(
+            il, (int32_t) n_expert, (int32_t) dynamic_split_slots, (int32_t) n_expert_used);
+        ggml_tensor * observed_ids_source = ggml_cont(ctx0, selected_experts);
+        ggml_backend_sched_set_tensor_backend(sched, observed_ids_source, backend_cpu);
+        cb(observed_ids_source, "ffn_moe_dynamic_observe_source_ids", il);
+        selected_experts = ggml_map_custom1(
+            ctx0,
+            observed_ids_source,
+            llm_graph_moe_dynamic_observe,
+            1,
+            observe_params);
+        ggml_backend_sched_set_tensor_backend(sched, selected_experts, backend_cpu);
+        cb(selected_experts, "ffn_moe_dynamic_observed_ids", il);
+    }
+
+    auto force_split_host_moe_op = [&](ggml_tensor * op, ggml_tensor * weight) {
+        // Only force the ordinary MoE fallback onto CPU when the split graph is
+        // actually supported for this graph shape. In particular, dynamic expert
+        // splitting is decode-only (n_tokens == 1); forcing these ops during a
+        // multi-token prefill makes the entire expert FFN run on CPU.
+        if (split_supported && split_arch_supported &&
+            weight != nullptr && weight->buffer != nullptr &&
+            ggml_backend_buffer_is_host(weight->buffer)) {
+            ggml_backend_sched_set_tensor_backend(sched, op, backend_cpu);
+        }
+    };
+
     if (weight_before_ffn) {
         // repeat cur to [n_embd, n_expert_used, n_tokens]
         ggml_tensor * repeated = ggml_repeat_4d(ctx0, cur, n_embd, n_expert_used, n_tokens, 1);
@@ -1975,6 +2668,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     if (gate_up_exps) {
         // merged gate_up path: one mul_mat_id, then split into gate and up views
         ggml_tensor * gate_up = build_lora_mm_id(gate_up_exps, cur, selected_experts, up_exps_s); // [n_ff*2, n_expert_used, n_tokens]
+        force_split_host_moe_op(gate_up, gate_up_exps);
         cb(gate_up, "ffn_moe_gate_up", il);
 
         if (up_exps_s) {
@@ -1994,6 +2688,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     } else {
         // separate gate and up path
         up = build_lora_mm_id(up_exps, cur, selected_experts, up_exps_s); // [n_ff, n_expert_used, n_tokens]
+        force_split_host_moe_op(up, up_exps);
         cb(up, "ffn_moe_up", il);
 
         if (up_exps_s) {
@@ -2007,6 +2702,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
 
         if (gate_exps) {
             cur = build_lora_mm_id(gate_exps, cur, selected_experts, gate_exps_s); // [n_ff, n_expert_used, n_tokens]
+            force_split_host_moe_op(cur, gate_exps);
             cb(cur, "ffn_moe_gate", il);
         } else {
             cur = up;
@@ -2096,6 +2792,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     }
 
     experts = build_lora_mm_id(down_exps, cur, selected_experts, down_exps_s); // [n_embd, n_expert_used, n_tokens]
+    force_split_host_moe_op(experts, down_exps);
     cb(experts, "ffn_moe_down", il);
 
     if (down_exps_s) {

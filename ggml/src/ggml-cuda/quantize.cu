@@ -184,7 +184,9 @@ static __global__ void quantize_mmq_nvfp4(
 #pragma unroll
                 for (int slot = 0; slot < n_expert_used; ++slot) {
                     const int64_t i = ids[(int64_t) blockIdx.x * n_expert_used + slot];
-                    scale[i] = warp_amax[0];
+                    if (i >= 0) {
+                        scale[i] = warp_amax[0];
+                    }
                 }
             } else {
                 scale[blockIdx.y * ne1 + blockIdx.x] = warp_amax[0];
@@ -310,6 +312,9 @@ static __global__ void quantize_mmq_nvfp4(
 #pragma unroll
             for (int slot = 0; slot < n_expert_used; ++slot) {
                 const int64_t i = ids[(int64_t) blockIdx.x * n_expert_used + slot];
+                if (i < 0) {
+                    continue;
+                }
                 block_fp4_mmq * yb = y + (k_block * ne1 + i);
                 uint32_t * yqs = reinterpret_cast<uint32_t *>(yb->qs);
                 yqs[2 * sub + 0] = q0;

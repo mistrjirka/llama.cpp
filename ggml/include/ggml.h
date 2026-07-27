@@ -1448,6 +1448,25 @@ extern "C" {
             struct ggml_tensor  * b,
             struct ggml_tensor  * ids);
 
+    // Allow expert id -1 to mask a route. Masked routes produce an all-zero output slice.
+    GGML_API void ggml_mul_mat_id_set_masked(
+            struct ggml_tensor * tensor,
+            bool                 masked);
+
+    // Experimental dynamic MoE cache mapping. A non-negative layer causes CUDA
+    // MUL_MAT_ID to remap canonical expert IDs to persistent compact cache slots.
+    GGML_API void ggml_mul_mat_id_set_dynamic_slot_map(
+            struct ggml_tensor * tensor,
+            int32_t              layer,
+            int32_t              n_expert);
+
+    // Experimental exact cold branch. CPU MUL_MAT_ID keeps only canonical
+    // expert IDs that are absent from the dynamic resident-slot map.
+    GGML_API void ggml_mul_mat_id_set_dynamic_miss_mask(
+            struct ggml_tensor * tensor,
+            int32_t              layer,
+            int32_t              n_expert);
+
     // A: m columns, n rows,
     // B: p columns, n rows,
     // result is m columns, p rows

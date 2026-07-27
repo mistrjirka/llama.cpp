@@ -4390,7 +4390,7 @@ struct test_mul_mat_hadamard : public test_mul_mat {
     }
 };
 
-static void init_mul_mat_id_tensors(ggml_context * ctx, int n_mats) {
+static void init_mul_mat_id_tensors(ggml_context * ctx, int n_mats, bool masked = false) {
     std::random_device rd;
     std::default_random_engine rng(rd());
     for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
@@ -4403,6 +4403,11 @@ static void init_mul_mat_id_tensors(ggml_context * ctx, int n_mats) {
                     data[i] = i % n_mats;
                 }
                 std::shuffle(data.begin(), data.end(), rng);
+                if (masked) {
+                    for (int i = 0; i < t->ne[0]; i += 3) {
+                        data[i] = -1;
+                    }
+                }
                 ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));
             }
         } else {
@@ -4421,9 +4426,10 @@ struct test_mul_mat_id : public test_case {
     const int64_t m;
     const int64_t n;
     const int64_t k;
+    const bool masked;
 
     std::string vars() override {
-        return VARS_TO_STR8(type_a, type_b, n_mats, n_used, b, m, n, k);
+        return VARS_TO_STR9(type_a, type_b, n_mats, n_used, b, m, n, k, masked);
     }
 
     double max_nmse_err() override {
@@ -4445,9 +4451,9 @@ struct test_mul_mat_id : public test_case {
 
     test_mul_mat_id(ggml_type type_a = GGML_TYPE_F32, ggml_type type_b = GGML_TYPE_F32,
             int n_mats = 8, int n_used = 2, bool b = false,
-            int64_t m = 32, int64_t n = 32, int64_t k = 32)
+            int64_t m = 32, int64_t n = 32, int64_t k = 32, bool masked = false)
         : type_a(type_a), type_b(type_b), n_mats(n_mats), n_used(n_used), b(b),
-            m(m), n(n), k(k) {
+            m(m), n(n), k(k), masked(masked) {
             GGML_ASSERT(n_used <= n_mats);
         }
 
@@ -4467,13 +4473,178 @@ struct test_mul_mat_id : public test_case {
         ggml_set_name(b, "b");
 
         ggml_tensor * out = ggml_mul_mat_id(ctx, as, b, ids);
+        ggml_mul_mat_id_set_masked(out, masked);
         ggml_set_name(out, "out");
 
         return out;
     }
 
     void initialize_tensors(ggml_context * ctx) override {
-        init_mul_mat_id_tensors(ctx, n_mats);
+        init_mul_mat_id_tensors(ctx, n_mats, masked);
+    }
+};
+
+// Complementary masked branches must reconstruct the original routed matmul exactly.
+struct test_mul_mat_id_split : public test_case {
+    const ggml_type type_a;
+    const ggml_type type_b;
+    const int n_mats;
+    const int n_used;
+    const bool b;
+    const int64_t m;
+    const int64_t n;
+    const int64_t k;
+
+    std::string vars() override {
+        return VARS_TO_STR8(type_a, type_b, n_mats, n_used, b, m, n, k);
+    }
+
+    std::string op_desc(ggml_tensor * t) override {
+        GGML_UNUSED(t);
+        return "MUL_MAT_ID_SPLIT";
+    }
+
+    bool run_whole_graph() override { return true; }
+
+    double max_nmse_err() override {
+        return 5e-4;
+    }
+
+    test_mul_mat_id_split(
+            ggml_type type_a = GGML_TYPE_F32,
+            ggml_type type_b = GGML_TYPE_F32,
+            int n_mats = 8,
+            int n_used = 4,
+            bool b = false,
+            int64_t m = 64,
+            int64_t n = 1,
+            int64_t k = 64)
+        : type_a(type_a), type_b(type_b), n_mats(n_mats), n_used(n_used), b(b),
+          m(m), n(n), k(k) {
+        GGML_ASSERT(n_used <= n_mats);
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * as = ggml_new_tensor_3d(ctx, type_a, k, m, n_mats);
+        ggml_set_name(as, "as");
+
+        ggml_tensor * ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, n_used, n);
+        ggml_set_name(ids, "ids");
+        ggml_tensor * ids_hot = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, n_used, n);
+        ggml_set_name(ids_hot, "ids_hot");
+        ggml_tensor * ids_cold = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, n_used, n);
+        ggml_set_name(ids_cold, "ids_cold");
+
+        ggml_tensor * b_tensor = ggml_new_tensor_3d(ctx, type_b, k, b ? 1 : n_used, n);
+        ggml_set_name(b_tensor, "b");
+
+        ggml_tensor * full = ggml_mul_mat_id(ctx, as, b_tensor, ids);
+        ggml_set_name(full, "full");
+
+        ggml_tensor * hot = ggml_mul_mat_id(ctx, as, b_tensor, ids_hot);
+        ggml_mul_mat_id_set_masked(hot, true);
+        ggml_set_name(hot, "hot");
+
+        ggml_tensor * cold = ggml_mul_mat_id(ctx, as, b_tensor, ids_cold);
+        ggml_mul_mat_id_set_masked(cold, true);
+        ggml_set_name(cold, "cold");
+
+        ggml_tensor * merged = ggml_add(ctx, hot, cold);
+        ggml_set_name(merged, "merged");
+        ggml_tensor * out = ggml_sub(ctx, full, merged);
+        ggml_set_name(out, "out");
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        init_mul_mat_id_tensors(ctx, n_mats, false);
+
+        ggml_tensor * ids = ggml_get_tensor(ctx, "ids");
+        ggml_tensor * ids_hot = ggml_get_tensor(ctx, "ids_hot");
+        ggml_tensor * ids_cold = ggml_get_tensor(ctx, "ids_cold");
+        GGML_ASSERT(ids != nullptr && ids_hot != nullptr && ids_cold != nullptr);
+
+        std::vector<int32_t> full_ids(ggml_nelements(ids));
+        std::vector<int32_t> hot_ids(full_ids.size(), -1);
+        std::vector<int32_t> cold_ids(full_ids.size(), -1);
+        ggml_backend_tensor_get(ids, full_ids.data(), 0, full_ids.size() * sizeof(int32_t));
+        for (size_t i = 0; i < full_ids.size(); ++i) {
+            if ((i % (size_t) n_used) % 2 == 0) {
+                hot_ids[i] = full_ids[i];
+            } else {
+                cold_ids[i] = full_ids[i];
+            }
+        }
+        ggml_backend_tensor_set(ids_hot, hot_ids.data(), 0, hot_ids.size() * sizeof(int32_t));
+        ggml_backend_tensor_set(ids_cold, cold_ids.data(), 0, cold_ids.size() * sizeof(int32_t));
+    }
+};
+
+struct test_moe_ffn_masked : public test_case {
+    const bool all_masked;
+
+    explicit test_moe_ffn_masked(bool all_masked = false) : all_masked(all_masked) {}
+
+    std::string vars() override {
+        return std::string("gate=iq3_xxs,down=iq4_xs,n_mats=8,n_used=4,n=1,all_masked=") +
+            (all_masked ? "1" : "0");
+    }
+
+    std::string op_desc(ggml_tensor * t) override {
+        GGML_UNUSED(t);
+        return "MOE_FFN_MASKED";
+    }
+
+    bool run_whole_graph() override { return true; }
+
+    double max_nmse_err() override {
+        return 5e-4;
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        constexpr int64_t n_embd = 3072;
+        constexpr int64_t n_ff = 1024;
+        constexpr int n_mats = 8;
+        constexpr int n_used = 4;
+
+        ggml_tensor * gate_weights = ggml_new_tensor_3d(
+            ctx, GGML_TYPE_IQ3_XXS, n_embd, n_ff, n_mats);
+        ggml_set_name(gate_weights, "gate_weights");
+        ggml_tensor * down_weights = ggml_new_tensor_3d(
+            ctx, GGML_TYPE_IQ4_XS, n_ff, n_embd, n_mats);
+        ggml_set_name(down_weights, "down_weights");
+        ggml_tensor * ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, n_used, 1);
+        ggml_set_name(ids, "ids");
+        ggml_tensor * input = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_embd, 1, 1);
+        ggml_set_name(input, "b");
+
+        ggml_tensor * gate = ggml_mul_mat_id(ctx, gate_weights, input, ids);
+        ggml_mul_mat_id_set_masked(gate, true);
+        ggml_tensor * up = ggml_mul_mat_id(ctx, gate_weights, input, ids);
+        ggml_mul_mat_id_set_masked(up, true);
+        ggml_tensor * activated = ggml_swiglu_split(ctx, gate, up);
+        ggml_tensor * down = ggml_mul_mat_id(ctx, down_weights, activated, ids);
+        ggml_mul_mat_id_set_masked(down, true);
+
+        ggml_tensor * sum = ggml_view_2d(ctx, down, n_embd, 1, down->nb[2], 0);
+        for (int route = 1; route < n_used; ++route) {
+            ggml_tensor * view = ggml_view_2d(
+                ctx, down, n_embd, 1, down->nb[2], route * down->nb[1]);
+            sum = ggml_add(ctx, sum, view);
+        }
+        ggml_set_name(sum, "out");
+        return sum;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        init_mul_mat_id_tensors(ctx, 8, true);
+        if (all_masked) {
+            ggml_tensor * ids = ggml_get_tensor(ctx, "ids");
+            GGML_ASSERT(ids != nullptr);
+            std::vector<int32_t> masked_ids(ggml_nelements(ids), -1);
+            ggml_backend_tensor_set(
+                ids, masked_ids.data(), 0, masked_ids.size() * sizeof(int32_t));
+        }
     }
 };
 
@@ -8989,6 +9160,22 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 
     test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_F16, GGML_TYPE_F32, 1, 1, false, 8, 16, 1));
     test_cases.emplace_back(new test_mul_mat_id_fusion(GGML_TYPE_F16, GGML_TYPE_F32, 16, 16, false, 32, 32, 32, 3));
+
+    // masked routed matmul: expert id -1 must skip computation and produce zeros
+    test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_F32,  GGML_TYPE_F32, 8, 4, false, 64, 3,  64, true));
+    test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_F16,  GGML_TYPE_F32, 8, 4, false, 64, 5,  64, true));
+    test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_Q4_K,    GGML_TYPE_F32, 8, 4, false,   64, 1,  256, true));
+    test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_Q4_K,    GGML_TYPE_F32, 8, 4, false,   64, 32, 256, true));
+    test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32, 8, 4, true,  1024, 1, 3072, true));
+    test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_IQ4_XS,  GGML_TYPE_F32, 8, 4, false, 3072, 1, 1024, true));
+
+    // complementary hot/cold masked branches must sum to the original routed output
+    test_cases.emplace_back(new test_mul_mat_id_split(GGML_TYPE_F32,  GGML_TYPE_F32, 8, 4, false, 64, 3,  64));
+    test_cases.emplace_back(new test_mul_mat_id_split(GGML_TYPE_F16,  GGML_TYPE_F32, 8, 4, false, 64, 5,  64));
+    test_cases.emplace_back(new test_mul_mat_id_split(GGML_TYPE_Q4_K, GGML_TYPE_F32, 8, 4, false, 64, 1, 256));
+    test_cases.emplace_back(new test_mul_mat_id_split(GGML_TYPE_Q4_K, GGML_TYPE_F32, 8, 4, false, 64, 32, 256));
+    test_cases.emplace_back(new test_moe_ffn_masked(false));
+    test_cases.emplace_back(new test_moe_ffn_masked(true));
 
     // gpt-oss issue with Vulkan mmq_id
     test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_MXFP4, GGML_TYPE_F32, 32, 2, false, 2880, 32, 2880));

@@ -330,6 +330,8 @@ extern "C" {
 
     GGML_API ggml_backend_buffer_type_t ggml_backend_sched_get_buffer_type(ggml_backend_sched_t sched, ggml_backend_t backend);
     GGML_API size_t                     ggml_backend_sched_get_buffer_size(ggml_backend_sched_t sched, ggml_backend_t backend);
+    GGML_API size_t                     ggml_backend_sched_get_expert_cache_budget(ggml_backend_sched_t sched);
+    GGML_API void                       ggml_backend_sched_reset_expert_cache_profile(ggml_backend_sched_t sched);
 
     GGML_API void                 ggml_backend_sched_set_tensor_backend(ggml_backend_sched_t sched, struct ggml_tensor * node, ggml_backend_t backend);
     GGML_API ggml_backend_t       ggml_backend_sched_get_tensor_backend(ggml_backend_sched_t sched, struct ggml_tensor * node);
@@ -350,6 +352,57 @@ extern "C" {
 
     // Set a callback to be called for each resulting node during graph compute
     GGML_API void                 ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data);
+
+    // Experimental decode-time MoE residency controller. The route split updates
+    // admission scores, emits compact ready-slot IDs for the GPU branch and exact
+    // original IDs for the CPU branch, and queues admitted misses for promotion.
+    GGML_API void ggml_backend_moe_dynamic_observe_routes(
+            int32_t         layer,
+            int32_t         n_expert,
+            int32_t         n_slots,
+            int32_t         n_routes_per_token,
+            const int32_t * ids,
+            int64_t         n_ids);
+    GGML_API bool ggml_backend_moe_dynamic_layer_is_active(
+            int32_t layer,
+            int32_t n_expert,
+            int32_t n_slots);
+
+    // Seed an immutable expert-to-slot map before the first decode graph is
+    // allocated. Slots become visible to GPU route mapping only after all three
+    // expert components complete their startup upload.
+    GGML_API bool ggml_backend_moe_dynamic_prepare_static_map(
+            int32_t layer,
+            int32_t n_expert,
+            int32_t n_slots);
+
+    GGML_API bool ggml_backend_moe_dynamic_get_slot_map(
+            int32_t   layer,
+            int32_t * slot_map,
+            int32_t   n_expert);
+
+    GGML_API void ggml_backend_moe_dynamic_trace_marker(const char * marker);
+    GGML_API void ggml_backend_moe_dynamic_split_routes(
+            int32_t         layer,
+            int32_t         n_expert,
+            int32_t         n_slots,
+            int32_t         n_routes_per_token,
+            const int32_t * ids,
+            int64_t         n_ids,
+            int32_t       * hot_ids,
+            int32_t       * cold_ids);
+    GGML_API int32_t ggml_backend_moe_dynamic_slot_expert(
+            int32_t layer,
+            int32_t slot);
+    GGML_API bool ggml_backend_moe_dynamic_slot_needs_component(
+            int32_t layer,
+            int32_t slot,
+            int32_t component);
+    GGML_API void ggml_backend_moe_dynamic_slot_component_enqueued(
+            int32_t layer,
+            int32_t slot,
+            int32_t component);
+    GGML_API void ggml_backend_moe_dynamic_reset(void);
 
     //
     // Meta backend

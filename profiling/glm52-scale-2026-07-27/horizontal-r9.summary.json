@@ -1,0 +1,58 @@
+{
+  "case": "horizontal",
+  "rep": 9,
+  "exit": 0,
+  "wall_s": 56.771288148,
+  "sha256": "e6d5d540c6b4b4d645045ddc7ddcb2c94794cb46b7bd7e4f92446dfc916d7140",
+  "context": 2048,
+  "vertical_fit_target_mib": 16384,
+  "cache_reserve_mib": 4096,
+  "min_hot_routes": 4,
+  "prompt_tokens": 1,
+  "prompt_tps": null,
+  "measured_runs": 32,
+  "reported_measured_tps": 4.93,
+  "timestamp_measured_runs": 32,
+  "timestamp_measured_s": 6.500501,
+  "timestamp_measured_tps": 4.922697496700639,
+  "effective_measured_runs": 32,
+  "effective_measured_tps": 4.93,
+  "measured_time_ms": "6501.68",
+  "graph_nodes": "7134",
+  "graph_splits": "237 (with bs=128), 150 (with bs=1)",
+  "cuda_model_buffer_mib": "25615.63",
+  "cpu_model_buffer_mib": "36372.88",
+  "cache_entries": null,
+  "cache_allocated_mib": null,
+  "cache_line": null,
+  "coverage_line": null,
+  "worker_line": null,
+  "cuda_oom": false,
+  "gpu_samples": 243,
+  "gpu_util_mean": 24.753086419753085,
+  "gpu_util_median": 20.0,
+  "min_free_mib": 4538.0,
+  "max_used_mib": 27957.0,
+  "mean_power_w": 54.651646090534975,
+  "assertions": [
+    {
+      "name": "process_exit",
+      "ok": true,
+      "detail": 0
+    },
+    {
+      "name": "measured_token_count",
+      "ok": true,
+      "detail": {
+        "reported": 32,
+        "timestamp": 32
+      }
+    },
+    {
+      "name": "no_cuda_oom",
+      "ok": true,
+      "detail": false
+    }
+  ],
+  "assertions_passed": true
+}
