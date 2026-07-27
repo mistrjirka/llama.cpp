@@ -7,6 +7,7 @@
 #include "ggml-backend.h"
 #include "chat.h"
 
+#include <chrono>
 #include <cinttypes>
 #include <clocale>
 #include <cstdint>
@@ -172,7 +173,13 @@ int llama_completion(int argc, char ** argv) {
     const uint64_t benchmark_warmup_tokens = benchmark_warmup_tokens_env != nullptr
         ? (uint64_t) std::max<int64_t>(0, std::strtoll(benchmark_warmup_tokens_env, nullptr, 10))
         : 0;
+    const char * benchmark_measure_tokens_env = std::getenv("GGML_COMPLETION_BENCH_MEASURE_TOKENS");
+    const uint64_t benchmark_measure_tokens = benchmark_measure_tokens_env != nullptr
+        ? (uint64_t) std::max<int64_t>(0, std::strtoll(benchmark_measure_tokens_env, nullptr, 10))
+        : 0;
     bool benchmark_measurement_started = benchmark_warmup_tokens == 0;
+    bool benchmark_measurement_completed = false;
+    auto benchmark_measurement_started_at = std::chrono::steady_clock::now();
     const int32_t diagnostic_n_vocab = llama_vocab_n_tokens(vocab);
     if (logits_dump_path != nullptr && logits_dump_path[0] != '\0') {
         logits_dump.open(logits_dump_path, std::ios::binary | std::ios::trunc);
@@ -803,11 +810,28 @@ int llama_completion(int argc, char ** argv) {
                     ggml_backend_moe_dynamic_trace_marker("measurement_graph_rebuild_complete");
                 }
                 llama_perf_context_reset(ctx);
+                benchmark_measurement_started_at = std::chrono::steady_clock::now();
                 benchmark_measurement_started = true;
                 LOG_INF(
                     "%s: benchmark decode warmup complete after %" PRIu64
                     " tokens; performance counters reset with expert cache preserved\n",
                     __func__, benchmark_warmup_tokens);
+            }
+
+            if (benchmark_measurement_started && !benchmark_measurement_completed &&
+                benchmark_measure_tokens > 0 &&
+                diagnostic_generation_step >= benchmark_warmup_tokens + benchmark_measure_tokens) {
+                const auto measurement_completed_at = std::chrono::steady_clock::now();
+                const double elapsed_ms = std::chrono::duration<double, std::milli>(
+                    measurement_completed_at - benchmark_measurement_started_at).count();
+                const double measured_tps = elapsed_ms > 0.0
+                    ? benchmark_measure_tokens * 1000.0 / elapsed_ms
+                    : 0.0;
+                benchmark_measurement_completed = true;
+                LOG_INF(
+                    "%s: benchmark decode measurement complete after %" PRIu64
+                    " tokens; elapsed = %.3f ms, %.6f tokens per second\n",
+                    __func__, benchmark_measure_tokens, elapsed_ms, measured_tps);
             }
 
             common_sampler_accept(smpl, id, /* accept_grammar= */ true);

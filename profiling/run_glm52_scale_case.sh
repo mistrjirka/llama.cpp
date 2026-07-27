@@ -23,6 +23,8 @@ CPU_STRICT=${CPU_STRICT:-0}
 BATCH_CPU_RANGE=${BATCH_CPU_RANGE:-}
 BATCH_CPU_STRICT=${BATCH_CPU_STRICT:-$CPU_STRICT}
 TRACE_GRAPH_BUILD=${TRACE_GRAPH_BUILD:-1}
+CUDA_GRAPHS=${CUDA_GRAPHS:-0}
+VERBOSE=${VERBOSE:-1}
 TRACE_PATH=${TRACE_PATH:-}
 STATIC_MAP=${STATIC_MAP:-$PWD/$OUTDIR/static-frequency-map.txt}
 FORCE_TOKENS=${FORCE_TOKENS:-$PWD/$OUTDIR/reference.tokens.txt}
@@ -52,9 +54,12 @@ monitor_pid=$!
 
 common_env=(
     CUDA_VISIBLE_DEVICES=0
-    GGML_CUDA_DISABLE_GRAPHS=1
     "GGML_COMPLETION_BENCH_WARMUP_TOKENS=$WARMUP_TOKENS"
+    "GGML_COMPLETION_BENCH_MEASURE_TOKENS=$MEASURE_TOKENS"
 )
+if [ "$CUDA_GRAPHS" = 0 ]; then
+    common_env+=(GGML_CUDA_DISABLE_GRAPHS=1)
+fi
 case_env=()
 model_args=()
 case "$CASE" in
@@ -142,10 +147,15 @@ fi
 if [ -n "$BATCH_CPU_RANGE" ]; then
     cpu_args+=(-Crb "$BATCH_CPU_RANGE" --cpu-strict-batch "$BATCH_CPU_STRICT")
 fi
+verbosity_args=()
+if [ "$VERBOSE" != 0 ]; then
+    verbosity_args=(-v)
+fi
 
 start_ns=$(date +%s%N)
 rc=0
 env \
+    -u GGML_CUDA_DISABLE_GRAPHS \
     -u GGML_EXPERT_CACHE_MIB -u GGML_EXPERT_CACHE_RESERVE_MIB -u GGML_EXPERT_CACHE_PROFILE \
     -u GGML_MOE_DYNAMIC_SPLIT_SLOTS -u GGML_MOE_DYNAMIC_THRESHOLD \
     -u GGML_MOE_DYNAMIC_MIN_HOT_ROUTES -u GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN \
@@ -163,19 +173,19 @@ env \
         -m "$MODEL" -f "$PROMPT_FILE" -n "$TOTAL_TOKENS" -c "$CONTEXT" \
         -b 512 -ub 128 -fa on -dev CUDA0 -t "$THREADS" -tb "$BATCH_THREADS" \
         "${cpu_args[@]}" "${model_args[@]}" -s 1 --temp 0 --ignore-eos \
-        --single-turn --no-conversation --no-display-prompt --simple-io -v \
+        --single-turn --no-conversation --no-display-prompt --simple-io "${verbosity_args[@]}" \
         > "$out" 2> "$err" || rc=$?
 end_ns=$(date +%s%N)
 
 kill "$monitor_pid" 2>/dev/null || true
 wait "$monitor_pid" 2>/dev/null || true
 
-python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" "$THREADS" "$BATCH_THREADS" "$POLL" "$CPU_RANGE" "$CPU_STRICT" "$BATCH_CPU_RANGE" "$BATCH_CPU_STRICT" "$TRACE_GRAPH_BUILD" <<'PY'
+python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" "$THREADS" "$BATCH_THREADS" "$POLL" "$CPU_RANGE" "$CPU_STRICT" "$BATCH_CPU_RANGE" "$BATCH_CPU_STRICT" "$TRACE_GRAPH_BUILD" "$CUDA_GRAPHS" "$VERBOSE" <<'PY'
 import hashlib, json, re, statistics, sys
 (case, rep, rc, start_ns, end_ns, err_path, out_path, gpu_path, summary_path,
  expected_runs, context, vertical_fit_target, cache_reserve, min_hot_routes,
  threads, batch_threads, poll, cpu_range, cpu_strict,
- batch_cpu_range, batch_cpu_strict, trace_graph_build) = sys.argv[1:]
+ batch_cpu_range, batch_cpu_strict, trace_graph_build, cuda_graphs, verbose) = sys.argv[1:]
 text = open(err_path, errors='replace').read()
 
 def last(pattern, default=None):
@@ -198,6 +208,12 @@ for line in open(gpu_path, errors='replace'):
 
 measured_runs = integer(r'(?<!prompt )eval time\s*=.*?/\s*(\d+) runs')
 reported_tps = last(r'(?<!prompt )eval time\s*=.*?([0-9.]+) tokens per second')
+benchmark_marker = last(
+    r'benchmark decode measurement complete after (\d+) tokens; '
+    r'elapsed = ([0-9.]+) ms, ([0-9.]+) tokens per second')
+marker_runs = int(benchmark_marker[0]) if benchmark_marker else 0
+marker_elapsed_s = float(benchmark_marker[1]) / 1000.0 if benchmark_marker else None
+marker_tps = float(benchmark_marker[2]) if benchmark_marker else None
 
 # `llama_perf_context_reset()` currently loses decode accounting for some
 # CPU-MoE graph layouts. Derive a second measurement from verbose monotonic
@@ -226,8 +242,15 @@ if warmup:
             timestamp_elapsed_s = end - begin
             timestamp_tps = timestamp_runs / timestamp_elapsed_s
 
-effective_tps = float(reported_tps) if reported_tps is not None and measured_runs == int(expected_runs) else timestamp_tps
-effective_runs = measured_runs if measured_runs == int(expected_runs) else timestamp_runs
+if marker_tps is not None and marker_runs == int(expected_runs):
+    effective_tps = marker_tps
+    effective_runs = marker_runs
+elif reported_tps is not None and measured_runs == int(expected_runs):
+    effective_tps = float(reported_tps)
+    effective_runs = measured_runs
+else:
+    effective_tps = timestamp_tps
+    effective_runs = timestamp_runs
 allocation = last(r'expert-cache: entries=(\d+) allocated=([0-9.]+) MiB')
 result = {
     'case': case,
@@ -247,16 +270,22 @@ result = {
     'batch_cpu_range': batch_cpu_range or None,
     'batch_cpu_strict': int(batch_cpu_strict),
     'trace_graph_build': int(trace_graph_build),
+    'cuda_graphs': int(cuda_graphs),
+    'verbose': int(verbose),
     'prompt_tokens': integer(r'prompt eval time\s*=.*?/\s*(\d+) tokens'),
     'prompt_tps': last(r'prompt eval time\s*=.*?([0-9.]+) tokens per second'),
     'measured_runs': measured_runs,
     'reported_measured_tps': float(reported_tps) if reported_tps is not None else None,
+    'marker_measured_runs': marker_runs,
+    'marker_measured_s': marker_elapsed_s,
+    'marker_measured_tps': marker_tps,
     'timestamp_measured_runs': timestamp_runs,
     'timestamp_measured_s': timestamp_elapsed_s,
     'timestamp_measured_tps': timestamp_tps,
     'effective_measured_runs': effective_runs,
     'effective_measured_tps': effective_tps,
-    'measured_time_ms': last(r'total time\s*=\s*([0-9.]+) ms'),
+    'measured_time_ms': marker_elapsed_s * 1000.0 if marker_elapsed_s is not None else
+        last(r'total time\s*=\s*([0-9.]+) ms'),
     'graph_nodes': last(r'sched_reserve: graph nodes\s*=\s*([^\n]+)'),
     'graph_splits': last(r'sched_reserve: graph splits\s*=\s*([^\n]+)'),
     'cuda_model_buffer_mib': last(r'CUDA0 model buffer size\s*=\s*([0-9.]+) MiB'),
@@ -276,10 +305,10 @@ result = {
 }
 assertions = [
     {'name':'process_exit','ok':int(rc)==0,'detail':int(rc)},
-    {'name':'measured_token_count','ok':effective_runs==int(expected_runs),'detail':{'reported':measured_runs,'timestamp':timestamp_runs}},
+    {'name':'measured_token_count','ok':effective_runs==int(expected_runs),'detail':{'marker':marker_runs,'reported':measured_runs,'timestamp':timestamp_runs}},
     {'name':'no_cuda_oom','ok':not result['cuda_oom'],'detail':result['cuda_oom']},
 ]
-if case in ('vertical', 'vertical-free', 'vertical-static'):
+if case in ('vertical', 'vertical-free', 'vertical-static') and int(verbose) != 0:
     assertions.extend([
         {'name':'cache_allocated','ok':result['cache_entries'] is not None and result['cache_entries']>0,'detail':result['cache_entries']},
         {'name':'coverage_present','ok':result['coverage_line'] is not None,'detail':result['coverage_line']},
