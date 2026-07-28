@@ -380,6 +380,11 @@ extern "C" {
             int32_t   layer,
             int32_t * slot_map,
             int32_t   n_expert);
+    GGML_API bool ggml_backend_moe_dynamic_get_slot_map_snapshot(
+            int32_t    layer,
+            int32_t  * slot_map,
+            int32_t    n_expert,
+            uint64_t * generation);
 
     GGML_API void ggml_backend_moe_dynamic_trace_marker(const char * marker);
     GGML_API void ggml_backend_moe_dynamic_split_routes(

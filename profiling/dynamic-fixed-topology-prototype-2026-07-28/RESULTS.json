@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-28",
+  "repository": {
+    "path": "/workspace/llama-mainline-cache",
+    "branch": "expert-cache-mainline",
+    "head": "ccb9468648ef",
+    "worktree_state": "uncommitted prototype"
+  },
+  "objective": "Keep mutable expert storage while replacing the 302-split CPU-policy topology with a persistent GPU slot map and the 152-split exact CPU-fallback topology.",
+  "root_cause": {
+    "expert_weight_upload_is_primary": false,
+    "primary_demonstrated_cost": "execution coordination and backend topology",
+    "legacy_decode_splits": 302,
+    "fixed_decode_splits": 152,
+    "legacy_backend_transitions": {
+      "cpu_to_gpu": 151,
+      "gpu_to_cpu": 150
+    },
+    "explanation": "The legacy dynamic path exposes a CPU mutable-route policy island, GPU hot branch, CPU cold branch/merge preparation, and GPU continuation at every MoE layer. Expert H2D upload is a separate promotion-worker path."
+  },
+  "successful_experiments": {
+    "one_layer_exact_ab": {
+      "fixed": {
+        "tps": 4.729537,
+        "decode_splits": 152,
+        "sha256": "56654198bc2722d516f67f1e8262849e8d14a78488589869aa25e41e12a3ddc1",
+        "exit": 0
+      },
+      "legacy": {
+        "tps": 4.579198,
+        "decode_splits": 154,
+        "sha256": "56654198bc2722d516f67f1e8262849e8d14a78488589869aa25e41e12a3ddc1",
+        "exit": 0
+      },
+      "fixed_over_legacy_percent": 3.283085815463749
+    },
+    "all_layers_cuda_graphs_off": {
+      "configuration": "one synchronously warmed resident expert per MoE layer, no post-warmup admission",
+      "fixed_tps": 5.065196,
+      "legacy_tps": 3.594574,
+      "fixed_over_legacy_percent": 40.912275001154505,
+      "same_sha256": "ac41c716ab89cd0f81674237f7e2782bfe7b0a0d4415f35d455e0ce7e9373ef7",
+      "fixed_exit": 0,
+      "legacy_exit": 0
+    },
+    "all_layers_cuda_graphs_on": {
+      "configuration": "16 warmup plus 32 measured tokens, one synchronously warmed resident expert per MoE layer, no post-warmup admission",
+      "fixed_tps": 6.339055,
+      "legacy_tps": 4.059881,
+      "fixed_over_legacy_percent": 56.13893609196921,
+      "same_sha256": "e165b05c0568da0b099159b3045190e4f33ffbd97698d0a9881b982ead61f514",
+      "fixed_exit": 0,
+      "legacy_exit": 0
+    },
+    "async_warmstart": {
+      "configuration": "one asynchronously warmed resident expert per layer, CUDA Graphs enabled, no decode-time admission",
+      "tps": 6.1863,
+      "sha256": "3f2f82649b2680ec6b5426bddd5cafd61cb9441733ef9091b0d80c7e2eb7cc6a",
+      "exit": 0,
+      "promotion_readback": "byte-for-byte verification passed for sampled component shapes"
+    },
+    "final_retained_source_validation": {
+      "configuration": "16 warmup plus 32 measured tokens, async one-slot-per-layer warm-start, no post-warmup admission, CUDA Graphs enabled",
+      "tps": 6.349746,
+      "measured_tokens": 32,
+      "sha256": "e165b05c0568da0b099159b3045190e4f33ffbd97698d0a9881b982ead61f514",
+      "exit": 0,
+      "assertions_passed": true,
+      "urgent_predict_upload": 0
+    }
+  },
+  "code_fixes": [
+    {
+      "file": "ggml/src/ggml-backend.cpp",
+      "change": "Clear stale CUDA tensor metadata before rebinding graph tensors to cache-owned persistent buffers.",
+      "key_code": "tensor_copy->buffer = nullptr; tensor_copy->data = nullptr; tensor_copy->extra = nullptr; ggml_backend_tensor_alloc(...)"
+    },
+    {
+      "file": "ggml/src/ggml-cuda/set-rows.cu",
+      "change": "Make set-rows D2H validation strictly opt-in; its stream synchronization is illegal during CUDA graph capture.",
+      "key_code": "GGML_MOE_DYNAMIC_VALIDATE_SET_ROWS is no longer implied by fixed-topology mode"
+    },
+    {
+      "file": "ggml/src/ggml-cuda/ggml-cuda.cu",
+      "change": "Maintain a stable per-layer device slot map and mapped-ID buffer, updating map contents by generation without changing graph pointers."
+    },
+    {
+      "file": "ggml/src/ggml-cpu/ggml-cpu.c",
+      "change": "CPU MMID skips canonical expert routes currently published as resident, preserving exact hot/cold exclusivity."
+    },
+    {
+      "file": "src/llama-graph.cpp",
+      "change": "Build CPU cold branch before GPU hot branch, use canonical IDs with GPU slot remapping, merge complementary outputs on GPU, and reduce fixed-topology decode to two backend segments per layer."
+    },
+    {
+      "file": "profiling/run_glm52_scale_case.sh",
+      "change": "Expose and record fixed-topology, admission, warm-start, async-promotion, predictor, and urgent-upload controls."
+    }
+  ],
+  "failed_or_reverted_experiments": [
+    {
+      "experiment": "Implicit set-rows validation during graph capture",
+      "result": "failed",
+      "cause": "cudaStreamSynchronize during active stream capture is prohibited",
+      "resolution": "fixed; validation is now explicit opt-in"
+    },
+    {
+      "experiment": "Predictor-driven decode-time admissions",
+      "result": "failed",
+      "exit": 134,
+      "notes": "Failure persisted with urgent upload disabled and with CUDA Graphs disabled."
+    },
+    {
+      "experiment": "Two warmed slots per layer",
+      "result": "failed",
+      "exit": 134,
+      "notes": "Failure reproduced with synchronous promotion and with the generic safe MMID fallback."
+    },
+    {
+      "experiment": "Use the CPU custom-op route snapshot directly as GPU MMID IDs",
+      "result": "failed_and_reverted",
+      "notes": "Scheduler use of the custom-op tensor as a GPU branch input failed before cache initialization."
+    },
+    {
+      "experiment": "Deduplicate repeated route IDs in cache scoring",
+      "result": "did_not_fix_and_reverted",
+      "notes": "Repeated IDs were a downstream symptom, not the root cause."
+    }
+  ],
+  "sanitizer_result": {
+    "tool": "NVIDIA compute-sanitizer memcheck",
+    "exit": 99,
+    "error_count": 257,
+    "first_localized_failure": "Invalid global write in k_set_rows<float, int, __half>",
+    "interpretation": "The promotion worker did not write expert buffers out of bounds. Upstream numerical or routing-state corruption reaches a later SET_ROWS operation. The multi-slot path is not safe to enable."
+  },
+  "validation": {
+    "git_diff_check": "pass",
+    "runner_bash_syntax": "pass",
+    "build": {
+      "command": "cmake --build build-v100 --target llama-completion test-moe-split-backends -j 16",
+      "exit": 0
+    },
+    "focused_gpu_test": {
+      "command": "build-v100/bin/test-moe-split-backends",
+      "exit": 0
+    }
+  },
+  "retention_decision": {
+    "default_enabled": false,
+    "safe_checkpoint": "opt-in fixed topology with a stable published map and no decode-time multi-slot mutation",
+    "production_ready": false,
+    "reason": "The structural speedup is proven, but multi-slot/full mutable correctness remains unresolved."
+  },
+  "next_minimal_work": [
+    "Add a finite/range validator immediately after each fixed-topology MoE merge to identify the first corrupt layer before the later SET_ROWS failure.",
+    "Compare fixed hot, fixed cold, and merged tensors against the legacy graph for the first failing token/layer.",
+    "Once numerical parity is restored, add per-slot compute-use events and event-driven map publication for decode-time replacement.",
+    "Only then enable the learned predictor/MLP on the fixed topology."
+  ]
+}

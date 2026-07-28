@@ -25,7 +25,21 @@ BATCH_CPU_STRICT=${BATCH_CPU_STRICT:-$CPU_STRICT}
 TRACE_GRAPH_BUILD=${TRACE_GRAPH_BUILD:-1}
 CUDA_GRAPHS=${CUDA_GRAPHS:-0}
 VERBOSE=${VERBOSE:-1}
+PROFILE=${PROFILE:-0}
 TRACE_PATH=${TRACE_PATH:-}
+TRACE_COMPACT=${TRACE_COMPACT:-0}
+CROSS_LAYER_PREFETCH_PER_LAYER=${CROSS_LAYER_PREFETCH_PER_LAYER:-0}
+CROSS_LAYER_PREFETCH_TOTAL=${CROSS_LAYER_PREFETCH_TOTAL:-0}
+CROSS_LAYER_MIN_OBSERVATIONS=${CROSS_LAYER_MIN_OBSERVATIONS:-1}
+CROSS_LAYER_GLOBAL_RANK=${CROSS_LAYER_GLOBAL_RANK:-0}
+CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE=${CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE:-4.0}
+CROSS_LAYER_DISTANCE2_WEIGHT=${CROSS_LAYER_DISTANCE2_WEIGHT:-1.0}
+DYNAMIC_FIXED_TOPOLOGY=${DYNAMIC_FIXED_TOPOLOGY:-0}
+DYNAMIC_MAX_ADMISSIONS_PER_TOKEN=${DYNAMIC_MAX_ADMISSIONS_PER_TOKEN:-16}
+DYNAMIC_WARM_START_PER_LAYER=${DYNAMIC_WARM_START_PER_LAYER:-8}
+DYNAMIC_WARM_START_TOTAL=${DYNAMIC_WARM_START_TOTAL:-608}
+DYNAMIC_ASYNC_PROMOTION=${DYNAMIC_ASYNC_PROMOTION:-1}
+URGENT_PREDICT_UPLOAD=${URGENT_PREDICT_UPLOAD:-1}
 STATIC_MAP=${STATIC_MAP:-$PWD/$OUTDIR/static-frequency-map.txt}
 FORCE_TOKENS=${FORCE_TOKENS:-$PWD/$OUTDIR/reference.tokens.txt}
 
@@ -60,6 +74,9 @@ common_env=(
 if [ "$CUDA_GRAPHS" = 0 ]; then
     common_env+=(GGML_CUDA_DISABLE_GRAPHS=1)
 fi
+if [ "$PROFILE" != 0 ]; then
+    common_env+=("GGML_EXPERT_CACHE_PROFILE=$PROFILE")
+fi
 case_env=()
 model_args=()
 case "$CASE" in
@@ -84,20 +101,25 @@ case "$CASE" in
                 GGML_MOE_DYNAMIC_SPLIT_SLOTS=auto
                 GGML_MOE_DYNAMIC_THRESHOLD=2
                 "GGML_MOE_DYNAMIC_MIN_HOT_ROUTES=$MIN_HOT_ROUTES"
-                GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN=16
+                "GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN=$DYNAMIC_MAX_ADMISSIONS_PER_TOKEN"
                 GGML_MOE_DYNAMIC_PREFILL_OBSERVE=1
-                GGML_MOE_DYNAMIC_WARM_START_PER_LAYER=8
-                GGML_MOE_DYNAMIC_WARM_START_TOTAL=608
+                "GGML_MOE_DYNAMIC_WARM_START_PER_LAYER=$DYNAMIC_WARM_START_PER_LAYER"
+                "GGML_MOE_DYNAMIC_WARM_START_TOTAL=$DYNAMIC_WARM_START_TOTAL"
                 GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER=0
                 GGML_MOE_DYNAMIC_PREDICT_PREFETCH_TOTAL=0
-                GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_PER_LAYER=0
-                GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL=0
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_PER_LAYER=$CROSS_LAYER_PREFETCH_PER_LAYER"
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL=$CROSS_LAYER_PREFETCH_TOTAL"
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_MIN_OBSERVATIONS=$CROSS_LAYER_MIN_OBSERVATIONS"
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_GLOBAL_RANK=$CROSS_LAYER_GLOBAL_RANK"
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE=$CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE"
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_DISTANCE2_WEIGHT=$CROSS_LAYER_DISTANCE2_WEIGHT"
+                "GGML_MOE_DYNAMIC_FIXED_TOPOLOGY=$DYNAMIC_FIXED_TOPOLOGY"
                 GGML_MOE_DYNAMIC_SEGMENTED_LRU=1
                 GGML_MOE_DYNAMIC_PROTECTED_HITS=2
                 GGML_MOE_DYNAMIC_SKIP_HOT_BRANCH=1
                 GGML_MOE_DYNAMIC_SKIP_COLD_BRANCH=1
-                GGML_MOE_DYNAMIC_ASYNC_PROMOTION=1
-                GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD=1
+                "GGML_MOE_DYNAMIC_ASYNC_PROMOTION=$DYNAMIC_ASYNC_PROMOTION"
+                "GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD=$URGENT_PREDICT_UPLOAD"
                 "GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD=$TRACE_GRAPH_BUILD"
             )
         fi
@@ -138,6 +160,7 @@ esac
 if [ -n "$TRACE_PATH" ]; then
     rm -f "$TRACE_PATH"
     case_env+=("GGML_MOE_DYNAMIC_TRACE=$TRACE_PATH")
+    case_env+=("GGML_MOE_DYNAMIC_TRACE_COMPACT=$TRACE_COMPACT")
 fi
 
 cpu_args=(--poll "$POLL")
@@ -162,10 +185,14 @@ env \
     -u GGML_MOE_DYNAMIC_PREFILL_OBSERVE -u GGML_MOE_DYNAMIC_WARM_START_PER_LAYER \
     -u GGML_MOE_DYNAMIC_WARM_START_TOTAL -u GGML_MOE_DYNAMIC_PREDICT_PREFETCH_PER_LAYER \
     -u GGML_MOE_DYNAMIC_PREDICT_PREFETCH_TOTAL -u GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_PER_LAYER \
-    -u GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL -u GGML_MOE_DYNAMIC_SEGMENTED_LRU \
+    -u GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL -u GGML_MOE_DYNAMIC_CROSS_LAYER_MIN_OBSERVATIONS \
+    -u GGML_MOE_DYNAMIC_CROSS_LAYER_GLOBAL_RANK -u GGML_MOE_DYNAMIC_CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE \
+    -u GGML_MOE_DYNAMIC_CROSS_LAYER_DISTANCE2_WEIGHT -u GGML_MOE_DYNAMIC_FIXED_TOPOLOGY \
+    -u GGML_MOE_DYNAMIC_SEGMENTED_LRU \
     -u GGML_MOE_DYNAMIC_PROTECTED_HITS -u GGML_MOE_DYNAMIC_SKIP_HOT_BRANCH \
     -u GGML_MOE_DYNAMIC_SKIP_COLD_BRANCH -u GGML_MOE_DYNAMIC_ASYNC_PROMOTION \
     -u GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD -u GGML_MOE_DYNAMIC_TRACE \
+    -u GGML_MOE_DYNAMIC_TRACE_COMPACT \
     -u GGML_MOE_DYNAMIC_STATIC_MAP -u GGML_MOE_DYNAMIC_GPU_ROUTE_MAP \
     -u GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK -u GGML_MOE_DYNAMIC_MIN_COMPLETE_COVERAGE \
     "${common_env[@]}" "${case_env[@]}" \
@@ -180,12 +207,17 @@ end_ns=$(date +%s%N)
 kill "$monitor_pid" 2>/dev/null || true
 wait "$monitor_pid" 2>/dev/null || true
 
-python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" "$THREADS" "$BATCH_THREADS" "$POLL" "$CPU_RANGE" "$CPU_STRICT" "$BATCH_CPU_RANGE" "$BATCH_CPU_STRICT" "$TRACE_GRAPH_BUILD" "$CUDA_GRAPHS" "$VERBOSE" <<'PY'
+python3 - "$CASE" "$REP" "$rc" "$start_ns" "$end_ns" "$err" "$out" "$gpu" "$summary" "$MEASURE_TOKENS" "$CONTEXT" "$VERTICAL_FIT_TARGET_MIB" "$CACHE_RESERVE_MIB" "$MIN_HOT_ROUTES" "$THREADS" "$BATCH_THREADS" "$POLL" "$CPU_RANGE" "$CPU_STRICT" "$BATCH_CPU_RANGE" "$BATCH_CPU_STRICT" "$TRACE_GRAPH_BUILD" "$CUDA_GRAPHS" "$VERBOSE" "$CROSS_LAYER_PREFETCH_PER_LAYER" "$CROSS_LAYER_PREFETCH_TOTAL" "$CROSS_LAYER_MIN_OBSERVATIONS" "$CROSS_LAYER_GLOBAL_RANK" "$CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE" "$CROSS_LAYER_DISTANCE2_WEIGHT" "$DYNAMIC_FIXED_TOPOLOGY" "$DYNAMIC_MAX_ADMISSIONS_PER_TOKEN" "$DYNAMIC_WARM_START_PER_LAYER" "$DYNAMIC_WARM_START_TOTAL" "$DYNAMIC_ASYNC_PROMOTION" "$URGENT_PREDICT_UPLOAD" <<'PY'
 import hashlib, json, re, statistics, sys
 (case, rep, rc, start_ns, end_ns, err_path, out_path, gpu_path, summary_path,
  expected_runs, context, vertical_fit_target, cache_reserve, min_hot_routes,
  threads, batch_threads, poll, cpu_range, cpu_strict,
- batch_cpu_range, batch_cpu_strict, trace_graph_build, cuda_graphs, verbose) = sys.argv[1:]
+ batch_cpu_range, batch_cpu_strict, trace_graph_build, cuda_graphs, verbose,
+ cross_per_layer, cross_total, cross_min_observations, cross_global_rank,
+ cross_global_rank_oversubscribe, cross_distance2_weight,
+ dynamic_fixed_topology, dynamic_max_admissions_per_token,
+ dynamic_warm_start_per_layer, dynamic_warm_start_total,
+ dynamic_async_promotion, urgent_predict_upload) = sys.argv[1:]
 text = open(err_path, errors='replace').read()
 
 def last(pattern, default=None):
@@ -272,6 +304,18 @@ result = {
     'trace_graph_build': int(trace_graph_build),
     'cuda_graphs': int(cuda_graphs),
     'verbose': int(verbose),
+    'cross_layer_prefetch_per_layer': int(cross_per_layer),
+    'cross_layer_prefetch_total': int(cross_total),
+    'cross_layer_min_observations': int(cross_min_observations),
+    'cross_layer_global_rank': int(cross_global_rank),
+    'cross_layer_global_rank_oversubscribe': float(cross_global_rank_oversubscribe),
+    'cross_layer_distance2_weight': float(cross_distance2_weight),
+    'dynamic_fixed_topology': int(dynamic_fixed_topology),
+    'dynamic_max_admissions_per_token': int(dynamic_max_admissions_per_token),
+    'dynamic_warm_start_per_layer': int(dynamic_warm_start_per_layer),
+    'dynamic_warm_start_total': int(dynamic_warm_start_total),
+    'dynamic_async_promotion': int(dynamic_async_promotion),
+    'urgent_predict_upload': int(urgent_predict_upload),
     'prompt_tokens': integer(r'prompt eval time\s*=.*?/\s*(\d+) tokens'),
     'prompt_tps': last(r'prompt eval time\s*=.*?([0-9.]+) tokens per second'),
     'measured_runs': measured_runs,

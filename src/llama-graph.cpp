@@ -1979,6 +1979,40 @@ static void llm_graph_moe_dynamic_observe(
         n_ids);
 }
 
+static void llm_graph_moe_dynamic_snapshot(
+        ggml_tensor * dst,
+        const ggml_tensor * src,
+        int ith,
+        int nth,
+        void * userdata) {
+    GGML_UNUSED(nth);
+    if (ith != 0) {
+        return;
+    }
+    GGML_ASSERT(src->type == GGML_TYPE_I32 && dst->type == GGML_TYPE_I32);
+    GGML_ASSERT(ggml_is_contiguous(src) && ggml_is_contiguous(dst));
+    const auto * params = (const llm_graph_moe_dynamic_mask_params *) userdata;
+    GGML_ASSERT(params != nullptr);
+    const int64_t n_ids = ggml_nelements(src);
+    memcpy(dst->data, src->data, (size_t) n_ids * sizeof(int32_t));
+
+    // Reuse the existing policy/predictor implementation, but publish its
+    // residency decision as a per-layer snapshot instead of materializing hot
+    // and cold ID tensors. The CPU miss mask and GPU remap kernel consume that
+    // same snapshot during this layer's fixed two-segment graph.
+    std::vector<int32_t> hot_ids((size_t) n_ids, -1);
+    std::vector<int32_t> cold_ids((size_t) n_ids, -1);
+    ggml_backend_moe_dynamic_split_routes(
+        params->layer,
+        params->n_expert,
+        params->n_slots,
+        params->n_routes_per_token,
+        (const int32_t *) src->data,
+        n_ids,
+        hot_ids.data(),
+        cold_ids.data());
+}
+
 static void llm_graph_moe_dynamic_mask(
         ggml_tensor * dst,
         const ggml_tensor * src,
@@ -2356,13 +2390,19 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     const bool dynamic_force_gpu_only_graph = dynamic_split_requested &&
         std::getenv("GGML_MOE_DYNAMIC_FORCE_GPU_ONLY") != nullptr &&
         atoi(std::getenv("GGML_MOE_DYNAMIC_FORCE_GPU_ONLY")) != 0;
-    const bool dynamic_exact_cpu_fallback = dynamic_split_requested && dynamic_static_map &&
-        std::getenv("GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK") != nullptr &&
-        atoi(std::getenv("GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK")) != 0;
+    const bool dynamic_fixed_topology = dynamic_split_requested &&
+        std::getenv("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY") != nullptr &&
+        atoi(std::getenv("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY")) != 0;
+    const bool dynamic_exact_cpu_fallback = dynamic_split_requested &&
+        (dynamic_fixed_topology ||
+         (dynamic_static_map &&
+          std::getenv("GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK") != nullptr &&
+          atoi(std::getenv("GGML_MOE_DYNAMIC_EXACT_CPU_FALLBACK")) != 0));
     const bool dynamic_gpu_route_map = dynamic_split_requested &&
-        (dynamic_force_gpu_only_graph || dynamic_exact_cpu_fallback) &&
-        std::getenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP") != nullptr &&
-        atoi(std::getenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP")) != 0;
+        (dynamic_fixed_topology ||
+         ((dynamic_force_gpu_only_graph || dynamic_exact_cpu_fallback) &&
+          std::getenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP") != nullptr &&
+          atoi(std::getenv("GGML_MOE_DYNAMIC_GPU_ROUTE_MAP")) != 0));
     const char * prefill_observe_env = std::getenv("GGML_MOE_DYNAMIC_PREFILL_OBSERVE");
     const bool dynamic_prefill_observe =
         dynamic_feature_requested && n_tokens > 1 &&
@@ -2374,8 +2414,8 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         atoi(std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD")) != 0) {
         LLAMA_LOG_INFO(
             "moe-graph-build: layer=%d tokens=%lld feature=%d active=%d split-requested=%d "
-            "common-supported=%d split-supported=%d force-gpu-only=%d exact-cpu-fallback=%d "
-            "gpu-route-map=%d static-map=%d slots=%lld\n",
+            "common-supported=%d split-supported=%d force-gpu-only=%d fixed-topology=%d "
+            "exact-cpu-fallback=%d gpu-route-map=%d static-map=%d slots=%lld\n",
             il,
             (long long) n_tokens,
             dynamic_feature_requested ? 1 : 0,
@@ -2384,6 +2424,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
             split_common_supported ? 1 : 0,
             split_supported ? 1 : 0,
             dynamic_force_gpu_only_graph ? 1 : 0,
+            dynamic_fixed_topology ? 1 : 0,
             dynamic_exact_cpu_fallback ? 1 : 0,
             dynamic_gpu_route_map ? 1 : 0,
             dynamic_static_map ? 1 : 0,
@@ -2405,11 +2446,33 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
             ggml_tensor * selected_cold = nullptr;
             if (dynamic_split_requested) {
                 if (dynamic_gpu_route_map) {
-                    selected_hot = selected_experts;
-                    cb(selected_hot, "ffn_moe_dynamic_gpu_mapped_source_ids", il);
-                    if (dynamic_exact_cpu_fallback) {
-                        selected_cold = selected_experts;
-                        cb(selected_cold, "ffn_moe_dynamic_exact_cold_source_ids", il);
+                    if (dynamic_fixed_topology) {
+                        auto * dynamic_params = llm_graph_moe_dynamic_mask_params_get(
+                            il, (int32_t) n_expert, (int32_t) split_slots, (int32_t) n_expert_used);
+                        ggml_tensor * snapshot_source = ggml_cont(ctx0, selected_experts);
+                        ggml_backend_sched_set_tensor_backend(sched, snapshot_source, backend_cpu);
+                        cb(snapshot_source, "ffn_moe_dynamic_snapshot_source_ids", il);
+                        ggml_tensor * snapshot_ids = ggml_map_custom1(
+                            ctx0,
+                            snapshot_source,
+                            llm_graph_moe_dynamic_snapshot,
+                            1,
+                            dynamic_params);
+                        ggml_backend_sched_set_tensor_backend(sched, snapshot_ids, backend_cpu);
+                        cb(snapshot_ids, "ffn_moe_dynamic_snapshot_ids", il);
+                        // The CPU snapshot is used only for exact cold masking
+                        // and slot-map publication. Keep the GPU branch on the
+                        // router's original IDs; routing the custom-op snapshot back
+                        // into the GPU MMID branch is not scheduler-safe.
+                        selected_hot = selected_experts;
+                        selected_cold = snapshot_ids;
+                    } else {
+                        selected_hot = selected_experts;
+                        cb(selected_hot, "ffn_moe_dynamic_gpu_mapped_source_ids", il);
+                        if (dynamic_exact_cpu_fallback) {
+                            selected_cold = selected_experts;
+                            cb(selected_cold, "ffn_moe_dynamic_exact_cold_source_ids", il);
+                        }
                     }
                 } else {
                     ggml_tensor * duplicated_ids = ggml_concat(
@@ -2481,7 +2544,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
                 // removes a tiny CPU scheduler island per MoE layer. During warmup,
                 // retain the inherited host placement so the promotion path can still
                 // identify the canonical host source and populate cache slots.
-                if (dynamic_gpu_route_map && !dynamic_static_map) {
+                if (dynamic_gpu_route_map && !dynamic_static_map && !dynamic_fixed_topology) {
                     ggml_backend_sched_set_tensor_backend(sched, view, backend_gpu);
                 }
                 if (std::getenv("GGML_MOE_DYNAMIC_TRACE_GRAPH_BUILD") != nullptr &&
@@ -2491,7 +2554,9 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
                         il,
                         name,
                         dynamic_gpu_route_map ? 1 : 0,
-                        dynamic_gpu_route_map ? ggml_backend_name(backend_gpu) : "inherited",
+                        dynamic_gpu_route_map && !dynamic_fixed_topology
+                            ? ggml_backend_name(backend_gpu)
+                            : "inherited",
                         tensor->buffer != nullptr ? ggml_backend_buffer_name(tensor->buffer) : "none");
                 }
                 cb(view, name, il);
@@ -2555,6 +2620,23 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
                 return branch_down;
             };
 
+            // Fixed-topology mode deliberately constructs the CPU snapshot/cold
+            // branch before the GPU branch. The scheduler can then keep each MoE
+            // layer to one CPU segment followed by one GPU segment instead of
+            // CPU -> GPU -> CPU -> GPU. Legacy dynamic mode retains its original
+            // construction order for an exact control path.
+            ggml_tensor * cold_out = nullptr;
+            if (dynamic_fixed_topology && !dynamic_force_gpu_only_graph) {
+                cold_out = build_branch(
+                    up_exps,
+                    gate_exps,
+                    down_exps,
+                    selected_cold,
+                    backend_cpu,
+                    true,
+                    "ffn_moe_dynamic_cold_out");
+            }
+
             ggml_tensor * hot_out = build_branch(
                 hot_up_weights,
                 hot_gate_weights,
@@ -2566,19 +2648,23 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
             ggml_tensor * split_experts = hot_out;
             ggml_backend_t merge_backend = backend_gpu;
             if (!dynamic_force_gpu_only_graph) {
-                ggml_tensor * cold_out = build_branch(
-                    up_exps,
-                    gate_exps,
-                    down_exps,
-                    selected_cold,
-                    backend_cpu,
-                    dynamic_exact_cpu_fallback,
-                    dynamic_split_requested ? "ffn_moe_dynamic_cold_out" : "ffn_moe_static_cold_out");
+                if (cold_out == nullptr) {
+                    cold_out = build_branch(
+                        up_exps,
+                        gate_exps,
+                        down_exps,
+                        selected_cold,
+                        backend_cpu,
+                        dynamic_exact_cpu_fallback,
+                        dynamic_split_requested ? "ffn_moe_dynamic_cold_out" : "ffn_moe_static_cold_out");
+                }
 
                 // Merge complementary route outputs before weighting/reduction so the
                 // router multiplication and expert reduction occur once, in the exact
                 // same order as the original unsplit graph.
-                split_experts = ggml_add(ctx0, hot_out, cold_out);
+                split_experts = dynamic_fixed_topology
+                    ? ggml_add(ctx0, cold_out, hot_out)
+                    : ggml_add(ctx0, hot_out, cold_out);
                 merge_backend = dynamic_exact_cpu_fallback ? backend_gpu : backend_cpu;
             }
             ggml_backend_sched_set_tensor_backend(sched, split_experts, merge_backend);

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-28",
+  "hardware": "NVIDIA Tesla V100-SXM2 32 GiB",
+  "model": "GLM-5.2 UD-IQ2_XXS, approximately 222 GiB across six GGUF shards",
+  "context_tokens": 2048,
+  "decode_256_request": {
+    "fixed_topology": {
+      "decode_evaluations": 255,
+      "tps": 6.4,
+      "sha256": "1f3fe9b9c65cc26e09ecfc5bd207dfd2b8ad70df429a31e5cfbb1d2b1f81ba4c"
+    },
+    "modern_fit_tensor_overrides": {
+      "decode_evaluations": 255,
+      "tps": 5.04,
+      "sha256": "badaaade6e2ffe3d877d2cf635cb112b255669451c86c29b3b9a9a7c5659c34b"
+    },
+    "legacy_mutable": {
+      "decode_evaluations": 255,
+      "tps": 4.17,
+      "sha256": "0c0a9103afd83cbfca17df45381eb0b6dd3966d2a7235c35e2e0cb3c083a4305"
+    },
+    "whole_layer_ngl11": {
+      "decode_evaluations": 255,
+      "tps": 3.59,
+      "sha256": "aeeb9966608d6a1fef757a694b15dc30b4747280e310db3a00f754e7016efbcb"
+    },
+    "note": "Natural greedy outputs differ; this is a performance/stability comparison, not exact parity."
+  },
+  "controlled_forced_decode": {
+    "warmup_tokens": 16,
+    "measured_tokens": 32,
+    "fixed_topology_tps": 6.339055,
+    "legacy_mutable_tps": 4.059881,
+    "improvement_percent": 56.13893609196921,
+    "same_sha256": "e165b05c0568da0b099159b3045190e4f33ffbd97698d0a9881b982ead61f514"
+  },
+  "prefill_1793_tokens": {
+    "fixed_topology": {
+      "runs_tps": [
+        8.18,
+        8.16
+      ],
+      "mean_tps": 8.17
+    },
+    "legacy_mutable": {
+      "runs_tps": [
+        8.16,
+        8.14
+      ],
+      "mean_tps": 8.15
+    },
+    "modern_fit_tensor_overrides": {
+      "runs_tps": [
+        8.95
+      ],
+      "mean_tps": 8.95
+    },
+    "whole_layer_ngl11": {
+      "runs_tps": [
+        8.47
+      ],
+      "mean_tps": 8.47
+    }
+  },
+  "whole_layer_capacity": {
+    "ngl11": {
+      "status": "success",
+      "cuda_model_buffer_mib": 28240.94
+    },
+    "ngl12": {
+      "status": "OOM",
+      "failed_allocation_mib": 1752.38
+    },
+    "maximum_complete_layers": 11
+  },
+  "modern_fit_placement": {
+    "logical_layers_offloaded": "79/80",
+    "cuda_model_buffer_mib": 28563.13,
+    "uses_tensor_overrides": true,
+    "note": "Not a pure whole-layer baseline."
+  },
+  "validated_limits": {
+    "exact_forced_token_sequence_length": 48,
+    "longest_completed_natural_request_tokens": 256,
+    "long_natural_output_matches_legacy": false,
+    "multi_slot_decode_time_mutation_safe": false
+  }
+}

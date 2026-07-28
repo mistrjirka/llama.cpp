@@ -2031,6 +2031,13 @@ static bool ggml_cuda_should_fuse_mul_mat(const ggml_tensor * ffn_up,
         return false;
     }
 
+    if (is_mul_mat_id &&
+        ggml_get_op_params_i32(ffn_up, 2) > 0 &&
+        getenv("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY_DISABLE_FUSION") != nullptr &&
+        atoi(getenv("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY_DISABLE_FUSION")) != 0) {
+        return false;
+    }
+
     const ggml_op expected_bias_op = is_mul_mat ? GGML_OP_ADD : GGML_OP_ADD_ID;
     const ggml_tensor * ffn_up_bias_src   = has_scale ? ffn_up_scale   : ffn_up;
     const ggml_tensor * ffn_gate_bias_src = has_scale ? ffn_gate_scale : ffn_gate;
@@ -2200,12 +2207,66 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
 struct ggml_cuda_moe_slot_map_state {
     int32_t * slot_map = nullptr;
     int32_t * mapped_ids = nullptr;
+    int32_t * slot_map_host = nullptr;
+    cudaEvent_t slot_map_upload_event = nullptr;
     int32_t n_expert = 0;
     int64_t mapped_capacity = 0;
+    uint64_t generation = UINT64_MAX;
+    bool slot_map_upload_pending = false;
 };
 
 static std::mutex ggml_cuda_moe_slot_map_mutex;
 static std::map<std::pair<int, int32_t>, ggml_cuda_moe_slot_map_state> ggml_cuda_moe_slot_maps;
+
+static void ggml_cuda_moe_refresh_slot_map(
+        int device,
+        int32_t layer,
+        int32_t n_expert,
+        cudaStream_t stream) {
+    std::lock_guard<std::mutex> lock(ggml_cuda_moe_slot_map_mutex);
+    auto & state = ggml_cuda_moe_slot_maps[{device, layer}];
+    if (state.slot_map == nullptr) {
+        CUDA_CHECK(cudaMalloc(&state.slot_map, (size_t) n_expert * sizeof(int32_t)));
+        CUDA_CHECK(cudaHostAlloc(
+            &state.slot_map_host,
+            (size_t) n_expert * sizeof(int32_t),
+            cudaHostAllocPortable));
+        CUDA_CHECK(cudaEventCreateWithFlags(
+            &state.slot_map_upload_event,
+            cudaEventDisableTiming));
+        state.n_expert = n_expert;
+    }
+    GGML_ASSERT(state.n_expert == n_expert);
+
+    std::vector<int32_t> snapshot((size_t) n_expert, -1);
+    uint64_t generation = 0;
+    GGML_ASSERT(ggml_backend_moe_dynamic_get_slot_map_snapshot(
+        layer, snapshot.data(), n_expert, &generation));
+    if (state.generation != generation) {
+        if (state.slot_map_upload_pending) {
+            // The pinned host buffer must not be overwritten until the previous
+            // asynchronous copy has consumed it. This event covers only the
+            // 1 KiB map upload, not the following compute graph.
+            CUDA_CHECK(cudaEventSynchronize(state.slot_map_upload_event));
+        }
+        memcpy(
+            state.slot_map_host,
+            snapshot.data(),
+            (size_t) n_expert * sizeof(int32_t));
+        // This copy is deliberately issued before CUDA graph capture/launch.
+        // Graph replay therefore observes fresh map contents even though the
+        // graph topology and slot-map device pointer remain unchanged.
+        CUDA_CHECK(cudaMemcpyAsync(
+            state.slot_map,
+            state.slot_map_host,
+            (size_t) n_expert * sizeof(int32_t),
+            cudaMemcpyHostToDevice,
+            stream));
+        CUDA_CHECK(cudaEventRecord(state.slot_map_upload_event, stream));
+        state.slot_map_upload_pending = true;
+        state.generation = generation;
+    }
+}
 
 static ggml_cuda_moe_slot_map_state & ggml_cuda_moe_get_slot_map_state(
         int device,
@@ -2214,18 +2275,7 @@ static ggml_cuda_moe_slot_map_state & ggml_cuda_moe_get_slot_map_state(
         int64_t required_ids) {
     std::lock_guard<std::mutex> lock(ggml_cuda_moe_slot_map_mutex);
     auto & state = ggml_cuda_moe_slot_maps[{device, layer}];
-    if (state.slot_map == nullptr) {
-        std::vector<int32_t> slot_map_host((size_t) n_expert, -1);
-        GGML_ASSERT(ggml_backend_moe_dynamic_get_slot_map(layer, slot_map_host.data(), n_expert));
-        CUDA_CHECK(cudaMalloc(&state.slot_map, (size_t) n_expert * sizeof(int32_t)));
-        CUDA_CHECK(cudaMemcpy(
-            state.slot_map,
-            slot_map_host.data(),
-            (size_t) n_expert * sizeof(int32_t),
-            cudaMemcpyHostToDevice));
-        state.n_expert = n_expert;
-    }
-    GGML_ASSERT(state.n_expert == n_expert);
+    GGML_ASSERT(state.slot_map != nullptr && state.n_expert == n_expert);
     if (state.mapped_ids == nullptr) {
         state.mapped_capacity = std::max<int64_t>(required_ids, 64);
         CUDA_CHECK(cudaMalloc(&state.mapped_ids, (size_t) state.mapped_capacity * sizeof(int32_t)));
@@ -2258,6 +2308,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
     const ggml_tensor * ids  = dst->src[2];
+    const ggml_tensor * canonical_ids = ids;
     ggml_tensor mapped_ids_tensor = {};
 
     GGML_ASSERT(src1->type == GGML_TYPE_F32);
@@ -2298,14 +2349,87 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         mapped_ids_tensor.nb[0] = sizeof(int32_t);
         mapped_ids_tensor.nb[1] = mapped_ids_tensor.ne[0] * sizeof(int32_t);
         ids = &mapped_ids_tensor;
+
+        if (getenv("GGML_MOE_DYNAMIC_VALIDATE_SLOT_MAP") != nullptr &&
+            atoi(getenv("GGML_MOE_DYNAMIC_VALIDATE_SLOT_MAP")) != 0) {
+            std::vector<int32_t> mapped_host((size_t) n_ids, -2);
+            std::vector<char> canonical_bytes(ggml_nbytes(canonical_ids));
+            CUDA_CHECK(cudaMemcpyAsync(
+                mapped_host.data(),
+                slot_state.mapped_ids,
+                (size_t) n_ids * sizeof(int32_t),
+                cudaMemcpyDeviceToHost,
+                stream));
+            CUDA_CHECK(cudaMemcpyAsync(
+                canonical_bytes.data(),
+                canonical_ids->data,
+                canonical_bytes.size(),
+                cudaMemcpyDeviceToHost,
+                stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
+            int32_t mapped_min = INT32_MAX;
+            int32_t mapped_max = INT32_MIN;
+            int32_t mapped_positive = 0;
+            std::string canonical_list;
+            std::string mapped_list;
+            canonical_list.reserve((size_t) n_ids * 5 + 2);
+            mapped_list.reserve((size_t) n_ids * 4 + 2);
+            canonical_list.push_back('[');
+            mapped_list.push_back('[');
+            for (int64_t index = 0; index < n_ids; ++index) {
+                const int64_t route = index % canonical_ids->ne[0];
+                const int64_t token = index / canonical_ids->ne[0];
+                const int32_t expert = *(const int32_t *) (
+                    canonical_bytes.data() + route * canonical_ids->nb[0] + token * canonical_ids->nb[1]);
+                const int32_t slot = mapped_host[(size_t) index];
+                if (index > 0) {
+                    canonical_list.push_back(',');
+                    mapped_list.push_back(',');
+                }
+                canonical_list += std::to_string(expert);
+                mapped_list += std::to_string(slot);
+                mapped_min = std::min(mapped_min, slot);
+                mapped_max = std::max(mapped_max, slot);
+                mapped_positive += slot >= 0;
+                GGML_ASSERT(slot >= -1 && slot < src0->ne[2]);
+            }
+            canonical_list.push_back(']');
+            mapped_list.push_back(']');
+            CUdeviceptr allocation_base_device = 0;
+            size_t allocation_bytes = 0;
+            CU_CHECK(cuMemGetAddressRange(
+                &allocation_base_device,
+                &allocation_bytes,
+                (CUdeviceptr) src0->data));
+            void * allocation_base = (void *) allocation_base_device;
+            const size_t allocation_offset =
+                (size_t) ((const char *) src0->data - (const char *) allocation_base);
+            GGML_ASSERT(allocation_offset + ggml_nbytes(src0) <= allocation_bytes);
+            GGML_LOG_ERROR(
+                "moe-slot-map-validate: layer=%d tensor=%s src=%p base=%p alloc=%zu offset=%zu"
+                " bytes=%zu ne=[%lld,%lld,%lld,%lld] nb=[%zu,%zu,%zu,%zu]"
+                " ids=%lld mapped-positive=%d min=%d max=%d canonical=%s mapped=%s\n",
+                dynamic_layer, src0->name, src0->data, allocation_base,
+                allocation_bytes, allocation_offset, ggml_nbytes(src0),
+                (long long) src0->ne[0], (long long) src0->ne[1],
+                (long long) src0->ne[2], (long long) src0->ne[3],
+                src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3],
+                (long long) n_ids, mapped_positive, mapped_min, mapped_max,
+                canonical_list.c_str(), mapped_list.c_str());
+        }
     }
 
     if (masked) {
         CUDA_CHECK(cudaMemsetAsync(dst->data, 0, ggml_nbytes(dst), stream));
     }
 
+    const bool force_safe_dynamic_mmid =
+        dynamic_layer_plus_one > 0 &&
+        getenv("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY_FORCE_SAFE_MMID") != nullptr &&
+        atoi(getenv("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY_FORCE_SAFE_MMID")) != 0;
+
     // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
-    if (src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
+    if (!force_safe_dynamic_mmid && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
         static_assert(MMVQ_MAX_BATCH_SIZE == MMVF_MAX_BATCH_SIZE);
         if (ne2 <= MMVQ_MAX_BATCH_SIZE) {
             if (ggml_is_quantized(src0->type)) {
@@ -4574,6 +4698,29 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
 
     ggml_cuda_set_device(cuda_ctx->device);
+
+    // Mutable MoE slot maps are data dependencies, not graph-topology
+    // dependencies. Refresh each layer's stable device map before deciding
+    // whether to execute directly, capture, or replay a CUDA graph. This host
+    // path runs for every split launch, unlike node dispatch during graph replay.
+    std::map<int32_t, int32_t> dynamic_slot_maps;
+    for (int node_index = 0; node_index < cgraph->n_nodes; ++node_index) {
+        const ggml_tensor * node = cgraph->nodes[node_index];
+        if (node->op != GGML_OP_MUL_MAT_ID) {
+            continue;
+        }
+        const int32_t layer_plus_one = ggml_get_op_params_i32(node, 2);
+        if (layer_plus_one <= 0) {
+            continue;
+        }
+        const int32_t n_expert = ggml_get_op_params_i32(node, 3);
+        GGML_ASSERT(n_expert > 0);
+        dynamic_slot_maps.emplace(layer_plus_one - 1, n_expert);
+    }
+    for (const auto & [layer, n_expert] : dynamic_slot_maps) {
+        ggml_cuda_moe_refresh_slot_map(
+            cuda_ctx->device, layer, n_expert, cuda_ctx->stream());
+    }
 
     bool use_cuda_graph             = false;
     bool cuda_graph_update_required = false;

@@ -1171,6 +1171,12 @@ struct ggml_backend_moe_dynamic_layer {
     std::vector<uint64_t> gpu_route_hist;
     std::vector<ggml_backend_moe_dynamic_slot> slots;
     std::vector<int32_t> slot_by_expert;
+    // Fixed-topology mode publishes one immutable residency snapshot per
+    // layer/token. CPU miss masking and GPU slot remapping consume the same
+    // snapshot, so a promotion completing mid-layer cannot drop or duplicate a
+    // route. Newly READY slots become visible at the next route decision.
+    std::vector<int32_t> published_slot_by_expert;
+    uint64_t published_slot_map_generation = 0;
     std::vector<double> score;
     std::vector<uint64_t> last_score_step;
     std::vector<int32_t> previous_selected;
@@ -1220,6 +1226,18 @@ struct ggml_backend_moe_dynamic_registry {
     int32_t predictor_admissions_this_step = 0;
     uint64_t cross_predictor_step = 0;
     int32_t cross_predictor_admissions_this_step = 0;
+    // Same-token cross-layer candidates arrive in layer order, so an exact
+    // global top-k decision would miss the early-layer upload deadline. Use
+    // the previous token's complete candidate distribution as an online
+    // cutoff for the current token. This keeps admission deadline-safe while
+    // replacing the rotating layer gate with score-based global selection.
+    uint64_t cross_rank_step = 0;
+    std::vector<double> cross_rank_scores_this_step;
+    double cross_rank_cutoff = -INFINITY;
+    bool cross_rank_cutoff_valid = false;
+    size_t cross_rank_previous_candidates = 0;
+    size_t cross_rank_cutoff_rank = 0;
+    uint64_t next_slot_map_generation = 1;
     uint64_t next_promotion_bundle_id = 1;
 };
 
@@ -1287,6 +1305,7 @@ static void ggml_backend_moe_dynamic_tracef(const char * format, ...) {
             "\"event\":\"ready_after_completion\"",
             "\"event\":\"urgent_bundle_queued\"",
             "\"event\":\"cross_layer_predict_prefetch\"",
+            "\"event\":\"cross_layer_global_rank\"",
             "\"event\":\"cross_layer_decay\"",
             "\"event\":\"worker_transfer_verify\"",
             "\"event\":\"phase_marker\"",
@@ -1551,6 +1570,8 @@ static ggml_backend_moe_dynamic_layer & ggml_backend_moe_dynamic_get_layer(
         layer.n_slots = n_slots;
         layer.slots.resize((size_t) n_slots);
         layer.slot_by_expert.assign((size_t) n_expert, -1);
+        layer.published_slot_by_expert.assign((size_t) n_expert, -1);
+        layer.published_slot_map_generation = registry.next_slot_map_generation++;
         layer.score.assign((size_t) n_expert, 0.0);
         layer.last_score_step.assign((size_t) n_expert, 0);
         layer.previous_selected.clear();
@@ -1779,6 +1800,48 @@ static void ggml_backend_moe_dynamic_update_joint_model(
     }
 }
 
+static void ggml_backend_moe_dynamic_cross_global_rank_begin_step(
+        ggml_backend_moe_dynamic_registry & registry,
+        uint64_t step,
+        int32_t total_limit) {
+    if (registry.cross_rank_step == step) {
+        return;
+    }
+
+    registry.cross_rank_cutoff_valid = false;
+    registry.cross_rank_cutoff = -INFINITY;
+    registry.cross_rank_previous_candidates = registry.cross_rank_scores_this_step.size();
+    registry.cross_rank_cutoff_rank = 0;
+
+    if (!registry.cross_rank_scores_this_step.empty() && total_limit > 0) {
+        const double oversubscribe = std::max(1.0,
+            ggml_backend_moe_dynamic_env_double(
+                "GGML_MOE_DYNAMIC_CROSS_LAYER_GLOBAL_RANK_OVERSUBSCRIBE", 4.0));
+        const size_t cutoff_rank = std::clamp<size_t>(
+            (size_t) std::ceil((double) total_limit * oversubscribe),
+            1,
+            registry.cross_rank_scores_this_step.size());
+        std::sort(
+            registry.cross_rank_scores_this_step.begin(),
+            registry.cross_rank_scores_this_step.end(),
+            std::greater<double>());
+        registry.cross_rank_cutoff = registry.cross_rank_scores_this_step[cutoff_rank - 1];
+        registry.cross_rank_cutoff_valid = true;
+        registry.cross_rank_cutoff_rank = cutoff_rank;
+    }
+
+    ggml_backend_moe_dynamic_tracef(
+        "\"event\":\"cross_layer_global_rank\",\"step\":%" PRIu64
+        ",\"previous_candidates\":%zu,\"cutoff_rank\":%zu,"
+        "\"cutoff_valid\":%s,\"cutoff\":%.8g,\"global_limit\":%d",
+        step, registry.cross_rank_previous_candidates, registry.cross_rank_cutoff_rank,
+        registry.cross_rank_cutoff_valid ? "true" : "false",
+        registry.cross_rank_cutoff_valid ? registry.cross_rank_cutoff : 0.0, total_limit);
+
+    registry.cross_rank_scores_this_step.clear();
+    registry.cross_rank_step = step;
+}
+
 static int32_t ggml_backend_moe_dynamic_cross_layer_prefetch(
         ggml_backend_moe_dynamic_registry & registry,
         int32_t source_layer_id,
@@ -1791,10 +1854,17 @@ static int32_t ggml_backend_moe_dynamic_cross_layer_prefetch(
         ggml_backend_moe_dynamic_env_i32("GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_PER_LAYER", 0));
     const int32_t total_limit = std::max<int32_t>(0,
         ggml_backend_moe_dynamic_env_i32("GGML_MOE_DYNAMIC_CROSS_LAYER_PREFETCH_TOTAL", 8));
+    const bool global_rank = ggml_backend_moe_dynamic_env_i32(
+        "GGML_MOE_DYNAMIC_CROSS_LAYER_GLOBAL_RANK", 0) != 0;
     const int32_t min_observations = std::max<int32_t>(1,
-        ggml_backend_moe_dynamic_env_i32("GGML_MOE_DYNAMIC_CROSS_LAYER_MIN_OBSERVATIONS", 8));
+        ggml_backend_moe_dynamic_env_i32(
+            "GGML_MOE_DYNAMIC_CROSS_LAYER_MIN_OBSERVATIONS", global_rank ? 1 : 8));
     if (per_layer_limit == 0 || total_limit == 0 || source_selected.empty()) {
         return 0;
+    }
+
+    if (global_rank) {
+        ggml_backend_moe_dynamic_cross_global_rank_begin_step(registry, step, total_limit);
     }
 
     auto found = registry.layers.find(target_layer_id);
@@ -1811,13 +1881,14 @@ static int32_t ggml_backend_moe_dynamic_cross_layer_prefetch(
         registry.cross_predictor_step = step;
         registry.cross_predictor_admissions_this_step = 0;
     }
-    if (registry.cross_predictor_admissions_this_step >= total_limit) {
+    if (!global_rank && registry.cross_predictor_admissions_this_step >= total_limit) {
         return 0;
     }
     // Rotate the global budget across target layers. Without this gate, the
     // first layers encountered in graph order would consume every token's
     // speculative upload budget.
-    if ((int32_t) registry.layers.size() > total_limit) {
+    if ((!global_rank || !registry.cross_rank_cutoff_valid) &&
+        (int32_t) registry.layers.size() > total_limit) {
         std::vector<int32_t> layer_ids;
         layer_ids.reserve(registry.layers.size());
         for (const auto & item : registry.layers) {
@@ -1914,9 +1985,31 @@ static int32_t ggml_backend_moe_dynamic_cross_layer_prefetch(
 
     const double minimum_prediction_score = ggml_backend_moe_dynamic_env_double(
         "GGML_MOE_DYNAMIC_CROSS_LAYER_MIN_SCORE", 0.0);
+    const double distance_weight = distance == 2
+        ? std::max(0.0, ggml_backend_moe_dynamic_env_double(
+            "GGML_MOE_DYNAMIC_CROSS_LAYER_DISTANCE2_WEIGHT", 1.0))
+        : 1.0;
+    int32_t ranked_candidates = 0;
+    if (global_rank) {
+        for (const auto & prediction : predicted) {
+            if (prediction.first < minimum_prediction_score || ranked_candidates >= per_layer_limit) {
+                break;
+            }
+            registry.cross_rank_scores_this_step.push_back(prediction.first * distance_weight);
+            ranked_candidates++;
+        }
+    }
+
     int32_t admitted = 0;
+    int32_t rank_rejected = 0;
     for (const auto & prediction : predicted) {
         if (prediction.first < minimum_prediction_score) {
+            break;
+        }
+        const double utility_score = prediction.first * distance_weight;
+        if (global_rank && registry.cross_rank_cutoff_valid &&
+            utility_score < registry.cross_rank_cutoff) {
+            rank_rejected++;
             break;
         }
         if (admitted >= per_layer_limit ||
@@ -1989,11 +2082,12 @@ static int32_t ggml_backend_moe_dynamic_cross_layer_prefetch(
             "\"event\":\"admit\",\"policy\":\"cross_layer_transition_prefetch\","
             "\"source_layer\":%d,\"layer\":%d,\"distance\":%d,"
             "\"step\":%" PRIu64 ",\"expert\":%d,\"prediction_score\":%.8g,"
+            "\"utility_score\":%.8g,"
             "\"eligible_sources\":%d,\"eligible_joint_buckets\":%d,"
             "\"slot\":%d,\"victim_expert\":%d,\"spill_slots\":%d,"
             "\"urgent_queued\":%s",
             source_layer_id, target_layer_id, distance, step, expert,
-            prediction.first, eligible_sources, eligible_joint_buckets, destination,
+            prediction.first, utility_score, eligible_sources, eligible_joint_buckets, destination,
             victim_expert, spill_slots, urgent_queued ? "true" : "false");
     }
     target_layer.cross_prediction_steps++;
@@ -2002,10 +2096,15 @@ static int32_t ggml_backend_moe_dynamic_cross_layer_prefetch(
         "\"layer\":%d,\"distance\":%d,\"step\":%" PRIu64
         ",\"candidates\":%zu,\"admitted\":%d,\"eligible_sources\":%d,"
         "\"eligible_joint_buckets\":%d,\"per_layer_limit\":%d,"
-        "\"global_admitted\":%d,\"global_limit\":%d",
+        "\"global_admitted\":%d,\"global_limit\":%d,\"global_rank\":%s,"
+        "\"ranked_candidates\":%d,\"rank_rejected\":%d,"
+        "\"rank_cutoff_valid\":%s,\"rank_cutoff\":%.8g",
         source_layer_id, target_layer_id, distance, step, predicted.size(), admitted,
         eligible_sources, eligible_joint_buckets, per_layer_limit,
-        registry.cross_predictor_admissions_this_step, total_limit);
+        registry.cross_predictor_admissions_this_step, total_limit,
+        global_rank ? "true" : "false", ranked_candidates, rank_rejected,
+        registry.cross_rank_cutoff_valid ? "true" : "false",
+        registry.cross_rank_cutoff_valid ? registry.cross_rank_cutoff : 0.0);
     return admitted;
 }
 
@@ -2097,12 +2196,16 @@ bool ggml_backend_moe_dynamic_layer_is_active(
         found->second.active;
 }
 
-bool ggml_backend_moe_dynamic_get_slot_map(
+bool ggml_backend_moe_dynamic_get_slot_map_snapshot(
         int32_t layer_id,
         int32_t * slot_map,
-        int32_t n_expert) {
+        int32_t n_expert,
+        uint64_t * generation) {
     GGML_ASSERT(slot_map != nullptr && n_expert > 0);
     std::fill(slot_map, slot_map + n_expert, -1);
+    if (generation != nullptr) {
+        *generation = 0;
+    }
     auto & registry = ggml_backend_moe_dynamic_registry_get();
     std::lock_guard<std::mutex> lock(registry.mutex);
     auto found = registry.layers.find(layer_id);
@@ -2177,6 +2280,19 @@ bool ggml_backend_moe_dynamic_get_slot_map(
             layer.active = true;
         }
     }
+    const bool fixed_topology =
+        ggml_backend_moe_dynamic_env_i32("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY", 0) != 0;
+    if (fixed_topology) {
+        GGML_ASSERT(layer.published_slot_by_expert.size() == (size_t) n_expert);
+        std::copy(
+            layer.published_slot_by_expert.begin(),
+            layer.published_slot_by_expert.end(),
+            slot_map);
+        if (generation != nullptr) {
+            *generation = layer.published_slot_map_generation;
+        }
+        return true;
+    }
     for (int32_t expert = 0; expert < n_expert; ++expert) {
         const int32_t slot = layer.slot_by_expert[(size_t) expert];
         if (slot >= 0 && layer.slots[(size_t) slot].state == GGML_BACKEND_MOE_SLOT_READY) {
@@ -2184,6 +2300,14 @@ bool ggml_backend_moe_dynamic_get_slot_map(
         }
     }
     return true;
+}
+
+bool ggml_backend_moe_dynamic_get_slot_map(
+        int32_t layer_id,
+        int32_t * slot_map,
+        int32_t n_expert) {
+    return ggml_backend_moe_dynamic_get_slot_map_snapshot(
+        layer_id, slot_map, n_expert, nullptr);
 }
 
 void ggml_backend_moe_dynamic_split_routes(
@@ -2501,6 +2625,28 @@ void ggml_backend_moe_dynamic_split_routes(
         }
     }
     const int32_t gpu_route_count = use_gpu_routes ? ready_routes : 0;
+    if (ggml_backend_moe_dynamic_env_i32("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY", 0) != 0) {
+        std::vector<int32_t> snapshot((size_t) n_expert, -1);
+        if (use_gpu_routes) {
+            for (int32_t slot_index = 0; slot_index < layer.n_slots; ++slot_index) {
+                const auto & slot = layer.slots[(size_t) slot_index];
+                if (slot.state == GGML_BACKEND_MOE_SLOT_READY) {
+                    GGML_ASSERT(slot.expert >= 0 && slot.expert < n_expert);
+                    snapshot[(size_t) slot.expert] = slot_index;
+                }
+            }
+        }
+        if (snapshot != layer.published_slot_by_expert) {
+            layer.published_slot_by_expert = std::move(snapshot);
+            layer.published_slot_map_generation = registry.next_slot_map_generation++;
+            ggml_backend_moe_dynamic_tracef(
+                "\"event\":\"slot_map_publish\",\"layer\":%d,\"step\":%" PRIu64
+                ",\"generation\":%" PRIu64 ",\"ready_routes\":%d,"
+                "\"gpu_routes\":%d,\"enabled\":%s",
+                layer_id, layer.step, layer.published_slot_map_generation,
+                ready_routes, gpu_route_count, use_gpu_routes ? "true" : "false");
+        }
+    }
     GGML_ASSERT(ready_routes >= 0 && ready_routes <= n_ids);
     GGML_ASSERT(gpu_route_count >= 0 && gpu_route_count <= n_ids);
     layer.split_decisions++;
@@ -2854,6 +3000,12 @@ void ggml_backend_moe_dynamic_reset(void) {
     registry.predictor_admissions_this_step = 0;
     registry.cross_predictor_step = 0;
     registry.cross_predictor_admissions_this_step = 0;
+    registry.cross_rank_step = 0;
+    registry.cross_rank_scores_this_step.clear();
+    registry.cross_rank_cutoff = -INFINITY;
+    registry.cross_rank_cutoff_valid = false;
+    registry.cross_rank_previous_candidates = 0;
+    registry.cross_rank_cutoff_rank = 0;
     registry.next_promotion_bundle_id = 1;
 }
 
@@ -3062,7 +3214,9 @@ struct ggml_backend_moe_promotion_worker {
     size_t staging_stride = 0;
     std::mutex mutex;
     std::condition_variable cv;
+    std::condition_variable idle_cv;
     std::deque<ggml_backend_moe_promotion_job> queue;
+    size_t active_jobs = 0;
     bool stop = false;
     std::thread thread;
 
@@ -3223,6 +3377,13 @@ struct ggml_backend_moe_promotion_worker {
         return enqueue_batch(std::move(jobs_to_enqueue), false);
     }
 
+    void wait_idle() {
+        std::unique_lock<std::mutex> lock(mutex);
+        idle_cv.wait(lock, [this]() {
+            return queue.empty() && active_jobs == 0;
+        });
+    }
+
     void run() {
 #ifdef __linux__
         const int32_t worker_cpu =
@@ -3266,6 +3427,7 @@ struct ggml_backend_moe_promotion_worker {
                     batch.push_back(std::move(queue.front()));
                     queue.pop_front();
                 }
+                active_jobs += batch.size();
             }
 
             // A staging slot cannot be reused until the H2D transfer that reads it
@@ -3441,6 +3603,12 @@ struct ggml_backend_moe_promotion_worker {
                 batch_capture_ns,
                 ggml_backend_moe_dynamic_mono_ns(),
                 (ggml_backend_moe_dynamic_mono_ns() - batch_capture_ns) / 1000.0);
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                GGML_ASSERT(active_jobs >= batch.size());
+                active_jobs -= batch.size();
+            }
+            idle_cv.notify_all();
         }
     }
 };
@@ -3489,7 +3657,11 @@ static bool ggml_backend_moe_dynamic_issue_urgent_locked(
         int32_t distance,
         uint64_t step) {
     const char * enabled_env = getenv("GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD");
-    if (enabled_env == nullptr || enabled_env[0] == '\0' || atoi(enabled_env) == 0) {
+    // Cross-layer predictions are only useful when their transfers begin at
+    // prediction time. The legacy scheduler-deferred path waits until the
+    // target compact tensors are encountered and is consistently too late.
+    // Keep an explicit zero as a diagnostic escape hatch.
+    if (enabled_env != nullptr && enabled_env[0] != '\0' && atoi(enabled_env) == 0) {
         return false;
     }
     auto found = registry.layers.find(layer_id);
@@ -3678,6 +3850,12 @@ static ggml_backend_sched_expert_cache_entry * ggml_backend_sched_expert_cache_a
         // is simply unused for this tensor execution.
         tensor_copy->buffer = nullptr;
         tensor_copy->data = nullptr;
+        // This tensor may already carry CUDA backend metadata from the graph
+        // allocator's transient arena. Rebinding it to a cache-owned buffer
+        // without clearing that metadata leaves kernels with stale allocation
+        // state; the bug is latent while every route maps to -1 and appears as
+        // an illegal access on the first real compact-slot read.
+        tensor_copy->extra = nullptr;
         enum ggml_status status = ggml_backend_tensor_alloc(
             entry->buffer, tensor_copy, ggml_backend_buffer_get_base(entry->buffer));
         GGML_ASSERT(status == GGML_STATUS_SUCCESS);
@@ -4481,7 +4659,8 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             ggml_backend_moe_dynamic_split_has_hot_compute(split);
         const bool dynamic_cold_compute_split =
             ggml_backend_dev_type(ggml_backend_get_device(split_backend)) == GGML_BACKEND_DEVICE_TYPE_CPU &&
-            dynamic_split_kind != nullptr && strcmp(dynamic_split_kind, "mixed") == 0;
+            dynamic_split_kind != nullptr &&
+            (strcmp(dynamic_split_kind, "cold") == 0 || strcmp(dynamic_split_kind, "mixed") == 0);
         const int32_t dynamic_layer =
             dynamic_split_kind != nullptr || dynamic_hot_compute_split || dynamic_cold_compute_split
                 ? ggml_backend_moe_dynamic_split_layer(split)
@@ -5229,6 +5408,23 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             continue;
         }
 
+        if (dynamic_hot_compute_split &&
+            ggml_backend_moe_dynamic_env_i32("GGML_MOE_DYNAMIC_FIXED_TOPOLOGY", 0) != 0 &&
+            ggml_backend_moe_dynamic_env_i32(
+                "GGML_MOE_DYNAMIC_FIXED_TOPOLOGY_PROMOTION_BARRIER", 0) != 0 &&
+            sched->expert_cache != nullptr &&
+            sched->expert_cache->promotion_worker != nullptr) {
+            const auto barrier_start = std::chrono::steady_clock::now();
+            sched->expert_cache->promotion_worker->wait_idle();
+            const uint64_t barrier_ns = (uint64_t)
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - barrier_start).count();
+            ggml_backend_moe_dynamic_tracef(
+                "\"event\":\"fixed_topology_promotion_barrier\","
+                "\"split\":%d,\"layer\":%d,\"duration_us\":%.3f",
+                split_id, dynamic_layer, barrier_ns / 1000.0);
+        }
+
         if (dynamic_split_kind != nullptr) {
             ggml_backend_moe_dynamic_tracef(
                 "\"event\":\"split_submit\",\"split\":%d,\"kind\":\"%s\","
@@ -5238,8 +5434,7 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
         const bool profile_dynamic_compute =
             sched->expert_cache != nullptr && sched->expert_cache->profile &&
             getenv("GGML_MOE_DYNAMIC_PROFILE_COMPUTE") != nullptr &&
-            (dynamic_hot_compute_split || dynamic_cold_compute_split) &&
-            !sched->callback_eval;
+            (dynamic_hot_compute_split || dynamic_cold_compute_split);
         std::chrono::steady_clock::time_point dynamic_compute_start;
         if (profile_dynamic_compute) {
             // Profiling-only serialization: establish a clean boundary so the measured
@@ -5285,28 +5480,6 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             if (ec != GGML_STATUS_SUCCESS) {
                 return ec;
             }
-            if (profile_dynamic_compute) {
-                ggml_backend_synchronize(split_backend);
-                const uint64_t compute_ns = (uint64_t)
-                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        std::chrono::steady_clock::now() - dynamic_compute_start).count();
-                if (dynamic_hot_compute_split) {
-                    sched->expert_cache->profile_dynamic_hot_compute_calls++;
-                    sched->expert_cache->profile_dynamic_hot_compute_ns += compute_ns;
-                }
-                if (dynamic_cold_compute_split) {
-                    sched->expert_cache->profile_dynamic_cold_compute_calls++;
-                    sched->expert_cache->profile_dynamic_cold_compute_ns += compute_ns;
-                }
-                ggml_backend_moe_dynamic_tracef(
-                    "\"event\":\"split_compute_profile\",\"split\":%d,\"layer\":%d,"
-                    "\"kind\":\"%s\",\"backend\":\"%s\",\"nodes\":%d,"
-                    "\"duration_us\":%.3f",
-                    split_id, dynamic_layer,
-                    dynamic_hot_compute_split ? "hot" : "cold",
-                    ggml_backend_name(split_backend), split->graph.n_nodes,
-                    compute_ns / 1000.0);
-            }
         } else {
             // similar to ggml_backend_compare_graph_backend
             for (int j0 = 0; j0 < split->graph.n_nodes; j0++) {
@@ -5339,6 +5512,29 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
 
                 j0 = j1;
             }
+        }
+
+        if (profile_dynamic_compute) {
+            ggml_backend_synchronize(split_backend);
+            const uint64_t compute_ns = (uint64_t)
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - dynamic_compute_start).count();
+            if (dynamic_hot_compute_split) {
+                sched->expert_cache->profile_dynamic_hot_compute_calls++;
+                sched->expert_cache->profile_dynamic_hot_compute_ns += compute_ns;
+            }
+            if (dynamic_cold_compute_split) {
+                sched->expert_cache->profile_dynamic_cold_compute_calls++;
+                sched->expert_cache->profile_dynamic_cold_compute_ns += compute_ns;
+            }
+            ggml_backend_moe_dynamic_tracef(
+                "\"event\":\"split_compute_profile\",\"split\":%d,\"layer\":%d,"
+                "\"kind\":\"%s\",\"backend\":\"%s\",\"nodes\":%d,"
+                "\"duration_us\":%.3f",
+                split_id, dynamic_layer,
+                dynamic_hot_compute_split ? "hot" : "cold",
+                ggml_backend_name(split_backend), split->graph.n_nodes,
+                compute_ns / 1000.0);
         }
 
         // record the event of this copy

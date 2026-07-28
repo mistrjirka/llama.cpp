@@ -1,6 +1,10 @@
 #include "set-rows.cuh"
 #include "cpy-utils.cuh"
 
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+
 typedef void (*set_rows_kernel_t)(const char * src, char * dst);
 
 // Generic quantized set_rows kernel template
@@ -379,6 +383,75 @@ void ggml_cuda_op_set_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
 
     GGML_ASSERT(src0->type == GGML_TYPE_F32 || (src0->type == GGML_TYPE_F16 && dst->type == GGML_TYPE_F16));
     GGML_ASSERT(src1->type == GGML_TYPE_I64 || src1->type == GGML_TYPE_I32);
+
+    // Validation performs a device-to-host readback and stream synchronization,
+    // which is illegal while CUDA graph capture is active. Keep it strictly
+    // opt-in rather than enabling it for every fixed-topology run.
+    const bool validate_set_rows =
+        getenv("GGML_MOE_DYNAMIC_VALIDATE_SET_ROWS") != nullptr &&
+        atoi(getenv("GGML_MOE_DYNAMIC_VALIDATE_SET_ROWS")) != 0;
+    if (validate_set_rows) {
+        cudaStream_t stream = ctx.stream();
+        std::vector<char> index_bytes(ggml_nbytes(src1));
+        CUDA_CHECK(cudaMemcpyAsync(
+            index_bytes.data(),
+            src1->data,
+            index_bytes.size(),
+            cudaMemcpyDeviceToHost,
+            stream));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+
+        int64_t index_min = INT64_MAX;
+        int64_t index_max = INT64_MIN;
+        int64_t index_count = 0;
+        for (int64_t i3 = 0; i3 < src1->ne[3]; ++i3) {
+            for (int64_t i2 = 0; i2 < src1->ne[2]; ++i2) {
+                for (int64_t i1 = 0; i1 < src1->ne[1]; ++i1) {
+                    for (int64_t i0 = 0; i0 < src1->ne[0]; ++i0) {
+                        const char * ptr = index_bytes.data()
+                            + i0 * src1->nb[0]
+                            + i1 * src1->nb[1]
+                            + i2 * src1->nb[2]
+                            + i3 * src1->nb[3];
+                        const int64_t index = src1->type == GGML_TYPE_I64
+                            ? *(const int64_t *) ptr
+                            : *(const int32_t *) ptr;
+                        index_min = std::min(index_min, index);
+                        index_max = std::max(index_max, index);
+                        index_count++;
+                    }
+                }
+            }
+        }
+
+        CUdeviceptr allocation_base_device = 0;
+        size_t allocation_bytes = 0;
+        CU_CHECK(cuMemGetAddressRange(
+            &allocation_base_device,
+            &allocation_bytes,
+            (CUdeviceptr) dst->data));
+        void * allocation_base = (void *) allocation_base_device;
+        const size_t allocation_offset =
+            (size_t) ((const char *) dst->data - (const char *) allocation_base);
+
+        GGML_LOG_ERROR(
+            "set-rows-validate: dst=%s src0=%s src1=%s dst_ptr=%p base=%p alloc=%zu offset=%zu"
+            " dst_ne=[%lld,%lld,%lld,%lld] dst_nb=[%zu,%zu,%zu,%zu]"
+            " idx_ne=[%lld,%lld,%lld,%lld] idx_nb=[%zu,%zu,%zu,%zu]"
+            " count=%lld min=%lld max=%lld valid_rows=%lld\n",
+            dst->name, src0->name, src1->name, dst->data, allocation_base,
+            allocation_bytes, allocation_offset,
+            (long long) dst->ne[0], (long long) dst->ne[1],
+            (long long) dst->ne[2], (long long) dst->ne[3],
+            dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3],
+            (long long) src1->ne[0], (long long) src1->ne[1],
+            (long long) src1->ne[2], (long long) src1->ne[3],
+            src1->nb[0], src1->nb[1], src1->nb[2], src1->nb[3],
+            (long long) index_count, (long long) index_min,
+            (long long) index_max, (long long) dst->ne[1]);
+        GGML_ASSERT(index_min >= 0 && index_max < dst->ne[1]);
+        GGML_ASSERT(allocation_offset + ggml_nbytes(dst) <= allocation_bytes);
+    }
 
     if (src0->type == GGML_TYPE_F32) {
         if (src1->type == GGML_TYPE_I64) {

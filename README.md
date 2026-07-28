@@ -57,6 +57,32 @@ llama-cli -hf ggml-org/gemma-3-1b-it-GGUF
 llama-server -hf ggml-org/gemma-3-1b-it-GGUF
 ```
 
+### Experimental fixed-topology MoE cache
+
+This branch includes an opt-in CUDA/CPU hybrid path for sparse MoE models that exceed GPU memory. It keeps a persistent GPU expert-slot map and reduces the tested GLM-5.2 decode graph from 302 to 152 scheduler splits.
+
+The currently validated mode uses one asynchronously warmed resident expert per MoE layer and disables decode-time replacement. It is experimental and not enabled by default.
+
+```sh
+GGML_EXPERT_CACHE_MIB=auto \
+GGML_EXPERT_CACHE_RESERVE_MIB=3072 \
+GGML_MOE_DYNAMIC_SPLIT_SLOTS=auto \
+GGML_MOE_DYNAMIC_MIN_HOT_ROUTES=1 \
+GGML_MOE_DYNAMIC_FIXED_TOPOLOGY=1 \
+GGML_MOE_DYNAMIC_PREFILL_OBSERVE=1 \
+GGML_MOE_DYNAMIC_WARM_START_PER_LAYER=1 \
+GGML_MOE_DYNAMIC_WARM_START_TOTAL=75 \
+GGML_MOE_DYNAMIC_MAX_ADMISSIONS_PER_TOKEN=0 \
+GGML_MOE_DYNAMIC_ASYNC_PROMOTION=1 \
+GGML_MOE_DYNAMIC_URGENT_PREDICT_UPLOAD=0 \
+build/bin/llama-completion \
+  -m /path/to/model.gguf -f /path/to/prompt.txt -n 256 \
+  -c 2048 -b 512 -ub 128 -fa on -dev CUDA0 \
+  -fit on -fitt 16384 -fitc 2048 --cpu-moe
+```
+
+See the [run guide](docs/development/moe-fixed-topology-cache.md) and [benchmark report](docs/development/moe-fixed-topology-benchmarks.md) for build instructions, exact settings, tested token lengths, prompt-processing results, limitations, and reproduction details.
+
 ## Description
 
 The main goal of `llama.cpp` is to enable LLM inference with minimal setup and state-of-the-art performance on a wide

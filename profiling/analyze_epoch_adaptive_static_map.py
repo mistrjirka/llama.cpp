@@ -121,6 +121,7 @@ class EpochPolicy:
         self.admission_ratio = admission_ratio
         self.min_residence = min_residence
         self.decay = decay
+        self.score_scale = 1.0
         self.scores = {layer: [0.0] * 256 for layer in layers}
         for token in train_tokens:
             self._decay_and_observe(token)
@@ -157,12 +158,18 @@ class EpochPolicy:
         self._window_hits = 0
 
     def _decay_and_observe(self, token: dict[int, Route]) -> None:
+        self.score_scale *= self.decay
+        if self.score_scale < 1e-100:
+            for layer in self.layers:
+                values = self.scores[layer]
+                for expert in range(256):
+                    values[expert] *= self.score_scale
+            self.score_scale = 1.0
+        increment = 1.0 / self.score_scale
         for layer in self.layers:
             values = self.scores[layer]
-            for expert in range(256):
-                values[expert] *= self.decay
             for expert in token[layer]:
-                values[expert] += 1.0
+                values[expert] += increment
 
     def score_token(self, token: dict[int, Route], token_number: int) -> None:
         for layer in self.layers:
