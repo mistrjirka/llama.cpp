@@ -1,0 +1,7 @@
+{
+  "sha256": "082c429ded176d68ceef235ba76b6f9d3ac5da35748ad658de2dedb8f3930a3f",
+  "tokens": 64,
+  "tps": 33.33513,
+  "cache": "expert-cache: entries=0 allocated=0.00 MiB hits=0 misses=0 uploaded=0.00 MiB avoided=0.00 MiB attach_attempts=0 rejected_host=0 rejected_budget=0",
+  "profile": "expert-cache-profile: selective-inputs=0 ids-reads=0 requested-experts=0 missing-experts=0 copy-groups=0 copy-bytes=0.00 MiB prefill-groups=0 prefill-bytes=0.00 MiB decode-groups=0 decode-bytes=0.00 MiB dynamic-groups=0 dynamic-bytes=0.00 MiB dynamic-issue=0.000 ms target-sync-calls=0 target-sync=0.000 ms dynamic-target-sync-calls=0 dynamic-target-sync=0.000 ms hot-splits=0 hot-skipped=0 hot-nodes-skipped=0 promotion-inputs=0 zero-fills=0 zero-bytes=0.00 MiB hot-compute-calls=0 hot-compute=0.000 ms cold-compute-calls=0 cold-compute=0.000 ms decision-sync-calls=0 decision-sync=0.000 ms input-sync=0.000 ms ids-sync=0.000 ms attach=0.000 ms copy-issue=0.000 ms"
+}

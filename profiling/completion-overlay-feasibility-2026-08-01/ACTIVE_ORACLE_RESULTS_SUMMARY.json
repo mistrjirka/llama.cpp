@@ -1,0 +1,33 @@
+{
+  "date": "2026-08-01",
+  "hardware": "Tesla V100-SXM2-32GB",
+  "model": "Qwen3.5-122B-A10B UD-Q3_K_XL",
+  "workload": "512 forced coding tokens",
+  "reactive_control": {
+    "throughput_tps": [19.479526, 18.838794, 18.701555],
+    "mean_tps": 19.006625,
+    "median_tps": 18.838794,
+    "mean_full_gpu_layers": 5599.666666666667,
+    "mean_cpu_dependent_layers_per_token": 37.04176666666667,
+    "mean_worker_mib": 22872.313333333335
+  },
+  "perfect_oracle": {
+    "throughput_tps": [18.804837, 18.864659, 18.959394],
+    "mean_tps": 18.876296666666665,
+    "median_tps": 18.864659,
+    "mean_full_gpu_layers": 8896.333333333334,
+    "mean_cpu_dependent_layers_per_token": 30.590333333333334,
+    "mean_worker_mib": 45717.12333333333
+  },
+  "comparison": {
+    "oracle_vs_control_mean_percent": -0.6856995039010605,
+    "oracle_vs_control_median_percent": 0.13729647449831628,
+    "cpu_dependent_layers_removed_per_token": 6.451433333333334,
+    "additional_worker_mib_per_token": 44.70608610567513,
+    "additional_staging_copy_ms_per_token": 4.47711415525114,
+    "estimated_median_cold_compute_removed_ms_per_token": 2.1109412438333335,
+    "oracle_vs_clean_upstream_percent": -42.53785604751654,
+    "forced_token_hash_matches": true,
+    "verdict": "Tie; stop predictor tuning for the current split architecture."
+  }
+}

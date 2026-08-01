@@ -1,0 +1,188 @@
+{
+  "arms": {
+    "control": {
+      "throughput": {
+        "runs": [
+          19.479526,
+          18.838794,
+          18.701555
+        ],
+        "mean": 19.006625,
+        "median": 18.838794,
+        "stdev": 0.4152531187492759
+      },
+      "full_gpu_layers": {
+        "runs": [
+          5626.0,
+          5604.0,
+          5569.0
+        ],
+        "mean": 5599.666666666667,
+        "median": 5604.0,
+        "stdev": 28.74601421646718
+      },
+      "cpu_dependent_layers_per_token": {
+        "runs": [
+          36.9902,
+          37.0333,
+          37.1018
+        ],
+        "mean": 37.04176666666667,
+        "median": 37.0333,
+        "stdev": 0.056279688461585445
+      },
+      "worker_mib": {
+        "runs": [
+          22886.58,
+          22857.98,
+          22872.38
+        ],
+        "mean": 22872.313333333335,
+        "median": 22872.38,
+        "stdev": 14.300116549642684
+      },
+      "rows": [
+        {
+          "arm": "control-r1",
+          "exit": 0,
+          "wall_s": 34.021418244,
+          "sha256": "727693192f01e44b88d048fb5b11da04486504c4aa691f1e92744e639aafddb1",
+          "tokens": 512,
+          "elapsed_s": 26.284008,
+          "tps": 19.479526,
+          "cache": "moe-dynamic-cache: layers=48 admissions=5850 resident-hits=140985 resident-misses=55239 resident-hit-rate=0.7185 executed-gpu-routes=140985 cpu-routes=55239 execution-hit-rate=0.7185 ready-slots=5331 copying-slots=0 split-enabled=24263/24528",
+          "coverage": "moe-dynamic-coverage: full-gpu-expert-layers=5626/24528 cpu-dependent-layers=18902 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=36.9902 prefill-batches=96 prefill-ready-routes=0/14592 ready-route-hist=[0:265,1:528,2:1134,3:1758,4:2625,5:3285,6:4167,7:5140,8:5626] gpu-route-hist=[0:265,1:528,2:1134,3:1758,4:2625,5:3285,6:4167,7:5140,8:5626]",
+          "worker": "moe-promotion-worker: jobs=17550 batches=9346 urgent-jobs=0 urgent-batches=0 bytes=22886.58 MiB staging-bytes=22886.58 MiB staging-copy=2271.370 ms host-issue=2433.406 ms sync=1119.340 ms queue-delay=495471.652 ms max-depth=1494",
+          "oracle": null,
+          "predictive": null,
+          "global": null
+        },
+        {
+          "arm": "control-r2",
+          "exit": 0,
+          "wall_s": 34.933189807,
+          "sha256": "727693192f01e44b88d048fb5b11da04486504c4aa691f1e92744e639aafddb1",
+          "tokens": 512,
+          "elapsed_s": 27.17796,
+          "tps": 18.838794,
+          "cache": "moe-dynamic-cache: layers=48 admissions=5843 resident-hits=140904 resident-misses=55320 resident-hit-rate=0.7181 executed-gpu-routes=140904 cpu-routes=55320 execution-hit-rate=0.7181 ready-slots=5326 copying-slots=0 split-enabled=24263/24528",
+          "coverage": "moe-dynamic-coverage: full-gpu-expert-layers=5604/24528 cpu-dependent-layers=18924 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=37.0333 prefill-batches=96 prefill-ready-routes=0/14592 ready-route-hist=[0:265,1:515,2:1147,3:1774,4:2622,5:3272,6:4210,7:5119,8:5604] gpu-route-hist=[0:265,1:515,2:1147,3:1774,4:2622,5:3272,6:4210,7:5119,8:5604]",
+          "worker": "moe-promotion-worker: jobs=17529 batches=9579 urgent-jobs=0 urgent-batches=0 bytes=22857.98 MiB staging-bytes=22857.98 MiB staging-copy=2263.507 ms host-issue=2395.398 ms sync=1143.244 ms queue-delay=487077.658 ms max-depth=1746",
+          "oracle": null,
+          "predictive": null,
+          "global": null
+        },
+        {
+          "arm": "control-r3",
+          "exit": 0,
+          "wall_s": 35.114944495,
+          "sha256": "727693192f01e44b88d048fb5b11da04486504c4aa691f1e92744e639aafddb1",
+          "tokens": 512,
+          "elapsed_s": 27.377401999999996,
+          "tps": 18.701555,
+          "cache": "moe-dynamic-cache: layers=48 admissions=5846 resident-hits=140750 resident-misses=55474 resident-hit-rate=0.7173 executed-gpu-routes=140750 cpu-routes=55474 execution-hit-rate=0.7173 ready-slots=5329 copying-slots=0 split-enabled=24266/24528",
+          "coverage": "moe-dynamic-coverage: full-gpu-expert-layers=5569/24528 cpu-dependent-layers=18959 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=37.1018 prefill-batches=96 prefill-ready-routes=0/14592 ready-route-hist=[0:262,1:519,2:1148,3:1767,4:2638,5:3319,6:4207,7:5099,8:5569] gpu-route-hist=[0:262,1:519,2:1148,3:1767,4:2638,5:3319,6:4207,7:5099,8:5569]",
+          "worker": "moe-promotion-worker: jobs=17538 batches=9583 urgent-jobs=0 urgent-batches=0 bytes=22872.38 MiB staging-bytes=22872.38 MiB staging-copy=2267.593 ms host-issue=2428.152 ms sync=1144.261 ms queue-delay=481014.403 ms max-depth=1152",
+          "oracle": null,
+          "predictive": null,
+          "global": null
+        }
+      ]
+    },
+    "oracle": {
+      "throughput": {
+        "runs": [
+          18.804837,
+          18.864659,
+          18.959394
+        ],
+        "mean": 18.876296666666665,
+        "median": 18.864659,
+        "stdev": 0.07793293928970836
+      },
+      "full_gpu_layers": {
+        "runs": [
+          8911.0,
+          8899.0,
+          8879.0
+        ],
+        "mean": 8896.333333333334,
+        "median": 8899.0,
+        "stdev": 16.165807537309522
+      },
+      "cpu_dependent_layers_per_token": {
+        "runs": [
+          30.5616,
+          30.5851,
+          30.6243
+        ],
+        "mean": 30.590333333333334,
+        "median": 30.5851,
+        "stdev": 0.03167591093139118
+      },
+      "worker_mib": {
+        "runs": [
+          45781.12,
+          45736.97,
+          45633.28
+        ],
+        "mean": 45717.12333333333,
+        "median": 45736.97,
+        "stdev": 75.89192337352917
+      },
+      "rows": [
+        {
+          "arm": "oracle-r1",
+          "exit": 0,
+          "wall_s": 34.972090239,
+          "sha256": "727693192f01e44b88d048fb5b11da04486504c4aa691f1e92744e639aafddb1",
+          "tokens": 512,
+          "elapsed_s": 27.227038,
+          "tps": 18.804837,
+          "cache": "moe-dynamic-cache: layers=48 admissions=11672 resident-hits=146441 resident-misses=49783 resident-hit-rate=0.7463 executed-gpu-routes=146441 cpu-routes=49783 execution-hit-rate=0.7463 ready-slots=5233 copying-slots=0 split-enabled=24258/24528",
+          "coverage": "moe-dynamic-coverage: full-gpu-expert-layers=8911/24528 cpu-dependent-layers=15617 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=30.5616 prefill-batches=96 prefill-ready-routes=0/14592 ready-route-hist=[0:270,1:499,2:1090,3:1773,4:2571,5:3031,6:2965,7:3418,8:8911] gpu-route-hist=[0:270,1:499,2:1090,3:1773,4:2571,5:3031,6:2965,7:3418,8:8911]",
+          "worker": "moe-promotion-worker: jobs=35016 batches=13555 urgent-jobs=18756 urgent-batches=5258 bytes=45781.12 MiB staging-bytes=45781.12 MiB staging-copy=4562.762 ms host-issue=4844.620 ms sync=1716.493 ms queue-delay=500640.486 ms max-depth=1746",
+          "oracle": null,
+          "predictive": "moe-predictive-usefulness-summary: accepted=6252 ready=6252 target-evaluated=6252 ready-before-target=6247 resident-ready-at-target=6247 target-selected=6095 target-hits=6090 selected-not-ready=5 target-not-selected=157 first-hits=6121 useful-hits=13544 mean-first-hit-delay-steps=0.010 churn-before-first-hit=130 final-cpu-miss-removed-layers=3650 target-still-cpu-dependent-layers=1489 exact-victim-unavailable=0 expired-slot-reclaims=6114 bundle-bytes=25772310528 never-used-bytes=542982144 staging-copy=2427.659 ms host-issue=126.049 ms",
+          "global": null
+        },
+        {
+          "arm": "oracle-r2",
+          "exit": 0,
+          "wall_s": 34.968607871,
+          "sha256": "727693192f01e44b88d048fb5b11da04486504c4aa691f1e92744e639aafddb1",
+          "tokens": 512,
+          "elapsed_s": 27.140697,
+          "tps": 18.864659,
+          "cache": "moe-dynamic-cache: layers=48 admissions=11661 resident-hits=146493 resident-misses=49731 resident-hit-rate=0.7466 executed-gpu-routes=146493 cpu-routes=49731 execution-hit-rate=0.7466 ready-slots=5233 copying-slots=0 split-enabled=24263/24528",
+          "coverage": "moe-dynamic-coverage: full-gpu-expert-layers=8899/24528 cpu-dependent-layers=15629 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=30.5851 prefill-batches=96 prefill-ready-routes=0/14592 ready-route-hist=[0:265,1:503,2:1061,3:1793,4:2525,5:3138,6:2901,7:3443,8:8899] gpu-route-hist=[0:265,1:503,2:1061,3:1793,4:2525,5:3138,6:2901,7:3443,8:8899]",
+          "worker": "moe-promotion-worker: jobs=34983 batches=13615 urgent-jobs=18735 urgent-batches=5286 bytes=45736.97 MiB staging-bytes=45736.97 MiB staging-copy=4514.629 ms host-issue=4801.742 ms sync=1725.732 ms queue-delay=496920.784 ms max-depth=1746",
+          "oracle": null,
+          "predictive": "moe-predictive-usefulness-summary: accepted=6245 ready=6245 target-evaluated=6245 ready-before-target=6242 resident-ready-at-target=6242 target-selected=6084 target-hits=6081 selected-not-ready=3 target-not-selected=161 first-hits=6122 useful-hits=13458 mean-first-hit-delay-steps=0.013 churn-before-first-hit=121 final-cpu-miss-removed-layers=3650 target-still-cpu-dependent-layers=1476 exact-victim-unavailable=0 expired-slot-reclaims=6107 bundle-bytes=25740902400 never-used-bytes=507494400 staging-copy=2411.007 ms host-issue=135.584 ms",
+          "global": null
+        },
+        {
+          "arm": "oracle-r3",
+          "exit": 0,
+          "wall_s": 34.74144115,
+          "sha256": "727693192f01e44b88d048fb5b11da04486504c4aa691f1e92744e639aafddb1",
+          "tokens": 512,
+          "elapsed_s": 27.005081999999998,
+          "tps": 18.959394,
+          "cache": "moe-dynamic-cache: layers=48 admissions=11634 resident-hits=146448 resident-misses=49776 resident-hit-rate=0.7463 executed-gpu-routes=146448 cpu-routes=49776 execution-hit-rate=0.7463 ready-slots=5239 copying-slots=0 split-enabled=24267/24528",
+          "coverage": "moe-dynamic-coverage: full-gpu-expert-layers=8879/24528 cpu-dependent-layers=15649 full-gpu-expert-path-tokens=0/511 mean-cpu-dependent-layers=30.6243 prefill-batches=96 prefill-ready-routes=0/14592 ready-route-hist=[0:261,1:507,2:1092,3:1769,4:2563,5:3069,6:2895,7:3493,8:8879] gpu-route-hist=[0:261,1:507,2:1092,3:1769,4:2563,5:3069,6:2895,7:3493,8:8879]",
+          "worker": "moe-promotion-worker: jobs=34902 batches=13460 urgent-jobs=18654 urgent-batches=5195 bytes=45633.28 MiB staging-bytes=45633.28 MiB staging-copy=4588.495 ms host-issue=4868.745 ms sync=1706.948 ms queue-delay=495922.310 ms max-depth=1674",
+          "oracle": null,
+          "predictive": "moe-predictive-usefulness-summary: accepted=6218 ready=6218 target-evaluated=6218 ready-before-target=6214 resident-ready-at-target=6214 target-selected=6068 target-hits=6064 selected-not-ready=4 target-not-selected=150 first-hits=6098 useful-hits=13358 mean-first-hit-delay-steps=0.011 churn-before-first-hit=119 final-cpu-miss-removed-layers=3637 target-still-cpu-dependent-layers=1465 exact-victim-unavailable=0 expired-slot-reclaims=6080 bundle-bytes=25635028992 never-used-bytes=496680960 staging-copy=2456.654 ms host-issue=126.750 ms",
+          "global": null
+        }
+      ]
+    }
+  },
+  "hash_matches": true,
+  "oracle_vs_control_percent_by_mean": -0.6856995039010605,
+  "oracle_vs_control_percent_by_median": 0.13729647449831628,
+  "full_gpu_layer_gain_mean": 3296.666666666667,
+  "cpu_dependent_layers_removed_per_token_mean": 6.451433333333334,
+  "additional_worker_mib_mean": 22844.809999999994
+}
