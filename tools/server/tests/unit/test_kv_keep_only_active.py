@@ -113,3 +113,43 @@ def test_disabled_with_flag():
     })
     assert res.status_code == 200
     assert "__TEST_TAG_CACHE_IDLE_SLOT__" not in log.drain()
+
+
+def test_prompt_cache_prefers_deeper_absolute_prefix():
+    """A tiny live prefix must not block a much deeper cached branch."""
+    global server
+    server.n_slots = 1
+    server.start()
+
+    shared = LONG_PROMPT * 4
+    prompt_a = shared + " Cached branch A ends here."
+    prompt_b = shared + " Cached branch B ends here."
+    # Keep the live prompt below the server's 0.1 similarity threshold for B,
+    # while making it almost entirely a prefix of B (high f_keep).
+    prompt_short = LONG_PROMPT[:40]
+
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt_a,
+        "cache_prompt": True,
+    })
+    assert res.status_code == 200
+    n_long = res.body["timings"]["cache_n"] + res.body["timings"]["prompt_n"]
+
+    # This replaces the live long slot and saves A in cache-ram.
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt_short,
+        "cache_prompt": True,
+    })
+    assert res.status_code == 200
+    n_short = res.body["timings"]["cache_n"] + res.body["timings"]["prompt_n"]
+    assert n_short < n_long // 4
+
+    # B shares almost all of A, but the short live slot has a better f_keep
+    # ratio. Cache selection must optimize reusable token count, not require
+    # both ratios to improve.
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt_b,
+        "cache_prompt": True,
+    })
+    assert res.status_code == 200
+    assert res.body["timings"]["cache_n"] > n_long // 2
