@@ -2239,53 +2239,134 @@ private:
     }
 
     // n_tokens_cur: the number of tokens added to the batch for the current slot
-    void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max) {
+    void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max, bool is_replay_boundary) {
         const int id_task = slot.task->id;
+        const int64_t checkpoint_n_tokens = slot.prompt.n_tokens() - n_tokens_cur;
 
-        // evict checkpoints within min-step of a previous checkpoint, unless they were
-        // created by the current task
-        int64_t last = -1;
-        for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ) {
-            if (it->id_task != id_task && last >= 0 && it->n_tokens <= last + params_base.checkpoint_min_step) {
-                SLT_TRC(slot, "erasing context checkpoint too close to an earlier one (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
-                        it->pos_min, it->pos_max, it->n_tokens, (float) it->size() / 1024 / 1024);
-
-                it = slot.prompt.checkpoints.erase(it);
+        // If this exact prefix is already represented, refresh it in place instead of
+        // consuming another ~constant-size recurrent checkpoint slot. A checkpoint that
+        // survived invalidation is guaranteed to lie inside the current common prefix.
+        for (auto & cur : slot.prompt.checkpoints) {
+            if (cur.n_tokens != checkpoint_n_tokens) {
                 continue;
             }
 
+            cur.id_task = id_task;
+            cur.is_replay_boundary = cur.is_replay_boundary || is_replay_boundary;
+            cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
+            cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+            if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
+                cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+            }
+            common_speculative_get_state(spec.get(), slot.id, cur.data_spec);
+
+            SLT_TRC(slot,
+                    "refreshed context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", replay_boundary = %d, hits = %u, size = %.3f MiB)\n",
+                    cur.pos_min, cur.pos_max, cur.n_tokens, cur.is_replay_boundary ? 1 : 0,
+                    cur.replay_hits, (float) cur.size() / 1024 / 1024);
+            return;
+        }
+
+        // Evict ordinary periodic checkpoints that are redundant at the configured
+        // spacing. Semantic/exact replay boundaries survive this cheap first pass.
+        int64_t last = -1;
+        for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ) {
+            if (it->id_task != id_task && !it->is_replay_boundary && last >= 0 && it->n_tokens <= last + params_base.checkpoint_min_step) {
+                SLT_TRC(slot, "erasing context checkpoint too close to an earlier one (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
+                        it->pos_min, it->pos_max, it->n_tokens, (float) it->size() / 1024 / 1024);
+                it = slot.prompt.checkpoints.erase(it);
+                continue;
+            }
             last = it->n_tokens;
             ++it;
         }
 
         while (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints) {
-            // make room for the new checkpoint, if needed
-            const auto & cur = slot.prompt.checkpoints.front();
+            // Constant-size recurrent checkpoints make compute-saved-per-byte close to
+            // compute saved. Under a locally uniform overlap distribution, removing a
+            // checkpoint c between neighbors p,n loses (c-p)*(n-c) token-replay area.
+            // Semantic boundaries are much more likely agent replay points; actual hits
+            // provide stronger evidence, following Marconi-style demand-driven retention.
+            auto victim = slot.prompt.checkpoints.end();
+            long double victim_value = std::numeric_limits<long double>::infinity();
 
-            SLT_WRN(slot, "erasing old context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
-                    cur.pos_min, cur.pos_max, cur.n_tokens, (float) cur.size() / 1024 / 1024);
+            // First pass protects semantic boundaries materialized by this request. They
+            // have not had an opportunity to record a hit yet, but are exactly the points
+            // the immediately following agent turn is likely to replay. If every slot is
+            // such a boundary, fall back to the same value rule across all checkpoints.
+            for (int pass = 0; pass < 2 && victim == slot.prompt.checkpoints.end(); ++pass) {
+                int64_t prev_pos = 0;
+                for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ++it) {
+                    auto it_next = std::next(it);
+                    const int64_t next_pos = it_next != slot.prompt.checkpoints.end()
+                        ? it_next->n_tokens
+                        : checkpoint_n_tokens;
+                    const bool current_request_boundary = it->is_replay_boundary && it->id_task == id_task;
+                    if (pass == 0 && current_request_boundary) {
+                        prev_pos = it->n_tokens;
+                        continue;
+                    }
 
-            slot.prompt.checkpoints.erase(slot.prompt.checkpoints.begin());
+                    const int64_t gap_l = std::max<int64_t>(1, it->n_tokens - prev_pos);
+                    const int64_t gap_r = std::max<int64_t>(1, next_pos - it->n_tokens);
+                    long double value;
+                    if (it->is_replay_boundary) {
+                        // Semantic checkpoints represent concentrated probability mass at
+                        // agent replay boundaries. Their value is the prefix compute they
+                        // skip, weighted like several periodic intervals; actual restores
+                        // then provide direct evidence that the prefix is hot.
+                        const int64_t semantic_span = std::max<int64_t>(1, params_base.checkpoint_min_step);
+                        value = (long double) std::max<int64_t>(1, it->n_tokens)
+                              * (long double) semantic_span * 8.0L;
+                    } else {
+                        // Periodic checkpoints cover a continuous range of possible overlap
+                        // depths; uniform-within-the-gap marginal saved work is proportional
+                        // to the product of the left and right gaps.
+                        value = (long double) gap_l * (long double) gap_r;
+                    }
+                    value *= 1.0L + 4.0L * (long double) it->replay_hits;
+
+                    if (value < victim_value) {
+                        victim_value = value;
+                        victim = it;
+                    }
+                    prev_pos = it->n_tokens;
+                }
+            }
+
+            GGML_ASSERT(victim != slot.prompt.checkpoints.end());
+            SLT_WRN(slot,
+                    "value-evicting context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", replay_boundary = %d, hits = %u, value = %.0Lf, size = %.3f MiB)\n",
+                    victim->pos_min, victim->pos_max, victim->n_tokens,
+                    victim->is_replay_boundary ? 1 : 0, victim->replay_hits,
+                    victim_value, (float) victim->size() / 1024 / 1024);
+            slot.prompt.checkpoints.erase(victim);
         }
 
         auto & cur = slot.prompt.checkpoints.emplace_back();
-
         cur.id_task = id_task;
+        cur.is_replay_boundary = is_replay_boundary;
+        cur.replay_hits = 0;
 
         // [TAG_CHECKPOINTS_FIX_POS_MIN]
         // TODO: here we incorrectly deterimne that the saved checkpoint data covers the [pos_min, pos_max] range
         //       this is not true for SWA models: https://github.com/ggml-org/llama.cpp/pull/24411#issuecomment-4677983225
-        cur.update_pos(slot.prompt.n_tokens() - n_tokens_cur, pos_min, pos_max);
+        cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
 
         cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-        cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-        // stash the draft's speculative state with the checkpoint
+        // A plain attention draft context can remove arbitrary suffixes. Do not duplicate its
+        // position-linear KV cache into every recurrent checkpoint; after restoring the target
+        // recurrent state, the normal slot.mem.seq_rm() path trims the draft KV to n_past.
+        if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
+            cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+        }
         common_speculative_get_state(spec.get(), slot.id, cur.data_spec);
 
         SLT_TRC(slot,
-                "created context checkpoint %d of %d (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
+                "created context checkpoint %d of %d (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", replay_boundary = %d, size = %.3f MiB)\n",
                 (int) slot.prompt.checkpoints.size(), params_base.n_ctx_checkpoints, cur.pos_min,
-                cur.pos_max, cur.n_tokens, (float) cur.size() / 1024 / 1024);
+                cur.pos_max, cur.n_tokens, cur.is_replay_boundary ? 1 : 0,
+                (float) cur.size() / 1024 / 1024);
     }
 
     // returns false to decline the task, it is offered again after the decode is done
@@ -3279,7 +3360,8 @@ private:
 
                                         pos_next = std::min(pos_next, std::max(it->pos_min + 1, it->pos_max));
                                         n_past   = std::min(slot.prompt.tokens.size_up_to_pos(pos_next), (size_t) it->n_tokens);
-                                        SLT_TRC(slot, "restored context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", n_past = %d, size = %.3f MiB)\n", it->pos_min, it->pos_max, it->n_tokens, n_past, (float) it->size() / 1024 / 1024);
+                                        it->replay_hits++;
+                                        SLT_TRC(slot, "restored context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", n_past = %d, hits = %u, size = %.3f MiB)\n", it->pos_min, it->pos_max, it->n_tokens, n_past, it->replay_hits, (float) it->size() / 1024 / 1024);
                                     }
 
                                     if (do_reset) {
@@ -3537,7 +3619,10 @@ private:
                     // note: we create the checkpoint before calling llama_decode(), so the current batch is not
                     //       yet processed and therefore it is not part of the checkpoint.
                     if (do_checkpoint) {
-                        create_checkpoint(slot, n_tokens_cur, pos_min, pos_max);
+                        // Protect two replay points that dominate agent traffic:
+                        // branch at the current user turn, and exact return to a previous prompt.
+                        const bool is_exact_prompt_end = slot.task->n_tokens() - n_tokens_start <= 4;
+                        create_checkpoint(slot, n_tokens_cur, pos_min, pos_max, is_last_user_message || is_exact_prompt_end);
                     }
                 }
 

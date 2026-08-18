@@ -2249,6 +2249,8 @@ bool common_prompt_checkpoint::empty() const {
 
 void common_prompt_checkpoint::clear() {
     n_tokens = 0;
+    is_replay_boundary = false;
+    replay_hits = 0;
 
     pos_min = 0;
     pos_max = 0;
