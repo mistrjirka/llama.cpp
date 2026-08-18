@@ -1140,6 +1140,13 @@ struct common_prompt_checkpoint {
     // (optional) id of the task that created the checkpoint
     int id_task = -1;
 
+    // High-value semantic/exact replay checkpoint; periodic cleanup should not discard it.
+    bool is_replay_boundary = false;
+
+    // Number of times this exact recurrent checkpoint was selected for restore.
+    // Used only as a retention/admission value signal; it does not affect model state.
+    uint32_t replay_hits = 0;
+
     llama_pos pos_min;
     llama_pos pos_max;
 
