@@ -1,0 +1,34 @@
+diff --git a/server/test/pflash_daemon.cpp b/server/test/pflash_daemon.cpp
+index 38e291e..ea592c3 100644
+--- a/server/test/pflash_daemon.cpp
++++ b/server/test/pflash_daemon.cpp
+@@ -1,3 +1,4 @@
++#include "ggml-backend.h"
+ // Persistent PFlash compressor daemon.
+ //
+ // Loads the Qwen3-0.6B PFlash drafter once, then accepts stdin commands:
+@@ -74,15 +75,23 @@ int main(int argc, char ** argv) {
+
+     const std::string gguf = argv[1];
+     int stream_fd = -1;
++    int gpu = 0;
+     for (int i = 2; i < argc; ++i) {
+         if (std::strncmp(argv[i], "--stream-fd=", 12) == 0) {
+             stream_fd = std::atoi(argv[i] + 12);
++        } else if (std::strncmp(argv[i], "--gpu=", 6) == 0) {
++            gpu = std::atoi(argv[i] + 6);
+         }
+     }
+
++    std::fprintf(stderr, "[pflash-daemon] backend devices:\n");
++    for (size_t di = 0; di < ggml_backend_dev_count(); ++di) {
++        ggml_backend_dev_t d = ggml_backend_dev_get(di);
++        std::fprintf(stderr, "  dev[%zu] type=%d name=%s desc=%s\n", di, (int)ggml_backend_dev_type(d), ggml_backend_dev_name(d), ggml_backend_dev_description(d));
++    }
+     DrafterContext ctx;
+     auto t_load0 = std::chrono::steady_clock::now();
+-    if (!load_drafter(gguf, /*gpu_layers=*/-1, ctx)) {
++    if (!load_drafter(gguf, /*gpu_layers=*/-1, gpu, ctx)) {
+         std::fprintf(stderr, "[pflash-daemon] load_drafter failed: %s\n", dflash27b_last_error());
+         return 1;
+     }
