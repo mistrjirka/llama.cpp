@@ -1777,13 +1777,14 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
     return GGML_STATUS_SUCCESS;
 }
 
-ggml_backend_sched_t ggml_backend_sched_new(
+ggml_backend_sched_t ggml_backend_sched_new_ex(
         ggml_backend_t * backends,
         ggml_backend_buffer_type_t * bufts,
         int n_backends,
         size_t graph_size,
         bool parallel,
-        bool op_offload) {
+        bool op_offload,
+        int n_copies) {
     GGML_ASSERT(n_backends > 0);
     GGML_ASSERT(n_backends <= GGML_SCHED_MAX_BACKENDS);
     GGML_ASSERT(ggml_backend_dev_type(ggml_backend_get_device(backends[n_backends - 1])) == GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -1801,7 +1802,9 @@ ggml_backend_sched_t ggml_backend_sched_new(
     sched->debug_realloc = GGML_SCHED_DEBUG_REALLOC ? atoi(GGML_SCHED_DEBUG_REALLOC) : sched->debug_realloc;
 
     sched->n_backends = n_backends;
-    sched->n_copies = parallel ? GGML_SCHED_MAX_COPIES : 1;
+    sched->n_copies = parallel
+        ? (n_copies > 0 ? std::clamp(n_copies, 1, GGML_SCHED_MAX_COPIES) : GGML_SCHED_MAX_COPIES)
+        : 1;
 
     // initialize hash table
     // FIXME: needs to be size*2 to account for leafs (do it in graph_split instead)
@@ -1847,6 +1850,16 @@ ggml_backend_sched_t ggml_backend_sched_new(
     ggml_backend_sched_reset(sched);
 
     return sched;
+}
+
+ggml_backend_sched_t ggml_backend_sched_new(
+        ggml_backend_t * backends,
+        ggml_backend_buffer_type_t * bufts,
+        int n_backends,
+        size_t graph_size,
+        bool parallel,
+        bool op_offload) {
+    return ggml_backend_sched_new_ex(backends, bufts, n_backends, graph_size, parallel, op_offload, 0);
 }
 
 void ggml_backend_sched_free(ggml_backend_sched_t sched) {
