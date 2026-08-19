@@ -1670,6 +1670,22 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_UBATCH"));
     add_opt(common_arg(
+        {"--pipeline-copies"}, "N",
+        "number of pipeline scheduler input copies (0 = backend default, smaller values reduce compute-buffer VRAM)",
+        [](common_params & params, int value) {
+            if (value < 0) throw std::invalid_argument("pipeline-copies must be >= 0");
+            params.n_pipeline_copies = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--prefill-reuse"}, "N",
+        "CUDA prefill GEMM tile for lossless quantized-weight reuse (0 = disabled; experimental, validated on Volta)",
+        [](common_params & params, int value) {
+            if (value < 0) throw std::invalid_argument("prefill-reuse must be >= 0");
+            params.prefill_reuse = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
         {"--keep"}, "N",
         string_format("number of tokens to keep from the initial prompt (default: %d, -1 = all)", params.n_keep),
         [](common_params & params, int value) {
@@ -4037,6 +4053,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         "Use polling to wait for draft model work (default: --poll-draft)",
         [](common_params & params, int value) {
             params.speculative.draft.cpuparams_batch.poll = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--spec-draft-ubatch"}, "N",
+        "physical maximum ubatch size for the draft/MTP context (0 = inherit target)",
+        [](common_params & params, int value) {
+            if (value < 0) throw std::invalid_argument("spec-draft-ubatch must be >= 0");
+            params.speculative.draft.n_ubatch = value;
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
     add_opt(common_arg(

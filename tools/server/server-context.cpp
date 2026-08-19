@@ -3574,7 +3574,15 @@ private:
                         //  - 4
                         // ref: https://github.com/ggml-org/llama.cpp/pull/20288
                         if (do_checkpoint) {
-                            static const int checkpoint_offsets[] = {4 + n_ubatch, 4};
+                            // Lossless prefill reuse may use a larger physical ubatch while
+                            // preserving the baseline GEMM tile. Keep semantic checkpoint
+                            // boundaries tied to that baseline tile too; otherwise enabling
+                            // reuse changes prompt segmentation and therefore MTP/checkpoint
+                            // trajectories even when the CUDA math itself is bit-identical.
+                            const int checkpoint_ubatch = params_base.prefill_reuse > 0
+                                ? std::min(n_ubatch, params_base.prefill_reuse)
+                                : n_ubatch;
+                            const int checkpoint_offsets[] = {4 + checkpoint_ubatch, 4};
 
                             bool should_break = false;
                             for (int offset : checkpoint_offsets) {
@@ -3595,7 +3603,10 @@ private:
 
                     const auto n_tokens_start = slot.prompt.n_tokens() - n_tokens_cur;
 
-                    const bool near_prompt_end = slot.task->n_tokens() < slot.prompt.n_tokens() + n_ubatch;
+                    const int checkpoint_ubatch = params_base.prefill_reuse > 0
+                        ? std::min(n_ubatch, params_base.prefill_reuse)
+                        : n_ubatch;
+                    const bool near_prompt_end = slot.task->n_tokens() < slot.prompt.n_tokens() + checkpoint_ubatch;
 
                     const bool is_user_start = spans.is_user_start(n_tokens_start);
                     const bool is_last_user_message = n_tokens_start == last_user_pos;
