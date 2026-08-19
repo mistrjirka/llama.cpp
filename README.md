@@ -156,17 +156,24 @@ The validated ub4096 configuration is approximately **5.44% faster in cold promp
 
 Validation used fixed sampling seeds only for A/B reproducibility; the normal serving configuration does **not** set temperature and uses server defaults.
 
-## Approximate research not merged as a default optimization
+## Approximate opt-in PFlash proxy
 
-### PFlash / Lucebox prompt compression
+The fork also includes [`tools/pflash/`](tools/pflash/) as a separate **approximate** optimization. It is not part of `llama-server` and is disabled unless you explicitly run the proxy.
 
-PFlash can produce much larger cold-prefill speedups by removing query-irrelevant old tokens before they reach the target model. It is therefore fundamentally **approximate**, unlike the changes above.
+PFlash removes query-irrelevant aged assistant/tool tokens before a cold target prefill, using a Qwen3-0.6B BF16 Lucebox scorer. The integration is deliberately **cold-long only** in `auto` mode: if a session's first request is short, the proxy leaves that session byte-for-byte pass-through forever instead of rewriting a valuable warm llama.cpp prefix when the conversation later grows.
 
-The research implementation can preserve system/user/tool structure, lazily load the scorer, and run the scorer on the 3060 Ti. Whole-history + current-query scoring is semantically stronger than permanently compressing each old message independently.
+For genuinely cold long histories the proxy freezes the compressed old prefix. Full omitted text remains in proxy memory so later queries can recover it near the current tail without rewriting earlier prompt bytes. Exact/rare identifiers use bounded lexical recovery; semantic recovery uses a small 1% PFlash pass on new user turns. Long scorer inputs are split into bounded 22k-token windows so the scorer can coexist with the target on the 8 GB 3060 Ti.
 
-It is not included here as a production default because normal agent sessions also depend heavily on stable prefix caching. Recompressing history for each new query can invalidate the prefix cache, while permanently freezing removed content can make later queries unable to recover a previously irrelevant fact. The preferred future design is a frozen compressed base plus query-time recovery of omitted snippets appended near the tail.
+Validated cold 48.5k-token retrieval case:
 
-Until that recovery/cache policy passes broader agent tests, PFlash remains optional research rather than a claimed lossless fork feature.
+| path | target prompt | end-to-end wall | result |
+|---|---:|---:|---|
+| direct target | 48,512 | 78.75 s | `A731|B284|C915` |
+| PFlash + target | 36,020 | about 67.0 s | `A731|B284|C915` |
+
+That is roughly **1.17× / 15% faster end-to-end** in this case. PFlash remains approximate: removing tokens can change model behavior, so it is not included in the fork's lossless performance claims.
+
+The proxy, tested defaults, Lucebox scorer build helper, future-query recovery design, lifecycle caveats, and per-request controls are documented in [`tools/pflash/README.md`](tools/pflash/README.md).
 
 ## Building for V100 + RTX 3060 Ti
 
