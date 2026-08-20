@@ -1446,8 +1446,20 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     // It's also faster to do small writes to shared memory, then large write to VRAM than to do small writes to VRAM.
     // So also write VKQ accumulators to shared memory in column-major format if np == 1.
 
-    constexpr int tile_stride = nbatch_combine + 4;
-    static_assert((DV/2) % nbatch_combine == 0, "bad nbatch_combine");
+    // The validated Volta 256x256 path keeps nbatch_combine=128 for arithmetic, but only
+    // needs 64 half2 output values resident in shared memory at once. Materialize the two
+    // independent output halves through the same scratch rows. Metadata reduction ordering
+    // remains unchanged; only its shared-memory addresses use the narrower row stride.
+    constexpr bool volta_combine_scratch64 =
+#if defined(VOLTA_MMA_AVAILABLE)
+        DKQ == 256 && DV == 256 && ncols1 == 32 && ncols2 == 2 && nwarps == 4 && np == 2 &&
+        !Q_in_reg && nbatch_fa == 32 && nbatch_combine == 128 && !V_is_K_view;
+#else
+        false;
+#endif
+    constexpr int combine_scratch = volta_combine_scratch64 ? 64 : nbatch_combine;
+    constexpr int tile_stride = combine_scratch + 4;
+    static_assert((DV/2) % combine_scratch == 0, "bad combine scratch size");
 
     if constexpr (cols_per_warp == 8) {
         const int jc_cwmo = (threadIdx.x % (2*T_C_VKQ::J)) / T_C_VKQ::J; // jc combine write meta offset
@@ -1456,7 +1468,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
         if (((!needs_fixup && !is_fixup) || np > 1) && threadIdx.x < 2*T_C_VKQ::J) {
             // Use the 16 bytes of padding in each row to store the meta data: KQ max, KQ rowsum, KQ max scale.
-            ((float2 *) tile_Q)[jc_cwm*(tile_stride/2) + nbatch_combine/2] = KQ_cmr;
+            ((float2 *) tile_Q)[jc_cwm*(tile_stride/2) + combine_scratch/2] = KQ_cmr;
         }
 
         __syncthreads();
@@ -1491,7 +1503,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 #endif // defined(TURING_MMA_AVAILABLE)
 
         if (((!needs_fixup && !is_fixup) || np > 1) && thread_should_write) {
-            ((float2 *) tile_Q)[jc_cwm*(tile_stride/2) + nbatch_combine/2] = KQ_cmr;
+            ((float2 *) tile_Q)[jc_cwm*(tile_stride/2) + combine_scratch/2] = KQ_cmr;
         }
 
         __syncthreads();
@@ -1509,86 +1521,160 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         }
     }
 
-    if (np > 1 && threadIdx.y % np == 0) {
-        // Combine the meta data for parallel warps via shared memory.
-        // Warps with threadIdx.y % np != 0 must NOT return early.
-        // All threads must return simultaneously to avoid race conditions with work on the next tile.
+    if constexpr (volta_combine_scratch64) {
+        if constexpr (np > 1) {
+            // All warps must reach the same static block barrier. The former implementation put
+            // __syncthreads() in complementary threadIdx.y branches, which is undefined CUDA
+            // synchronization even though both branches happened to use barrier 0.
+            const bool combine_meta_warp = threadIdx.y % np == 0;
+            constexpr int nmeta = np*cols_per_warp >= warp_size ? np*cols_per_warp/warp_size : 1;
 
-        constexpr int nmeta = np*cols_per_warp >= warp_size ? np*cols_per_warp/warp_size : 1;
+            const int jc_meta = threadIdx.y*cols_per_warp + (np*cols_per_warp < warp_size ? threadIdx.x % (np*cols_per_warp) : threadIdx.x);
+            float2 * const meta_ptr = ((float2 *) tile_Q) + jc_meta*(tile_stride/2) + combine_scratch/2;
+            float2 meta[nmeta];
+            float KQ_cmn = 0.0f;
+            float KQ_cms[nmeta];
+            float KQ_crs = 0.0f;
 
-        const int jc_meta = threadIdx.y*cols_per_warp + (np*cols_per_warp < warp_size ? threadIdx.x % (np*cols_per_warp) : threadIdx.x);
-        float2 * const meta_ptr = ((float2 *) tile_Q) + jc_meta*(tile_stride/2) + nbatch_combine/2;
-        float2 meta[nmeta];
-#pragma unroll
-        for (int imeta = 0; imeta < nmeta; ++imeta) {
-            meta[imeta] = meta_ptr[imeta * warp_size * tile_stride/2];
-        }
+            if (combine_meta_warp) {
+    #pragma unroll
+                for (int imeta = 0; imeta < nmeta; ++imeta) {
+                    meta[imeta] = meta_ptr[imeta * warp_size * tile_stride/2];
+                }
 
-        float KQ_cmn = meta[0].x; // KQ combine max new, max between all parallel warps.
-#pragma unroll
-        for (int imeta = 1; imeta < nmeta; ++imeta) {
-            KQ_cmn = fmaxf(KQ_cmn, meta[imeta].x);
-        }
-#pragma unroll
-        for (int offset = np*cols_per_warp/2; offset >= cols_per_warp; offset >>= 1) {
-            if (offset < warp_size) {
-                KQ_cmn = fmaxf(KQ_cmn, __shfl_xor_sync(0xFFFFFFFF, KQ_cmn, offset, warp_size));
+                KQ_cmn = meta[0].x;
+    #pragma unroll
+                for (int imeta = 1; imeta < nmeta; ++imeta) {
+                    KQ_cmn = fmaxf(KQ_cmn, meta[imeta].x);
+                }
+    #pragma unroll
+                for (int offset = np*cols_per_warp/2; offset >= cols_per_warp; offset >>= 1) {
+                    if (offset < warp_size) {
+                        KQ_cmn = fmaxf(KQ_cmn, __shfl_xor_sync(0xFFFFFFFF, KQ_cmn, offset, warp_size));
+                    }
+                }
+
+    #pragma unroll
+                for (int imeta = 0; imeta < nmeta; ++imeta) {
+                    KQ_cms[imeta] = expf(meta[imeta].x - KQ_cmn);
+                }
+
+                KQ_crs = KQ_cms[0]*meta[0].y;
+    #pragma unroll
+                for (int imeta = 1; imeta < nmeta; ++imeta) {
+                    KQ_crs += KQ_cms[imeta]*meta[imeta].y;
+                }
+    #pragma unroll
+                for (int offset = np*cols_per_warp/2; offset >= cols_per_warp; offset >>= 1) {
+                    if (offset < warp_size) {
+                        KQ_crs += __shfl_xor_sync(0xFFFFFFFF, KQ_crs, offset, warp_size);
+                    }
+                }
+            }
+
+            // Uniform block barrier: every thread reaches this exact instruction.
+            __syncthreads();
+
+            if (combine_meta_warp) {
+    #pragma unroll
+                for (int imeta = 0; imeta < nmeta; ++imeta) {
+                    if (np*cols_per_warp >= warp_size || threadIdx.x < np*cols_per_warp) {
+                        meta_ptr[imeta * warp_size * tile_stride/2] = make_float2(KQ_cms[imeta], KQ_crs);
+                    }
+                }
+
+                static_assert(cols_per_warp <= warp_size);
+                if (needs_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
+                    float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
+                    dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
+                }
+                if (is_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
+                    float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x + blockIdx.x)*ncols;
+                    dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
+                }
             }
         }
+    } else {
+        if (np > 1 && threadIdx.y % np == 0) {
+            // Combine the meta data for parallel warps via shared memory.
+            // Warps with threadIdx.y % np != 0 must NOT return early.
+            // All threads must return simultaneously to avoid race conditions with work on the next tile.
 
-        float KQ_cms[nmeta]; // KQ combine max scale per warp.
-#pragma unroll
-        for (int imeta = 0; imeta < nmeta; ++imeta) {
-            KQ_cms[imeta] = expf(meta[imeta].x - KQ_cmn);
-        }
+            constexpr int nmeta = np*cols_per_warp >= warp_size ? np*cols_per_warp/warp_size : 1;
 
-        float KQ_crs = KQ_cms[0]*meta[0].y; // KQ combine rowsum, scaled sum of all parallel warps.
-#pragma unroll
-        for (int imeta = 1; imeta < nmeta; ++imeta) {
-            KQ_crs += KQ_cms[imeta]*meta[imeta].y;
-        }
-#pragma unroll
-        for (int offset = np*cols_per_warp/2; offset >= cols_per_warp; offset >>= 1) {
-            if (offset < warp_size) {
-                KQ_crs += __shfl_xor_sync(0xFFFFFFFF, KQ_crs, offset, warp_size);
+            const int jc_meta = threadIdx.y*cols_per_warp + (np*cols_per_warp < warp_size ? threadIdx.x % (np*cols_per_warp) : threadIdx.x);
+            float2 * const meta_ptr = ((float2 *) tile_Q) + jc_meta*(tile_stride/2) + combine_scratch/2;
+            float2 meta[nmeta];
+    #pragma unroll
+            for (int imeta = 0; imeta < nmeta; ++imeta) {
+                meta[imeta] = meta_ptr[imeta * warp_size * tile_stride/2];
             }
-        }
 
-        __syncthreads();
-
-        // Write back combined meta data:
-#pragma unroll
-        for (int imeta = 0; imeta < nmeta; ++imeta) {
-            if (np*cols_per_warp >= warp_size || threadIdx.x < np*cols_per_warp) {
-                // Combined KQ max scale + rowsum.
-                meta_ptr[imeta * warp_size * tile_stride/2] = make_float2(KQ_cms[imeta], KQ_crs);
+            float KQ_cmn = meta[0].x; // KQ combine max new, max between all parallel warps.
+    #pragma unroll
+            for (int imeta = 1; imeta < nmeta; ++imeta) {
+                KQ_cmn = fmaxf(KQ_cmn, meta[imeta].x);
             }
-        }
+    #pragma unroll
+            for (int offset = np*cols_per_warp/2; offset >= cols_per_warp; offset >>= 1) {
+                if (offset < warp_size) {
+                    KQ_cmn = fmaxf(KQ_cmn, __shfl_xor_sync(0xFFFFFFFF, KQ_cmn, offset, warp_size));
+                }
+            }
 
-        // Combined KQ max + rowsum.
-        static_assert(cols_per_warp <= warp_size);
-        if (needs_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
-            float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
-            dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
+            float KQ_cms[nmeta]; // KQ combine max scale per warp.
+    #pragma unroll
+            for (int imeta = 0; imeta < nmeta; ++imeta) {
+                KQ_cms[imeta] = expf(meta[imeta].x - KQ_cmn);
+            }
+
+            float KQ_crs = KQ_cms[0]*meta[0].y; // KQ combine rowsum, scaled sum of all parallel warps.
+    #pragma unroll
+            for (int imeta = 1; imeta < nmeta; ++imeta) {
+                KQ_crs += KQ_cms[imeta]*meta[imeta].y;
+            }
+    #pragma unroll
+            for (int offset = np*cols_per_warp/2; offset >= cols_per_warp; offset >>= 1) {
+                if (offset < warp_size) {
+                    KQ_crs += __shfl_xor_sync(0xFFFFFFFF, KQ_crs, offset, warp_size);
+                }
+            }
+
+            __syncthreads();
+
+            // Write back combined meta data:
+    #pragma unroll
+            for (int imeta = 0; imeta < nmeta; ++imeta) {
+                if (np*cols_per_warp >= warp_size || threadIdx.x < np*cols_per_warp) {
+                    // Combined KQ max scale + rowsum.
+                    meta_ptr[imeta * warp_size * tile_stride/2] = make_float2(KQ_cms[imeta], KQ_crs);
+                }
+            }
+
+            // Combined KQ max + rowsum.
+            static_assert(cols_per_warp <= warp_size);
+            if (needs_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
+                float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
+                dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
+            }
+            if (is_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
+                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x + blockIdx.x)*ncols;
+                dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
+            }
+        } else if (np > 1) {
+            // Warps with threadIdx.y % np == 0 execute a __syncthreads() in the if branch.
+            // Therefore, all other warps also need to execute a __syncthreads().
+            // Otherwise the points at which warps synchronize with each other would become misaligned.
+            __syncthreads();
         }
-        if (is_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
-            float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x + blockIdx.x)*ncols;
-            dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
-        }
-    } else if (np > 1) {
-        // Warps with threadIdx.y % np == 0 execute a __syncthreads() in the if branch.
-        // Therefore, all other warps also need to execute a __syncthreads().
-        // Otherwise the points at which warps synchronize with each other would become misaligned.
-        __syncthreads();
     }
-
 #pragma unroll
-    for (int k00 = 0; k00 < DV/2; k00 += nbatch_combine) {
+    for (int k00 = 0; k00 < DV/2; k00 += combine_scratch) {
         if constexpr (cols_per_warp == 8) {
             static_assert(std::is_same_v<decltype(T_C_VKQ::x), half2[T_C_VKQ::ne]>, "bad VKQ type");
             const int jc_cwd = threadIdx.y*T_B_KQ::I + T_B_KQ::get_i(-1); // jc combine write data
 #pragma unroll
-            for (int k1 = 0; k1 < nbatch_combine; k1 += T_B_KQ::J) {
+            for (int k1 = 0; k1 < combine_scratch; k1 += T_B_KQ::J) {
                 const T_B_KQ B = get_transposed(VKQ_C[(k00 + k1)/T_B_KQ::J]); // Conversion of C to B matrix puts it in column-major format.
 
 #pragma unroll
@@ -1603,7 +1689,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
             if constexpr (std::is_same_v<decltype(T_C_VKQ::x), half2[T_C_VKQ::ne]>) {
                 if constexpr (T_C_VKQ::dl == DATA_LAYOUT_I_MAJOR) {
 #pragma unroll
-                    for (int k1 = 0; k1 < nbatch_combine; k1 += T_C_VKQ::J) {
+                    for (int k1 = 0; k1 < combine_scratch; k1 += T_C_VKQ::J) {
 #pragma unroll
                         for (int l = 0; l < T_C_VKQ::ne; ++l) {
                             const int j = j0 + T_C_VKQ::get_i(l);
@@ -1616,7 +1702,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
                     static_assert(T_C_VKQ::dl == DATA_LAYOUT_I_MAJOR_SCRAMBLED, "bad T_C_VKQ data layout");
                     using T_C_VKQ_us = tile<T_C_VKQ::I, T_C_VKQ::J, half2, DATA_LAYOUT_I_MAJOR>; // us == unscrambled
 #pragma unroll
-                    for (int k1 = 0; k1 < nbatch_combine; k1 += T_C_VKQ::J) {
+                    for (int k1 = 0; k1 < combine_scratch; k1 += T_C_VKQ::J) {
                         const T_C_VKQ_us VKQ_C_us = unscramble(VKQ_C[(k00 + k1)/T_C_VKQ::J]);
 #pragma unroll
                         for (int l = 0; l < T_C_VKQ_us::ne; ++l) {
@@ -1631,7 +1717,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
                 static_assert(std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>, "bad VKQ type");
                 half * tile_Q_h = (half *) tile_Q;
 #pragma unroll
-                for (int k1 = 0; k1 < nbatch_combine; k1 += T_C_VKQ::J/2) {
+                for (int k1 = 0; k1 < combine_scratch; k1 += T_C_VKQ::J/2) {
 #pragma unroll
                     for (int l = 0; l < T_C_VKQ::ne; ++l) {
                         const int j = j0 + T_C_VKQ::get_i(l);
@@ -1652,8 +1738,8 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
 #pragma unroll
             for (int stride_k : {warp_size, warp_size/2, warp_size/4, warp_size/8}) {
-                const int k0_start  = stride_k == warp_size ? 0 : nbatch_combine - nbatch_combine % (2*stride_k);
-                const int k0_stop   =                             nbatch_combine - nbatch_combine % (1*stride_k);
+                const int k0_start  = stride_k == warp_size ? 0 : combine_scratch - combine_scratch % (2*stride_k);
+                const int k0_stop   =                             combine_scratch - combine_scratch % (1*stride_k);
                 const int stride_jc = warp_size / stride_k;
 
                 if (k0_start == k0_stop) {
@@ -1677,7 +1763,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
                         continue;
                     }
 
-                    const float * meta_j = (const float *) tile_Q + jc_tile_K*tile_stride + nbatch_combine;
+                    const float * meta_j = (const float *) tile_Q + jc_tile_K*tile_stride + combine_scratch;
 #pragma unroll
                     for (int k0 = k0_start; k0 < k0_stop; k0 += stride_k) {
                         const int k = k0 + (stride_k == warp_size ? threadIdx.x : threadIdx.x % stride_k);
@@ -1914,6 +2000,8 @@ static __global__ void flash_attn_ext_f16(
 template <int DKQ, int DV, int ncols1, int ncols2>
 void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * KQV = dst;
+    const ggml_tensor * Q   = KQV->src[0];
+    const ggml_tensor * K   = KQV->src[1];
     const int id = ggml_cuda_get_device();
     const int cc = ggml_cuda_info().devices[id].cc;
 
@@ -1937,13 +2025,46 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
     const size_t nbytes_shared_KV_2stage = nbatch_fa            *         (nbatch_K2 + 4 + nbatch_V2 + 4) * sizeof(half2);
     const size_t nbytes_shared_Q         = ncols                * (DKQ/2 + 4)                             * sizeof(half2);
     const size_t nbytes_shared_mask      = ncols1               * (nbatch_fa/2 + 4)                       * sizeof(half2);
-    const size_t nbytes_shared_combine   = nwarps*cols_per_warp * (nbatch_combine + 4)                    * sizeof(half2);
+    const bool volta_combine_scratch64 =
+        cc == GGML_CUDA_CC_VOLTA && DKQ == 256 && DV == 256 && ncols1 == 32 && ncols2 == 2 &&
+        nwarps == 4 && !Q_in_reg && nbatch_fa == 32 && nbatch_combine == 128 && !V_is_K_view;
+    const int combine_scratch = volta_combine_scratch64 ? 64 : nbatch_combine;
+    const size_t nbytes_shared_combine = nwarps*cols_per_warp * (combine_scratch + 4) * sizeof(half2);
+    const size_t nbytes_shared_combine_legacy = nwarps*cols_per_warp * (nbatch_combine + 4) * sizeof(half2);
 
     const size_t nbytes_shared_KV = nstages <= 1 ? nbytes_shared_KV_1stage : nbytes_shared_KV_2stage;
 
-    const size_t nbytes_shared_total = std::max(nbytes_shared_combine, Q_in_reg ?
+    const size_t nbytes_shared_fast = std::max(nbytes_shared_combine, Q_in_reg ?
         std::max(nbytes_shared_Q,  nbytes_shared_KV + nbytes_shared_mask) :
                  nbytes_shared_Q + nbytes_shared_KV + nbytes_shared_mask);
+    const size_t nbytes_shared_legacy = volta_combine_scratch64
+        ? std::max(nbytes_shared_fast, nbytes_shared_combine_legacy)
+        : nbytes_shared_fast;
+
+    // The 49,152-byte Volta specialization permits two CTAs per V100 SM. That is bit-exact
+    // when both the legacy and fast occupancy regimes use the same whole-output-tile mapping,
+    // but changing occupancy can change Stream-K partitioning for other query sizes. Large
+    // prefills (>=1024 Q tokens) can additionally use KV_max mask pruning, whose execution
+    // path was observed to be occupancy-sensitive. Conservatively use two CTAs only when
+    // neither condition can change the logical schedule.
+    bool use_volta_2cta = volta_combine_scratch64 && Q->ne[1] >= 768 && Q->ne[1] < 1024 && Q->ne[3] == 1;
+    if (use_volta_2cta) {
+        const int nsm = ggml_cuda_info().devices[id].nsm;
+        const int ntiles_x = (Q->ne[1] + ncols1 - 1) / ncols1;
+        const int gqa_ratio = Q->ne[2] / K->ne[2];
+        const int ntiles_z_gqa = (gqa_ratio + ncols2 - 1) / ncols2;
+        const int ntiles_dst = ntiles_x * ntiles_z_gqa * K->ne[2] * Q->ne[3];
+        const auto whole_tile_efficiency = [ntiles_dst](const int max_blocks) {
+            const int nwaves = (ntiles_dst + max_blocks - 1) / max_blocks;
+            return 100 * ntiles_dst / (max_blocks * nwaves);
+        };
+        // For this exact sm70 specialization the legacy shared-memory footprint limits the
+        // kernel to one CTA/SM and the compact footprint permits two. Require both occupancy
+        // regimes to stay above the launcher's 75% Stream-K threshold.
+        use_volta_2cta = whole_tile_efficiency(nsm) >= 75 && whole_tile_efficiency(2*nsm) >= 75;
+    }
+    const size_t nbytes_shared_launch = use_volta_2cta ? nbytes_shared_fast : nbytes_shared_legacy;
+    const size_t nbytes_shared_attribute = nbytes_shared_legacy;
 
     float logit_softcap;
     memcpy(&logit_softcap, (const float *) KQV->op_params + 2, sizeof(float));
@@ -1961,7 +2082,7 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
 #if !defined(GGML_USE_MUSA)
         static bool shared_memory_limit_raised[GGML_CUDA_MAX_DEVICES] = {false};
         if (!shared_memory_limit_raised[id]) {
-            CUDA_CHECK(cudaFuncSetAttribute(reinterpret_cast<fattn_kernel_ptr_t>(fattn_kernel), cudaFuncAttributeMaxDynamicSharedMemorySize, nbytes_shared_total));
+            CUDA_CHECK(cudaFuncSetAttribute(reinterpret_cast<fattn_kernel_ptr_t>(fattn_kernel), cudaFuncAttributeMaxDynamicSharedMemorySize, nbytes_shared_attribute));
             shared_memory_limit_raised[id] = true;
         }
 #endif // !defined(GGML_USE_MUSA)
@@ -1972,14 +2093,14 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
 #if !defined(GGML_USE_MUSA)
         static bool shared_memory_limit_raised[GGML_CUDA_MAX_DEVICES] = {false};
         if (!shared_memory_limit_raised[id]) {
-            CUDA_CHECK(cudaFuncSetAttribute(reinterpret_cast<fattn_kernel_ptr_t>(fattn_kernel), cudaFuncAttributeMaxDynamicSharedMemorySize, nbytes_shared_total));
+            CUDA_CHECK(cudaFuncSetAttribute(reinterpret_cast<fattn_kernel_ptr_t>(fattn_kernel), cudaFuncAttributeMaxDynamicSharedMemorySize, nbytes_shared_attribute));
             shared_memory_limit_raised[id] = true;
         }
 #endif // !defined(GGML_USE_MUSA)
     }
 
     launch_fattn<DV, ncols1, ncols2>
-        (ctx, dst, fattn_kernel, nwarps, nbytes_shared_total, nbatch_fa, true, true, true, warp_size_host);
+        (ctx, dst, fattn_kernel, nwarps, nbytes_shared_launch, nbatch_fa, true, true, true, warp_size_host);
 }
 
 

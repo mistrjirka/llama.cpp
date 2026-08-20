@@ -136,8 +136,10 @@ The final implementation goes further without changing the 32-row softmax/rescal
 1. Q remains staged in shared memory, avoiding the original register spill.
 2. K scratch is reduced from 128 to **96 half2 values** and V scratch from 128 to **64 half2 values**.
 3. Because K is now split into 96+32 subtiles, the non-MLA Volta path explicitly walks those subtiles **forwards**. The resulting MMA update sequence is the same 0->128 K-dimension order as the original one-piece K tile.
-4. `nbatch_fa=32` and `nbatch_combine=128` are deliberately unchanged. These are part of the validated floating-point execution path.
-5. The specialization remains Volta-only; Ampere and all other architectures retain upstream dispatch/configuration.
+4. `nbatch_fa=32` and the arithmetic `nbatch_combine=128` are deliberately unchanged. For the validated continuation regime, the two independent 64-half2 output halves are materialized through the same 64-wide shared-memory window. This reduces the launch footprint from 67,584 to **49,152 bytes** and permits two CTAs per V100 SM without changing the combine arithmetic.
+5. The 2-CTA launch is **adaptive and conservative**: it is enabled only for the exact sm70 256x256 specialization, one sequence, 768-1023 query tokens, and only when both the legacy and compact occupancy regimes remain on the same >=75% efficient whole-tile/non-Stream-K schedule. Decode/small batches and >=1024-token prefills automatically reserve the legacy shared-memory footprint.
+6. The compact specialization also uses a uniform block barrier for its parallel-warp metadata combine; non-target FA specializations retain their original code path.
+7. The specialization remains Volta-only; Ampere and all other architectures retain upstream dispatch/configuration.
 
 On the Qwen3.8 full-attention geometry (`D=256`, 4 KV heads, GQA=6, query batch 4096, q8_0 K/V), isolated V100 timings are:
 
@@ -165,16 +167,14 @@ Lossless validation is stronger than sampled-token equality:
 - CUDA racecheck on the candidate reported **0 hazards / 0 errors / 0 warnings**;
 - CUDA1/Ampere fallback passed 114/114 filtered FlashAttention tests.
 
-`compute-sanitizer --tool synccheck` reports an existing divergent-barrier warning in this FA specialization. The same warning reproduces on the untouched pre-FA baseline binary, so it is not introduced by this optimization.
+The adaptive 2-CTA follow-up was validated separately on the active Q=1000/q8_0 geometry with all three CUDA sanitizer modes: **synccheck 0 errors, racecheck 0 hazards/errors/warnings, and memcheck 0 errors**. The compact Volta metadata path replaces the previously divergent block-barrier structure with a uniform barrier.
 
-Two faster-looking variants were deliberately rejected rather than included in the lossless path:
+Two broader variants were deliberately rejected rather than enabled globally:
 
-- doubling the softmax/rescaling work chunk reached ~32 TFLOP/s but changed the 64-step trajectory: **numerical/quality failure**;
-- reducing `nbatch_combine` from 128 to 64 while using K96/V64 reached **~44.2-44.8 TFLOP/s** (about 2.05x the original FA kernel), but changed top-100/top-20 probability structures even though the short sampled tokens remained equal: **numerical/quality failure**.
+- doubling the softmax/rescaling work chunk changed the 64-step trajectory: **numerical/quality failure**;
+- enabling the compact 49,152-byte / 2-CTA launch indiscriminately changed probability structures on scheduling regimes such as smaller queries/Stream-K and large prefills. Investigation showed that the same compact kernel is bit-exact when the logical whole-tile schedule is unchanged, which led to the conservative adaptive gate above rather than an approximate global mode.
 
-The latter result shows there is still hardware headroom. Future work may try to reduce/reuse combine scratch while preserving the exact `nbatch_combine=128` arithmetic path rather than changing the combine width.
-
-Commits in this area start with `cuda: reduce Volta 256x256 FlashAttention register pressure`; the K/V-subtile follow-up supersedes its first configuration while retaining the same lossless policy.
+Commits in this area start with `cuda: reduce Volta 256x256 FlashAttention register pressure`; the K/V-subtile and adaptive 2-CTA follow-ups retain the same lossless policy.
 
 ## Recommended Qwen3.8-27B configuration for this machine
 
@@ -241,6 +241,16 @@ After the GDN optimization, a fresh three-run series on the current code measure
 In that fresh series the reuse + GDN stack was **9.08% faster** than the original ub1024 path. The GDN kernel itself contributed **+1.87% PP** over the already-optimized reuse path. The older independently matched reuse result (**+5.44%**) remains the conservative standalone number for weight reuse; benchmark noise means these percentages should not simply be added.
 
 A later fresh interleaved three-pair test of the final Volta 256x256 FlashAttention implementation measured **29.015 s -> 26.789 s**, or **+8.31% PP** on top of the same-session reuse + GDN control. This supersedes the earlier Q-shared-only +4.02% result. As with the other measurements, do not algebraically add percentages taken from different benchmark sessions.
+
+For the more realistic long-agent continuation target, a saved **100,000-token production KV state** was restored into each build and the identical next **1,000 prompt tokens** were evaluated. Using the same state removes cache-construction and cache-selection differences from the A/B:
+
+| implementation | +1k prompt time | +1k PP | vs upstream-derived CUDA baseline |
+|---|---:|---:|---:|
+| upstream-derived CUDA baseline (`474446df1`; only server cache-selection commits differ from upstream) | **3.010 s** | **332.18 tok/s** | reference |
+| previous pushed lossless stack (`7718be7bd`) | **2.566 s** | **389.65 tok/s** | **+17.30%** |
+| adaptive Volta 2-CTA continuation | **2.232 s** | **448.08 tok/s** | **+34.89%** |
+
+The adaptive path is **+15.00% PP throughput** over the previous pushed fork for this shared-state continuation, with **13.04% lower prompt latency**. The generated token, content, and complete top-100 probability object are exactly equal to the previous lossless stack. Raw Q8 FlashAttention output at Q=1000 was also bit-identical across all **6,144,000 float outputs** between the one-CTA and two-CTA launch. Boundary gates at Q=767/768/1023/1024 were exactly equal, and a matched 64-token direct replay had identical tokens, content, and every probability object.
 
 The paired 23,289-token generated token SHAs were identical. A captured native Pi request produced the same canonical tool-response SHA, and a 64-step replay produced exactly equal target tokens, content, and top-20 probability structures. On three deterministic replays of the historical 39-call `pydicom-1256` Pi trajectory, the paired summed-prompt-processing gains were **+1.47%**, **+0.79%**, and **+1.00%**. Averaged across the three runs, baseline summed PP was **48.428 s** versus **47.907 s** with GDN (**+1.09%**); mean replay wall time improved by **0.61%**. Every replay had identical prompt/cache geometry, restoring about **530k cached tokens** and processing **27,109 new prompt tokens**, so its incremental gain is naturally smaller than a cold long prompt.
 
