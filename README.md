@@ -1,8 +1,8 @@
 # llama.cpp — Qwen3.8 long-context / agent-cache fork
 
-This repository is a small performance fork of upstream [`llama.cpp`](README.old), focused on **lossless** long-context Qwen3.8 serving on the V100 + RTX 3060 Ti system used for development here.
+This repository is a small performance fork of upstream [`llama.cpp`](README.old), focused on **lossless** long-context Qwen3.8 serving on the V100 + RTX 3060 Ti system used for development here. The current fork history is rebased directly on upstream commit `0e1d9185c` (2026-08-20).
 
-The original upstream README is preserved as [`README.old`](README.old). Upstream build, model, API, and general usage documentation remains there.
+The README from that upstream base is preserved as [`README.old`](README.old). Upstream build, model, API, and general usage documentation remains there.
 
 ## What differs from upstream
 
@@ -246,11 +246,13 @@ For the more realistic long-agent continuation target, a saved **100,000-token p
 
 | implementation | +1k prompt time | +1k PP | vs upstream-derived CUDA baseline |
 |---|---:|---:|---:|
-| upstream-derived CUDA baseline (`474446df1`; only server cache-selection commits differ from upstream) | **3.010 s** | **332.18 tok/s** | reference |
+| historical upstream-derived CUDA baseline (`474446df1`; only server cache-selection commits differ from its upstream base) | **3.010 s** | **332.18 tok/s** | reference |
 | previous pushed lossless stack (`7718be7bd`) | **2.566 s** | **389.65 tok/s** | **+17.30%** |
-| adaptive Volta 2-CTA continuation | **2.232 s** | **448.08 tok/s** | **+34.89%** |
+| adaptive Volta 2-CTA continuation, rebased on `0e1d9185c` | **2.236 s** | **447.21 tok/s** | **+34.63%** |
 
-The adaptive path is **+15.00% PP throughput** over the previous pushed fork for this shared-state continuation, with **13.04% lower prompt latency**. The generated token, content, and complete top-100 probability object are exactly equal to the previous lossless stack. Raw Q8 FlashAttention output at Q=1000 was also bit-identical across all **6,144,000 float outputs** between the one-CTA and two-CTA launch. Boundary gates at Q=767/768/1023/1024 were exactly equal, and a matched 64-token direct replay had identical tokens, content, and every probability object.
+The rebased adaptive path is **+14.77% PP throughput** over the previous pushed fork for this shared-state continuation, with **12.87% lower prompt latency**. It is only **0.19% slower** than the pre-rebase 448.08 tok/s confirmation, i.e. effectively unchanged within run-to-run noise despite taking upstream's new CUDA/cuBLAS workspace changes. The generated token, content, and complete top-100 probability object are exactly equal to the pre-rebase validated build. Raw Q8 FlashAttention output at Q=1000 was also bit-identical across all **6,144,000 float outputs** between the one-CTA and two-CTA launch. Boundary gates at Q=767/768/1023/1024 were exactly equal, and a matched 64-token direct replay had identical tokens, content, and every probability object.
+
+Post-rebase validation used a clean `build-rebased/` tree at commit `45c26d803`: the top-100 and 64-step probability objects remained byte-for-byte equal to the pre-rebase validated build; the shared 100k -> 101k continuation remained probability-identical; and the active Q=1000/q8_0 CUDA path passed **synccheck (0 errors), racecheck (0 hazards/errors/warnings), and memcheck (0 errors)**.
 
 The paired 23,289-token generated token SHAs were identical. A captured native Pi request produced the same canonical tool-response SHA, and a 64-step replay produced exactly equal target tokens, content, and top-20 probability structures. On three deterministic replays of the historical 39-call `pydicom-1256` Pi trajectory, the paired summed-prompt-processing gains were **+1.47%**, **+0.79%**, and **+1.00%**. Averaged across the three runs, baseline summed PP was **48.428 s** versus **47.907 s** with GDN (**+1.09%**); mean replay wall time improved by **0.61%**. Every replay had identical prompt/cache geometry, restoring about **530k cached tokens** and processing **27,109 new prompt tokens**, so its incremental gain is naturally smaller than a cold long prompt.
 
