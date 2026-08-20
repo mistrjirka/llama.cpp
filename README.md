@@ -98,6 +98,33 @@ For Qwen3.8 here:
 
 This is needed to combine large target prefill reuse with a memory-efficient MTP graph.
 
+### 6. Volta fused GatedDeltaNet prefill column reuse
+
+Qwen3.8's scalar-gate recurrent layers use a 128-wide GatedDeltaNet state. In the upstream CUDA kernel, one warp owns one state/output column, so independent warps repeatedly load the same Q/K vectors and scalar gate/beta values.
+
+On NVIDIA Volta only, this fork adds a specialized `S_v = 128`, scalar-gate, prefill-only kernel that keeps **four independent state columns in one warp**. The four columns share the same Q/K registers while each column preserves its original token recurrence and warp reduction order. Decode (`n_tokens == 1`), KDA, other head sizes, Ampere, HIP, and MUSA continue through the upstream kernel.
+
+The specialized sm70 kernel uses 72 registers/thread with no local-memory spill. On the Qwen-like isolated GDN benchmark (`head_size=128`, `head_count=32`, `n_seq_tokens=1024`) it reduced kernel time from about **1.797 ms to 1.175 ms** (~34.6% lower GDN time).
+
+A matched three-run 23,289-token production-reuse A/B measured:
+
+```text
+reuse baseline: 29.537 / 29.738 / 29.900 s, median 29.738 s = 783.13 tok/s
+reuse + GDN:    28.934 / 29.191 / 29.500 s, median 29.191 s = 797.80 tok/s
+```
+
+This is **+1.87% prompt-processing throughput** from the GDN kernel on top of the already-validated prefill-reuse configuration. The captured native Pi tool-response canonical SHA and all paired retrieval token SHAs were identical.
+
+The optimization follows the scalar-gate Gated DeltaNet recurrence described by **Gated Delta Networks: Improving Mamba2 with Delta Rule** and the related delta-rule work **Parallelizing Linear Transformers with the Delta Rule over Sequence Length**. Flash Linear Attention is a useful reference implementation of the same model family:
+
+- https://arxiv.org/abs/2412.06464
+- https://arxiv.org/abs/2406.06484
+- https://github.com/fla-org/flash-linear-attention
+
+This fork's sm70 path is deliberately the existing **token-by-token recurrent** formulation. It does not replace the recurrence with the papers' WY/chunkwise formulation, because reassociating the recurrence changes floating-point execution and has not passed this fork's bitwise-lossless gate.
+
+Commit: `cuda: optimize Volta GDN prefill column reuse`.
+
 ## Recommended Qwen3.8-27B configuration for this machine
 
 Validated hardware:
@@ -145,14 +172,28 @@ The manual `64,2` placement is intentional for this exact hardware/model. Do not
 
 ## Measured lossless prefill result
 
-On the 23,289-token controlled prompt with 262k context, MTP enabled and identical generated token sequence:
+The original prefill-reuse implementation was validated with a matched three-run 23,289-token production-context A/B:
 
-| configuration | median prompt time | median PP |
-|---|---:|---:|
-| baseline: batch4096 / ub1024 | **31.639 s** | **736.1 tok/s** |
-| reuse: batch4096 / ub4096 / tile1024 | **30.007 s** | **776.1 tok/s** |
+| configuration | median prompt time | median PP | result |
+|---|---:|---:|---:|
+| baseline: batch4096 / ub1024 | **31.639 s** | **736.1 tok/s** | reference |
+| reuse: batch4096 / ub4096 / tile1024 | **30.007 s** | **776.1 tok/s** | **+5.44% PP** |
 
-The validated ub4096 configuration is approximately **5.44% faster in cold prompt processing** than the matched baseline. The full generated token sequence was identical. A physical ubatch of 8192 was also tested and rejected because the target compute graph did not fit; using logical batch 8192 was slower in absolute terms on this hardware.
+After the GDN optimization, a fresh three-run series on the current code measured:
+
+| configuration | prompt runs | median prompt time | median PP |
+|---|---|---:|---:|
+| original ub1024 path | 31.597 / 31.842 / 32.031 s | **31.842 s** | **731.38 tok/s** |
+| reuse baseline | 29.537 / 29.738 / 29.900 s | **29.738 s** | **783.13 tok/s** |
+| reuse + GDN | 28.934 / 29.191 / 29.500 s | **29.191 s** | **797.80 tok/s** |
+
+In that fresh series the complete current lossless stack was **9.08% faster** than the original ub1024 path. The GDN kernel itself contributed **+1.87% PP** over the already-optimized reuse path. The older independently matched reuse result (**+5.44%**) remains the conservative standalone number for weight reuse; benchmark noise means these percentages should not simply be added.
+
+The paired 23,289-token generated token SHAs were identical. A captured native Pi request produced the same canonical tool-response SHA, and a 64-step replay produced exactly equal target tokens, content, and top-20 probability structures. On three deterministic replays of the historical 39-call `pydicom-1256` Pi trajectory, the paired summed-prompt-processing gains were **+1.47%**, **+0.79%**, and **+1.00%**. Averaged across the three runs, baseline summed PP was **48.428 s** versus **47.907 s** with GDN (**+1.09%**); mean replay wall time improved by **0.61%**. Every replay had identical prompt/cache geometry, restoring about **530k cached tokens** and processing **27,109 new prompt tokens**, so its incremental gain is naturally smaller than a cold long prompt.
+
+A full **isolated** five-task Pi/SWE smoke run with the normal permissive Pi instruction scored **3/5**: `1413`, `1694`, and `1256` passed; `901` and `1139` failed. `901` is also the historical baseline failure. The additional `1139` miss came from a stochastic live trajectory that stopped at incomplete iteration semantics. The older baseline run was also stochastic and scored 4/5, so this cross-run 4/5-vs-3/5 difference is recorded but is not treated as a numerical-regression oracle. The deterministic probability/token/state gates above are stronger evidence for the lossless CUDA claim, and live tool-using traces can diverge after nondeterministic generation/tool output even when inference math is identical.
+
+A physical ubatch of 8192 was also tested and rejected because the target compute graph did not fit; using logical batch 8192 was slower in absolute terms on this hardware.
 
 Validation used fixed sampling seeds only for A/B reproducibility; the normal serving configuration does **not** set temperature and uses server defaults.
 
