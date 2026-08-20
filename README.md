@@ -142,16 +142,16 @@ On the Qwen3.8 full-attention geometry (`D=256`, 4 KV heads, GQA=6, query batch 
 | 16,384 | 75.44 ms | 64.47 ms | 1.17x |
 | 24,576 | 113.48 ms | 96.37 ms | 1.18x |
 
-A matched three-run 23,289-token production-stack A/B measured:
+A fresh **interleaved** three-pair 23,289-token production-stack A/B (baseline / candidate / candidate / baseline / baseline / candidate) measured:
 
 ```text
-reuse + GDN baseline: 28.507 / 28.548 / 28.760 s, median 28.548 s = 815.78 tok/s
-+ Volta FA Q staging:  27.887 / 27.931 / 27.972 s, median 27.931 s = 833.80 tok/s
+reuse + GDN baseline: 28.463 / 28.916 / 28.985 s, median 28.916 s = 805.39 tok/s
++ Volta FA Q staging:  27.669 / 27.799 / 27.989 s, median 27.799 s = 837.78 tok/s
 ```
 
-This is **+2.21% whole prompt-processing throughput** on top of the existing lossless reuse + GDN stack. All six generated-token hashes were identical. A separate production-ub4096 top-100 probability A/B was byte-identical (probability SHA256 `21101d2100c0d29a0683ff83d507505d3ff6ace70fb96964c75316ef8ed7c4e7`).
+This is **+4.02% whole prompt-processing throughput** on top of the existing lossless reuse + GDN stack. All six 23,289-token runs produced the same canonical token/probability SHA256 `1405080cf8dbad123b94b29a908fc6baccc2f88aa3a41a73bb97661c784403af`. The captured 4,118-token top-100 distribution was byte-identical, a 64-step replay preserved every target token/content/top-20 probability structure, and the captured native Pi tool response stayed exactly `207cbc0efa1428c35a0d3e760671f08859d1a6ab2a3e15df845abc901ebab6da`.
 
-A more aggressive variant also doubled the FlashAttention rescaling chunk and reached roughly 32 TFLOP/s, but it changed the target probability object and is therefore **rejected from the lossless path**. Only the register-placement change above is promoted.
+A more aggressive variant also doubled the FlashAttention rescaling chunk and reached roughly 32 TFLOP/s. It passed the one-step 4,118-token top-100 check, but the 64-step replay diverged in tokens and probability structures. Classification: **numerical/quality failure for the lossless path**. Its implementation-performance result remains useful evidence that the larger work chunk can be fast, but only the register-placement change above is promoted.
 
 Commit: `cuda: reduce Volta 256x256 FlashAttention register pressure`.
 
@@ -219,7 +219,7 @@ After the GDN optimization, a fresh three-run series on the current code measure
 
 In that fresh series the reuse + GDN stack was **9.08% faster** than the original ub1024 path. The GDN kernel itself contributed **+1.87% PP** over the already-optimized reuse path. The older independently matched reuse result (**+5.44%**) remains the conservative standalone number for weight reuse; benchmark noise means these percentages should not simply be added.
 
-A later same-session matched test of the Volta 256x256 FlashAttention register-pressure fix measured **28.548 s -> 27.931 s**, or **+2.21% PP** on top of reuse + GDN. This percentage has its own fresh control and should likewise not be algebraically added to results from earlier sessions.
+A later fresh interleaved three-pair test of the Volta 256x256 FlashAttention register-pressure fix measured **28.916 s -> 27.799 s**, or **+4.02% PP** on top of reuse + GDN. This percentage has its own fresh control and should likewise not be algebraically added to results from earlier sessions.
 
 The paired 23,289-token generated token SHAs were identical. A captured native Pi request produced the same canonical tool-response SHA, and a 64-step replay produced exactly equal target tokens, content, and top-20 probability structures. On three deterministic replays of the historical 39-call `pydicom-1256` Pi trajectory, the paired summed-prompt-processing gains were **+1.47%**, **+0.79%**, and **+1.00%**. Averaged across the three runs, baseline summed PP was **48.428 s** versus **47.907 s** with GDN (**+1.09%**); mean replay wall time improved by **0.61%**. Every replay had identical prompt/cache geometry, restoring about **530k cached tokens** and processing **27,109 new prompt tokens**, so its incremental gain is naturally smaller than a cold long prompt.
 
