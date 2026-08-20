@@ -125,35 +125,56 @@ This fork's sm70 path is deliberately the existing **token-by-token recurrent** 
 
 Commit: `cuda: optimize Volta GDN prefill column reuse`.
 
-### 7. Volta 256x256 FlashAttention register-pressure tuning
+### 7. Volta 256x256 FlashAttention tuning
 
-Qwen3.8-27B full-attention layers use 256-wide Q/K/V heads with 24 query heads and 4 KV heads (GQA ratio 6). For large prefill this selects the 64-column `flash_attn_ext_f16<256,256,32,2>` specialization.
+Qwen3.8-27B full-attention layers use 256-wide Q/K/V heads with 24 query heads and 4 KV heads (GQA ratio 6). Large prefill selects the 64-column `flash_attn_ext_f16<256,256,32,2>` specialization.
 
-Upstream's Volta configuration table does not have a dedicated 256x256 entry and falls back to the Ampere tuning. On sm70 that configuration keeps Q permanently in registers. The resulting kernel compiled at **255 registers/thread with a 552-byte stack frame**, indicating heavy spill pressure.
+Upstream's Volta configuration table has no dedicated 256x256 entry and falls back to the Ampere tuning. On sm70 that configuration pins Q in registers and compiles at **255 registers/thread with a 552-byte stack frame**. The first lossless fork optimization moved Q to shared memory (`Q_in_reg=false`), reducing the stack frame to **48 bytes** and improving the isolated FA kernel by roughly 17-18%.
 
-This fork adds a Volta-only 256x256 / 64-column configuration that keeps the same thread count, occupancy target, KV batch, K/V load geometry, combine width, and pipeline staging, but sets `Q_in_reg = false`. Q is therefore staged through shared memory instead of being held permanently in registers. The compiled stack frame falls from **552 bytes to 48 bytes** while the attention/rescaling work order remains unchanged.
+The final implementation goes further without changing the 32-row softmax/rescaling order:
 
-On the Qwen3.8 full-attention geometry (`D=256`, 4 KV heads, GQA=6, query batch 4096, q8_0 K/V), isolated V100 timings were:
+1. Q remains staged in shared memory, avoiding the original register spill.
+2. K scratch is reduced from 128 to **96 half2 values** and V scratch from 128 to **64 half2 values**.
+3. Because K is now split into 96+32 subtiles, the non-MLA Volta path explicitly walks those subtiles **forwards**. The resulting MMA update sequence is the same 0->128 K-dimension order as the original one-piece K tile.
+4. `nbatch_fa=32` and `nbatch_combine=128` are deliberately unchanged. These are part of the validated floating-point execution path.
+5. The specialization remains Volta-only; Ampere and all other architectures retain upstream dispatch/configuration.
 
-| KV length | upstream-derived Volta config | Q-in-shared Volta config | kernel speedup |
-|---:|---:|---:|---:|
-| 4,096 | 19.58 ms | 16.62 ms | 1.18x |
-| 8,192 | 37.51 ms | 31.96 ms | 1.17x |
-| 16,384 | 75.44 ms | 64.47 ms | 1.17x |
-| 24,576 | 113.48 ms | 96.37 ms | 1.18x |
+On the Qwen3.8 full-attention geometry (`D=256`, 4 KV heads, GQA=6, query batch 4096, q8_0 K/V), isolated V100 timings are:
 
-A fresh **interleaved** three-pair 23,289-token production-stack A/B (baseline / candidate / candidate / baseline / baseline / candidate) measured:
+| KV length | upstream-derived config | first Q-shared version | final Q-shared + K96/V64 | final vs upstream |
+|---:|---:|---:|---:|---:|
+| 4,096 | 19.58 ms | 16.62 ms | **13.19 ms** | **1.48x** |
+| 8,192 | 37.51 ms | 31.96 ms | **25.60 ms** | **1.47x** |
+| 16,384 | 75.44 ms | 64.47 ms | **51.65 ms** | **1.46x** |
+| 24,576 | 113.48 ms | 96.37 ms | **77.66 ms** | **1.46x** |
+
+A fresh interleaved three-pair 23,289-token production-stack A/B measured:
 
 ```text
-reuse + GDN baseline: 28.463 / 28.916 / 28.985 s, median 28.916 s = 805.39 tok/s
-+ Volta FA Q staging:  27.669 / 27.799 / 27.989 s, median 27.799 s = 837.78 tok/s
+reuse + GDN baseline:      28.511 / 29.015 / 29.024 s, median 29.015 s = 802.67 tok/s
++ final Volta FA tuning:   26.649 / 26.789 / 26.986 s, median 26.789 s = 869.36 tok/s
 ```
 
-This is **+4.02% whole prompt-processing throughput** on top of the existing lossless reuse + GDN stack. All six 23,289-token runs produced the same canonical token/probability SHA256 `1405080cf8dbad123b94b29a908fc6baccc2f88aa3a41a73bb97661c784403af`. The captured 4,118-token top-100 distribution was byte-identical, a 64-step replay preserved every target token/content/top-20 probability structure, and the captured native Pi tool response stayed exactly `207cbc0efa1428c35a0d3e760671f08859d1a6ab2a3e15df845abc901ebab6da`.
+That is **+8.31% whole prompt-processing throughput** over the same-session reuse + GDN control. Every one of the six runs produced the same canonical token/probability SHA256 `1405080cf8dbad123b94b29a908fc6baccc2f88aa3a41a73bb97661c784403af`. A subsequent build from the production tree measured 26.517 s / 878.3 tok/s in a one-shot 23k confirmation.
 
-A more aggressive variant also doubled the FlashAttention rescaling chunk and reached roughly 32 TFLOP/s. It passed the one-step 4,118-token top-100 check, but the 64-step replay diverged in tokens and probability structures. Classification: **numerical/quality failure for the lossless path**. Its implementation-performance result remains useful evidence that the larger work chunk can be fast, but only the register-placement change above is promoted.
+Lossless validation is stronger than sampled-token equality:
 
-Commit: `cuda: reduce Volta 256x256 FlashAttention register pressure`.
+- captured 4,118-token top-100 probability object: exactly equal, SHA256 `fdbcc8cdc33c1c78d0f077c9f210b38bd646186247237615f403fde8e14995ac`;
+- 64-step replay: every token, content byte and top-20 probability structure exactly equal, probability-object SHA256 `3d936d1bcd4a37de70b488c46726b11ce4fc98950c2b12e33d91a05b9c12bdb1`;
+- CUDA backend correctness includes the Qwen GQA geometry and q8_0 K/V;
+- CUDA racecheck on the candidate reported **0 hazards / 0 errors / 0 warnings**;
+- CUDA1/Ampere fallback passed 114/114 filtered FlashAttention tests.
+
+`compute-sanitizer --tool synccheck` reports an existing divergent-barrier warning in this FA specialization. The same warning reproduces on the untouched pre-FA baseline binary, so it is not introduced by this optimization.
+
+Two faster-looking variants were deliberately rejected rather than included in the lossless path:
+
+- doubling the softmax/rescaling work chunk reached ~32 TFLOP/s but changed the 64-step trajectory: **numerical/quality failure**;
+- reducing `nbatch_combine` from 128 to 64 while using K96/V64 reached **~44.2-44.8 TFLOP/s** (about 2.05x the original FA kernel), but changed top-100/top-20 probability structures even though the short sampled tokens remained equal: **numerical/quality failure**.
+
+The latter result shows there is still hardware headroom. Future work may try to reduce/reuse combine scratch while preserving the exact `nbatch_combine=128` arithmetic path rather than changing the combine width.
+
+Commits in this area start with `cuda: reduce Volta 256x256 FlashAttention register pressure`; the K/V-subtile follow-up supersedes its first configuration while retaining the same lossless policy.
 
 ## Recommended Qwen3.8-27B configuration for this machine
 
@@ -219,7 +240,7 @@ After the GDN optimization, a fresh three-run series on the current code measure
 
 In that fresh series the reuse + GDN stack was **9.08% faster** than the original ub1024 path. The GDN kernel itself contributed **+1.87% PP** over the already-optimized reuse path. The older independently matched reuse result (**+5.44%**) remains the conservative standalone number for weight reuse; benchmark noise means these percentages should not simply be added.
 
-A later fresh interleaved three-pair test of the Volta 256x256 FlashAttention register-pressure fix measured **28.916 s -> 27.799 s**, or **+4.02% PP** on top of reuse + GDN. This percentage has its own fresh control and should likewise not be algebraically added to results from earlier sessions.
+A later fresh interleaved three-pair test of the final Volta 256x256 FlashAttention implementation measured **29.015 s -> 26.789 s**, or **+8.31% PP** on top of the same-session reuse + GDN control. This supersedes the earlier Q-shared-only +4.02% result. As with the other measurements, do not algebraically add percentages taken from different benchmark sessions.
 
 The paired 23,289-token generated token SHAs were identical. A captured native Pi request produced the same canonical tool-response SHA, and a 64-step replay produced exactly equal target tokens, content, and top-20 probability structures. On three deterministic replays of the historical 39-call `pydicom-1256` Pi trajectory, the paired summed-prompt-processing gains were **+1.47%**, **+0.79%**, and **+1.00%**. Averaged across the three runs, baseline summed PP was **48.428 s** versus **47.907 s** with GDN (**+1.09%**); mean replay wall time improved by **0.61%**. Every replay had identical prompt/cache geometry, restoring about **530k cached tokens** and processing **27,109 new prompt tokens**, so its incremental gain is naturally smaller than a cold long prompt.
 

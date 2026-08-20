@@ -120,10 +120,11 @@ static constexpr __host__ __device__ fattn_mma_config ggml_cuda_fattn_mma_get_co
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(576, 512, 32, 128, 2,  32, 160, 128,  64, 1, false);
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(576, 512, 64, 256, 1,  32, 160, 128,  64, 1, false);
 
-    // Volta 256x256, 64-column prefill: keep the Ampere-derived work partition but stage Q
-    // through shared memory instead of pinning it in registers. This removes severe sm70 spill
-    // pressure without changing the softmax/rescaling or MMA work order.
-    GGML_CUDA_FATTN_MMA_CONFIG_CASE(256, 256, 64, 128, 2, 32, 128, 128, 128, 2, false);
+    // Volta 256x256, 64-column prefill: stage Q through shared memory and use smaller K/V
+    // scratch tiles. Keep the 32-row softmax/rescaling batch and 128-value result-combine width
+    // unchanged. The split K tile is evaluated in forward order below so its MMA accumulation
+    // order stays identical to the original single 128-half2 pass.
+    GGML_CUDA_FATTN_MMA_CONFIG_CASE(256, 256, 64, 128, 2, 32, 96, 64, 128, 2, false);
 
     // TODO tune specifically for Volta
     return ggml_cuda_fattn_mma_get_config_ampere(DKQ, DV, ncols);
@@ -605,8 +606,21 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
 
     // For MLA K and V have the same data.
     // Therefore, iterate over K in reverse and later re-use the data if possible.
+    // The MLA path iterates K backwards so the K tile can be re-used as V. The tuned Volta
+    // 256x256 path has separate K/V and splits K into subtiles; walk those subtiles forwards
+    // so the sequence of MMA updates is the same as the former one-piece K tile.
+    constexpr bool volta_qshared_forward_k =
+#if defined(VOLTA_MMA_AVAILABLE)
+        !V_is_K_view && DKQ == 256 && DV == 256 && ncols == 64 && !Q_in_reg && nbatch_K2 < DKQ/2;
+#else
+        false;
+#endif
+    constexpr int nk_batches = (DKQ/2 + nbatch_K2 - 1) / nbatch_K2;
 #pragma unroll
-    for (int k0_start = (DKQ/2-1) - (DKQ/2-1) % nbatch_K2; k0_start >= 0; k0_start -= nbatch_K2) {
+    for (int ik_batch = 0; ik_batch < nk_batches; ++ik_batch) {
+        const int k0_start = volta_qshared_forward_k
+            ? ik_batch * nbatch_K2
+            : ((DKQ/2-1) - (DKQ/2-1) % nbatch_K2 - ik_batch * nbatch_K2);
         const int k0_stop = k0_start + nbatch_K2 < DKQ/2 ? k0_start + nbatch_K2 : DKQ/2;
 
         if constexpr (nstages <= 1) {
