@@ -262,6 +262,21 @@ A physical ubatch of 8192 was also tested and rejected because the target comput
 
 Validation used fixed sampling seeds only for A/B reproducibility; the normal serving configuration does **not** set temperature and uses server defaults.
 
+## Cross-model portability checks
+
+The CUDA changes are guarded by hardware and tensor shape rather than by the Qwen3.8 model name, so representative local models were checked explicitly after rebasing.
+
+**Qwen3.5-122B-A10B (`qwen35moe`)** has 36 scalar-gate GatedDeltaNet layers with `S_v=128` and 12 full-attention layers with 256-wide K/V, so both promoted Volta kernels apply. On a real 1,000-token whole-model prefill, current upstream `0e1d9185c` measured **259.24 tok/s** and this fork measured **296.90 tok/s** (**+14.53% PP**, **12.69% lower latency**). The generated token, content, and complete top-100 probability object were byte-identical. Isolated Qwen3.5-shaped kernels measured:
+
+- GDN 32 heads / d=128 / 1024 tokens: **1.633 ms -> 1.064 ms** (~34.9% lower kernel latency).
+- FlashAttention 256x256 / 2 KV heads / GQA=16 / KV=100,096 / Q=1,000: **149.64 ms -> 98.99 ms** (~33.8% lower kernel latency, ~1.51x throughput).
+
+The larger-ubatch weight-reuse recipe is more model-sensitive. On Qwen3.5-122B, 4,096-token PP improved **368.45 -> 464.82 tok/s** with `ubatch=4096,prefill-reuse=1024` (+26.2%), but the top-100 distribution was not byte-identical (TV about `1.8e-5`). Plain `ubatch=4096` was faster still (**618.26 tok/s**) but drifted more (TV about `6.8e-5`). Therefore the **weight-reuse CUDA mechanism is portable, but Qwen3.8's strict lossless large-ubatch policy must not be assumed lossless on another architecture without a model-level gate**.
+
+**Laguna-S-2.1** uses 128-wide attention and no GatedDeltaNet, so neither promoted FA/GDN specialization applies. A fixed-placement 4,096-token test still showed that the generic large-ubatch/reuse machinery can raise throughput (**434.13 -> 562.07 tok/s**, +29.5%), but its top-100 TV versus the 1024-ubatch baseline was about **0.0128**; this configuration is performance-positive but not lossless.
+
+**GLM-5.2 (`glm-dsa`)** uses 576/512 MLA attention and no GatedDeltaNet. It is outside the promoted FA/GDN guards, so those kernels should not change its inference path. Its local quantized model is about 223 GiB, so a full-model A/B was not run on this 256 GiB host. The server cache-selection/checkpoint mechanisms remain architecture-independent, while the Volta CUDA kernels require their documented tensor shapes.
+
 ## Approximate opt-in PFlash proxy
 
 The fork also includes [`tools/pflash/`](tools/pflash/) as a separate **approximate** optimization. It is not part of `llama-server` and is disabled unless you explicitly run the proxy.
