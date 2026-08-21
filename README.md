@@ -1,8 +1,8 @@
-# llama.cpp — Qwen3.8 long-context / agent-cache fork
+# llama.cpp - Qwen3.8 long-context / agent-cache fork
 
-This repository is a small performance fork of upstream [`llama.cpp`](README.old), focused on **lossless** long-context Qwen3.8 serving on the V100 + RTX 3060 Ti system used for development here. The current fork history is rebased directly on upstream commit `0e1d9185c` (2026-08-20).
+This repository is a small performance fork of upstream [`llama.cpp`](README.old), focused on **lossless** long-context Qwen3.8 serving on the V100 + RTX 3060 Ti system used for development here. The fork-specific commits currently sit on upstream `0e1d9185c` (2026-08-20). A fresh vanilla `master` at `bb4caa754` (2026-08-21) was also built and benchmarked; the fork has not yet been rebased onto that commit.
 
-The README from that upstream base is preserved as [`README.old`](README.old). Upstream build, model, API, and general usage documentation remains there.
+The README from the original upstream base is preserved as [`README.old`](README.old). Upstream build, model, API, and general usage documentation remains there. Reproducible benchmark commands and scripts are under [`benches/v100-qwen38/`](benches/v100-qwen38/).
 
 ## What differs from upstream
 
@@ -262,20 +262,56 @@ A physical ubatch of 8192 was also tested and rejected because the target comput
 
 Validation used fixed sampling seeds only for A/B reproducibility; the normal serving configuration does **not** set temperature and uses server defaults.
 
-## Cross-model portability checks
+## Current controlled benchmark matrix
 
-The CUDA changes are guarded by hardware and tensor shape rather than by the Qwen3.8 model name, so representative local models were checked explicitly after rebasing.
+The main portability check uses an exact **100,000-token real cached state + 1,000 new prompt tokens + 64 generated tokens**. Model-specific GPU placement was tuned independently, but each upstream/fork row uses the same saved semantic state and prompt sequence.
 
-**Qwen3.5-122B-A10B (`qwen35moe`)** has 36 scalar-gate GatedDeltaNet layers with `S_v=128` and 12 full-attention layers with 256-wide K/V, so both promoted Volta kernels apply. On a real 1,000-token whole-model prefill, current upstream `0e1d9185c` measured **259.24 tok/s** and this fork measured **296.90 tok/s** (**+14.53% PP**, **12.69% lower latency**). The generated token, content, and complete top-100 probability object were byte-identical. Isolated Qwen3.5-shaped kernels measured:
+| Model | Hardware | Fork PP | Upstream PP | PP delta | Fork TG | Upstream TG | TG delta |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Qwen3.8-27B | V100 + 3060 Ti | **450.0** | 317.7 | **+41.6%** | 26.65 | 26.48 | +0.6% |
+| Qwen3.8-27B | V100 only | **433.1** | 306.7 | **+41.2%** | 23.19 | 23.29 | -0.4% |
+| Qwen3.5-122B-A10B | V100 + 3060 Ti | **283.5** | 257.4 | **+10.2%** | 19.80 | 19.83 | -0.1% |
+| Qwen3.5-122B-A10B | V100 only | **280.8** | 241.4 | **+16.3%** | 21.30 | 21.29 | +0.0% |
+| Laguna-S-2.1 | V100 + 3060 Ti | 317.4 | **319.5** | -0.6% | 20.81 | **21.24** | -2.0% |
+| Laguna-S-2.1 | V100 only | 312.3 | **320.5** | -2.5% | 22.26 | **23.28** | -4.4% |
 
-- GDN 32 heads / d=128 / 1024 tokens: **1.633 ms -> 1.064 ms** (~34.9% lower kernel latency).
-- FlashAttention 256x256 / 2 KV heads / GQA=16 / KV=100,096 / Q=1,000: **149.64 ms -> 98.99 ms** (~33.8% lower kernel latency, ~1.51x throughput).
+The large PP gain is therefore **Qwen/model-shape specific**, not a generic speedup. Laguna is a useful negative control: it does not use the promoted 256-wide FA/GDN paths and does not benefit from the fork.
 
-The larger-ubatch weight-reuse recipe is more model-sensitive. On Qwen3.5-122B, 4,096-token PP improved **368.45 -> 464.82 tok/s** with `ubatch=4096,prefill-reuse=1024` (+26.2%), but the top-100 distribution was not byte-identical (TV about `1.8e-5`). Plain `ubatch=4096` was faster still (**618.26 tok/s**) but drifted more (TV about `6.8e-5`). Therefore the **weight-reuse CUDA mechanism is portable, but Qwen3.8's strict lossless large-ubatch policy must not be assumed lossless on another architecture without a model-level gate**.
+A separate Qwen3.8 freshness check was run against vanilla `master` `bb4caa754` rather than the older controlled base. On the same 100k + 1k + 64 dual-GPU workload, vanilla master measured **313.98 tok/s PP / 26.17 tok/s TG** and this fork measured **447.11 tok/s PP / 26.20 tok/s TG**. That is **+42.40% PP** with identical generated tokens/content and the same **37/52 MTP acceptance**.
 
-**Laguna-S-2.1** uses 128-wide attention and no GatedDeltaNet, so neither promoted FA/GDN specialization applies. A fixed-placement 4,096-token test still showed that the generic large-ubatch/reuse machinery can raise throughput (**434.13 -> 562.07 tok/s**, +29.5%), but its top-100 TV versus the 1024-ubatch baseline was about **0.0128**; this configuration is performance-positive but not lossless.
+Qwen3.5 has the same scalar-gate GatedDeltaNet `S_v=128` shape and 256-wide full-attention layers, so the promoted Volta kernels also apply. Isolated Qwen3.5-shaped tests measured about **34.9% lower GDN kernel latency** and about **1.51x FlashAttention throughput**. However, the larger-ubatch weight-reuse policy is model-sensitive: Qwen3.5 and Laguna showed small-to-material probability drift when that policy was enabled, so Qwen3.8's strict lossless recipe must not be generalized without a model-level quality check.
 
-**GLM-5.2 (`glm-dsa`)** uses 576/512 MLA attention and no GatedDeltaNet. It is outside the promoted FA/GDN guards, so those kernels should not change its inference path. Its local quantized model is about 223 GiB, so a full-model A/B was not run on this 256 GiB host. The server cache-selection/checkpoint mechanisms remain architecture-independent, while the Volta CUDA kernels require their documented tensor shapes.
+### GLM-5.2 orientation
+
+GLM-5.2 is a roughly 223 GiB `glm-dsa` model with 576/512 MLA attention and no GatedDeltaNet. A real 100k semantic prime was disproportionately slow, so it was measured separately at **10,000 cached + 1,000 new + 64 generated**. These numbers are orientation-only and are not directly comparable with the 100k table. RTX 3060 Ti-only was intentionally excluded.
+
+| Hardware | MTP | Fork PP | Upstream PP | Fork TG | Upstream TG |
+|---|---|---:|---:|---:|---:|
+| V100 + 3060 Ti | off | 46.00 | 46.03 | 4.47 | 4.40 |
+| V100 + 3060 Ti | on | 44.44 | 44.68 | 6.29 | 6.26 |
+| V100 only | off | 45.94 | 45.91 | 4.78 | 4.57 |
+| V100 only | on | 44.34 | 44.51 | 6.25 | 6.23 |
+
+MTP accepted **41/42 drafted tokens (97.6%)** in every GLM MTP cell. It improved TG by roughly **31-42%** for about a **3% PP cost**. Fork PP is effectively unchanged on GLM, which is consistent with the CUDA optimization guards.
+
+Full commands, fit settings, and benchmark runners are documented in [`benches/v100-qwen38/v100-qwen38.md`](benches/v100-qwen38/v100-qwen38.md).
+
+## Upstreaming / PR decomposition
+
+The fork is intentionally useful as one deployment branch, but it should **not** be proposed upstream as one PR. A review against current llama.cpp contribution rules suggests this split:
+
+1. **Server prompt-cache prefix selection** - small bug-fix candidate with an existing regression test. It is related to the long-agent recurrent-cache failures tracked upstream, including issue `#22746`.
+2. **Volta 256x256 FlashAttention Q/shared + K/V scratch tuning** - backend-only performance PR with no public API. This should be the first FA PR because the diff is much smaller than the adaptive occupancy follow-up.
+3. **Volta scalar-gate GatedDeltaNet prefill kernel** - independent backend-only performance PR, guarded to sm70, `S_v=128`, non-KDA prefill.
+4. **Adaptive Volta 2-CTA FA occupancy** - separate follow-up because it changes shared-memory scheduling and needs the existing synccheck/racecheck/memcheck evidence.
+5. **Independent MTP draft ubatch** - separate speculative-decoding change with dedicated tests.
+6. **Prefill-reuse / pipeline-copy controls** - not yet a clean upstream candidate. They add CLI and public API surface and need a stronger generic design than a machine-specific tuning knob.
+7. **Recurrent checkpoint retention policy** - related to a real upstream problem, but the current value-based eviction policy is too large to bundle with the simpler cache-selection fix and needs focused regression tests.
+8. **PFlash proxy** - keep fork-only. It is approximate, adds an external workflow/dependency, and is outside the lossless CUDA claims.
+
+The source comments in the fork have also been shortened to follow upstream's current rule: comments should usually explain a non-obvious invariant in one or two lines rather than preserve experiment history. No inference logic was changed by that cleanup.
+
+Detailed code-quality findings, test status, and per-candidate upstreaming requirements are in [`benches/v100-qwen38/pr-readiness.md`](benches/v100-qwen38/pr-readiness.md).
 
 ## Approximate opt-in PFlash proxy
 
@@ -312,11 +348,16 @@ See [`README.old`](README.old) for the complete upstream build instructions and 
 
 ## Upstream relationship
 
-This fork should be kept rebased on upstream `master`. The code documented here was validated against local upstream base `9731ad3f29da96f588711a0d1eb08cf210721e16`. The sandbox blocked a fresh network fetch during final validation, so this README does not claim a newer unverified upstream base. The fork-specific commits are intentionally small and separate from general llama.cpp development so they can be reviewed, rebased, or upstreamed independently.
+The fork-specific commits currently sit on upstream `0e1d9185c`. On 2026-08-21, `upstream/master` was fetched at `bb4caa754` (`llama.cpp 0.2.0-dev`). It is 20 upstream commits ahead of the fork base, and those 20 commits do **not** overlap any source file modified by this fork.
 
-To inspect the exact delta from upstream in a checkout with the `upstream` remote configured:
+A fresh binary from `bb4caa754` was benchmarked directly against the fork on the main Qwen3.8 100k + 1k workload: **313.98 -> 447.11 tok/s PP (+42.40%)**, with effectively unchanged TG and identical generated tokens. The branch should still be rebased onto current master before any upstream candidate is submitted, followed by the same Qwen3.8 A/B and relevant backend/server tests.
+
+To inspect the current delta:
 
 ```bash
+git fetch upstream master
 git log --oneline upstream/master..HEAD
 git diff --stat upstream/master...HEAD
 ```
+
+The fork benchmark scripts are intentionally isolated under `benches/v100-qwen38/` so they can remain deployment/research documentation without being included in small upstream PRs.

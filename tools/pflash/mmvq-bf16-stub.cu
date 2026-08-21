@@ -1,8 +1,6 @@
 #include "mmvq.cuh"
 
-// Experimental BF16-drafter build: PFlash Qwen3-0.6B BF16 never uses
-// quantized MMVQ. Keep the ABI surface so ggml-cuda links without compiling
-// the multi-million-line generated MMVQ PTX on sm70.
+// The BF16 PFlash scorer does not use quantized MMVQ. Keep stubs so the CUDA backend links without building MMVQ.
 int get_mmvq_mmid_max_batch(ggml_type, int) { return 0; }
 
 bool ggml_cuda_mmvq_mmid_grouped_enabled(ggml_type, int, int64_t, int64_t) { return false; }

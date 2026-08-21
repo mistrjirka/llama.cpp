@@ -1484,9 +1484,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     llama_set_nextn_layer_offset(ctx_dft, head);
                 }
 
-                // Target prompt ubatches can be larger than the draft context.  Stream the
-                // same token/shifted-hidden pairs through the draft at its own physical ubatch.
-                // No values are recomputed or approximated; only scheduling granularity changes.
+                // Process target prompt data in draft-sized chunks without changing token positions or hidden rows.
                 for (int32_t off = 0; off < n_tokens; off += n_ubatch_dft) {
                     const int32_t n_chunk = std::min(n_ubatch_dft, n_tokens - off);
                     common_batch_clear(batch);

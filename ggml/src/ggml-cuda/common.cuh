@@ -1424,8 +1424,7 @@ struct ggml_backend_cuda_context {
 
     int curr_stream_no = 0;
 
-    // When non-zero, quantized Volta prefill GEMMs reuse one converted weight
-    // while submitting independent output-column tiles of this size to cuBLAS.
+    // Quantized Volta prefill GEMM tile used to reuse the converted weight.
     uint32_t prefill_reuse = 0;
 
 #ifdef USE_CUDA_GRAPH

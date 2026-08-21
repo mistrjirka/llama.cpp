@@ -1548,11 +1548,7 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
                                            (const float *) src1_ptr, s11,
                     (const float *) beta,  (float       *)  dst_ptr, ne0));
     } else if (ne12 == 1 && ne13 == 1) {
-        // On Volta, large quantized prompt matmuls use the dequantize-to-F16 + cuBLAS path.
-        // A larger llama ubatch normally changes cuBLAS' N dimension (and can therefore change
-        // floating-point accumulation/kernel choice).  Keep the exact baseline N shape while
-        // reusing the already-converted src0 buffer across independent output-column tiles.
-        // This preserves the numerical path of the smaller ubatch but amortizes weight conversion.
+        // Keep the smaller cuBLAS N shape while reusing the converted quantized weight. A larger N can change the cuBLAS math path.
         const int64_t reuse_n =
             compute_type == GGML_TYPE_F16 &&
             ctx.prefill_reuse > 0 &&
@@ -1565,7 +1561,7 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
             for (int64_t col0 = 0; col0 < ne11; col0 += reuse_n) {
                 const int64_t n_cur = std::min<int64_t>(reuse_n, ne11 - col0);
                 const cuda_t * src1_cur = src1_ptr + col0 * s11;
-                void * dst_cur = dst_ptr + col0 * ne0 * dst_element_size;
+                void * dst_cur = static_cast<char *>(dst_ptr) + col0 * ne0 * dst_element_size;
                 CUBLAS_CHECK(
                     cublasGemmEx(cublas_h, CUBLAS_OP_T, CUBLAS_OP_N,
                             ne01, n_cur, ne10,

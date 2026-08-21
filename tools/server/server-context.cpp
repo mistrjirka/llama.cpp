@@ -2256,9 +2256,7 @@ private:
         const int id_task = slot.task->id;
         const int64_t checkpoint_n_tokens = slot.prompt.n_tokens() - n_tokens_cur;
 
-        // If this exact prefix is already represented, refresh it in place instead of
-        // consuming another ~constant-size recurrent checkpoint slot. A checkpoint that
-        // survived invalidation is guaranteed to lie inside the current common prefix.
+        // Refresh an existing prefix checkpoint instead of storing a duplicate.
         for (auto & cur : slot.prompt.checkpoints) {
             if (cur.n_tokens != checkpoint_n_tokens) {
                 continue;
@@ -2280,8 +2278,7 @@ private:
             return;
         }
 
-        // Evict ordinary periodic checkpoints that are redundant at the configured
-        // spacing. Semantic/exact replay boundaries survive this cheap first pass.
+        // Remove redundant periodic checkpoints without discarding replay boundaries.
         int64_t last = -1;
         for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ) {
             if (it->id_task != id_task && !it->is_replay_boundary && last >= 0 && it->n_tokens <= last + params_base.checkpoint_min_step) {
@@ -2295,18 +2292,11 @@ private:
         }
 
         while (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints) {
-            // Constant-size recurrent checkpoints make compute-saved-per-byte close to
-            // compute saved. Under a locally uniform overlap distribution, removing a
-            // checkpoint c between neighbors p,n loses (c-p)*(n-c) token-replay area.
-            // Semantic boundaries are much more likely agent replay points; actual hits
-            // provide stronger evidence, following Marconi-style demand-driven retention.
+            // Rank checkpoints by expected saved work; replay boundaries and observed restores get extra weight.
             auto victim = slot.prompt.checkpoints.end();
             long double victim_value = std::numeric_limits<long double>::infinity();
 
-            // First pass protects semantic boundaries materialized by this request. They
-            // have not had an opportunity to record a hit yet, but are exactly the points
-            // the immediately following agent turn is likely to replay. If every slot is
-            // such a boundary, fall back to the same value rule across all checkpoints.
+            // Protect replay boundaries created by the current request on the first pass.
             for (int pass = 0; pass < 2 && victim == slot.prompt.checkpoints.end(); ++pass) {
                 int64_t prev_pos = 0;
                 for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ++it) {
@@ -2324,17 +2314,12 @@ private:
                     const int64_t gap_r = std::max<int64_t>(1, next_pos - it->n_tokens);
                     long double value;
                     if (it->is_replay_boundary) {
-                        // Semantic checkpoints represent concentrated probability mass at
-                        // agent replay boundaries. Their value is the prefix compute they
-                        // skip, weighted like several periodic intervals; actual restores
-                        // then provide direct evidence that the prefix is hot.
+                        // Replay boundaries represent concentrated reuse probability before hit history is available.
                         const int64_t semantic_span = std::max<int64_t>(1, params_base.checkpoint_min_step);
                         value = (long double) std::max<int64_t>(1, it->n_tokens)
                               * (long double) semantic_span * 8.0L;
                     } else {
-                        // Periodic checkpoints cover a continuous range of possible overlap
-                        // depths; uniform-within-the-gap marginal saved work is proportional
-                        // to the product of the left and right gaps.
+                        // A periodic checkpoint's marginal saved work is proportional to its adjacent gap product.
                         value = (long double) gap_l * (long double) gap_r;
                     }
                     value *= 1.0L + 4.0L * (long double) it->replay_hits;
@@ -2367,9 +2352,7 @@ private:
         cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
 
         cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-        // A plain attention draft context can remove arbitrary suffixes. Do not duplicate its
-        // position-linear KV cache into every recurrent checkpoint; after restoring the target
-        // recurrent state, the normal slot.mem.seq_rm() path trims the draft KV to n_past.
+        // Plain attention draft KV can be suffix-trimmed, so recurrent checkpoints do not need to duplicate it.
         if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
             cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         }
@@ -3574,11 +3557,7 @@ private:
                         //  - 4
                         // ref: https://github.com/ggml-org/llama.cpp/pull/20288
                         if (do_checkpoint) {
-                            // Lossless prefill reuse may use a larger physical ubatch while
-                            // preserving the baseline GEMM tile. Keep semantic checkpoint
-                            // boundaries tied to that baseline tile too; otherwise enabling
-                            // reuse changes prompt segmentation and therefore MTP/checkpoint
-                            // trajectories even when the CUDA math itself is bit-identical.
+                            // Keep checkpoint boundaries tied to the prefill-reuse tile so prompt segmentation stays unchanged.
                             const int checkpoint_ubatch = params_base.prefill_reuse > 0
                                 ? std::min(n_ubatch, params_base.prefill_reuse)
                                 : n_ubatch;
@@ -3654,8 +3633,7 @@ private:
                     // note: we create the checkpoint before calling llama_decode(), so the current batch is not
                     //       yet processed and therefore it is not part of the checkpoint.
                     if (do_checkpoint) {
-                        // Protect two replay points that dominate agent traffic:
-                        // branch at the current user turn, and exact return to a previous prompt.
+                        // Retain user-turn and exact-prompt replay boundaries.
                         const bool is_exact_prompt_end = slot.task->n_tokens() - n_tokens_start <= 4;
                         create_checkpoint(slot, n_tokens_cur, pos_min, pos_max, is_last_user_message || is_exact_prompt_end);
                     }

@@ -120,10 +120,7 @@ static constexpr __host__ __device__ fattn_mma_config ggml_cuda_fattn_mma_get_co
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(576, 512, 32, 128, 2,  32, 160, 128,  64, 1, false);
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(576, 512, 64, 256, 1,  32, 160, 128,  64, 1, false);
 
-    // Volta 256x256, 64-column prefill: stage Q through shared memory and use smaller K/V
-    // scratch tiles. Keep the 32-row softmax/rescaling batch and 128-value result-combine width
-    // unchanged. The split K tile is evaluated in forward order below so its MMA accumulation
-    // order stays identical to the original single 128-half2 pass.
+    // Volta 256x256: stage Q in shared memory and split K/V scratch without changing MMA order.
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(256, 256, 64, 128, 2, 32, 96, 64, 128, 2, false);
 
     // TODO tune specifically for Volta
@@ -606,9 +603,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
 
     // For MLA K and V have the same data.
     // Therefore, iterate over K in reverse and later re-use the data if possible.
-    // The MLA path iterates K backwards so the K tile can be re-used as V. The tuned Volta
-    // 256x256 path has separate K/V and splits K into subtiles; walk those subtiles forwards
-    // so the sequence of MMA updates is the same as the former one-piece K tile.
+    // MLA walks K backwards to reuse it as V. Split-K Volta must walk forward to preserve MMA order.
     constexpr bool volta_qshared_forward_k =
 #if defined(VOLTA_MMA_AVAILABLE)
         !V_is_K_view && DKQ == 256 && DV == 256 && ncols == 64 && !Q_in_reg && nbatch_K2 < DKQ/2;
@@ -1446,10 +1441,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     // It's also faster to do small writes to shared memory, then large write to VRAM than to do small writes to VRAM.
     // So also write VKQ accumulators to shared memory in column-major format if np == 1.
 
-    // The validated Volta 256x256 path keeps nbatch_combine=128 for arithmetic, but only
-    // needs 64 half2 output values resident in shared memory at once. Materialize the two
-    // independent output halves through the same scratch rows. Metadata reduction ordering
-    // remains unchanged; only its shared-memory addresses use the narrower row stride.
+    // Keep 128-value combine arithmetic, but reuse one 64-half2 shared-memory window for both output halves.
     constexpr bool volta_combine_scratch64 =
 #if defined(VOLTA_MMA_AVAILABLE)
         DKQ == 256 && DV == 256 && ncols1 == 32 && ncols2 == 2 && nwarps == 4 && np == 2 &&
@@ -1523,9 +1515,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
     if constexpr (volta_combine_scratch64) {
         if constexpr (np > 1) {
-            // All warps must reach the same static block barrier. The former implementation put
-            // __syncthreads() in complementary threadIdx.y branches, which is undefined CUDA
-            // synchronization even though both branches happened to use barrier 0.
+            // All warps must reach the same block barrier.
             const bool combine_meta_warp = threadIdx.y % np == 0;
             constexpr int nmeta = np*cols_per_warp >= warp_size ? np*cols_per_warp/warp_size : 1;
 
@@ -1572,7 +1562,6 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
                 }
             }
 
-            // Uniform block barrier: every thread reaches this exact instruction.
             __syncthreads();
 
             if (combine_meta_warp) {
@@ -2041,12 +2030,7 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
         ? std::max(nbytes_shared_fast, nbytes_shared_combine_legacy)
         : nbytes_shared_fast;
 
-    // The 49,152-byte Volta specialization permits two CTAs per V100 SM. That is bit-exact
-    // when both the legacy and fast occupancy regimes use the same whole-output-tile mapping,
-    // but changing occupancy can change Stream-K partitioning for other query sizes. Large
-    // prefills (>=1024 Q tokens) can additionally use KV_max mask pruning, whose execution
-    // path was observed to be occupancy-sensitive. Conservatively use two CTAs only when
-    // neither condition can change the logical schedule.
+    // Changing occupancy can change Stream-K or KV-pruning order, so use the compact launch only on a schedule-stable Q range.
     bool use_volta_2cta = volta_combine_scratch64 && Q->ne[1] >= 768 && Q->ne[1] < 1024 && Q->ne[3] == 1;
     if (use_volta_2cta) {
         const int nsm = ggml_cuda_info().devices[id].nsm;
@@ -2058,9 +2042,7 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
             const int nwaves = (ntiles_dst + max_blocks - 1) / max_blocks;
             return 100 * ntiles_dst / (max_blocks * nwaves);
         };
-        // For this exact sm70 specialization the legacy shared-memory footprint limits the
-        // kernel to one CTA/SM and the compact footprint permits two. Require both occupancy
-        // regimes to stay above the launcher's 75% Stream-K threshold.
+        // Require both one-CTA and two-CTA occupancy to stay above the Stream-K threshold.
         use_volta_2cta = whole_tile_efficiency(nsm) >= 75 && whole_tile_efficiency(2*nsm) >= 75;
     }
     const size_t nbytes_shared_launch = use_volta_2cta ? nbytes_shared_fast : nbytes_shared_legacy;

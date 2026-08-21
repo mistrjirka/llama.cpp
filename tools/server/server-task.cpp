@@ -1802,12 +1802,7 @@ bool server_prompt_cache::load(server_prompt & prompt, const server_tokens & tok
 
     auto it_best = states.end();
 
-    // Find the cached prompt that saves the most absolute prefill work. Requiring a
-    // candidate to improve both f_keep and f_sim lets a tiny unrelated live prompt
-    // block a much deeper cached branch: e.g. 647/663 live tokens (high f_keep) can
-    // defeat a cached 21k/22k branch (slightly lower f_keep, vastly larger LCP).
-    // Keep the existing 25% guard so we still avoid restoring a huge cached state
-    // only to discard most of it, but rank viable states by common-prefix tokens.
+    // Keep the 25% viability guard, then choose the cache state with the largest reusable prefix.
     for (auto it = states.begin(); it != states.end(); ++it) {
         const int lcp_cur = it->prompt.tokens.get_common_prefix(tokens_new);
 

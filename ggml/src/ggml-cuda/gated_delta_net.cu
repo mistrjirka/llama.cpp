@@ -214,9 +214,7 @@ gated_delta_net_cuda_128x4_volta(const float * q,
     curr_state += state_in_offset;
     dst += (sequence * n_tokens * H + h_idx) * S_v;
 
-    // The four value/state columns are independent under the scalar GDN gate.
-    // Keeping them in one warp amortizes the shared q/k/g/beta loads while
-    // preserving the operation and reduction order within every column.
+    // Four independent state columns share q/k/g/beta loads while preserving per-column reduction order.
     float s_shard[cols_per_warp][rows_per_lane];
 
     ggml_cuda_pdl_sync();
@@ -248,8 +246,7 @@ gated_delta_net_cuda_128x4_volta(const float * q,
             q_reg[r] = q_t[i];
         }
 
-        // Keep four independent accumulation chains live. float2 warp reduction
-        // executes the same shuffle/add sequence per component as the scalar path.
+        // float2 reduction keeps the scalar shuffle/add order for each component.
         float kv_shard[cols_per_warp] = { 0.0f, 0.0f, 0.0f, 0.0f };
 #pragma unroll
         for (int r = 0; r < rows_per_lane; ++r) {

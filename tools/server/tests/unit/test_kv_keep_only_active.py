@@ -119,6 +119,7 @@ def test_prompt_cache_prefers_deeper_absolute_prefix():
     """A tiny live prefix must not block a much deeper cached branch."""
     global server
     server.n_slots = 1
+    server.n_ctx = 1024
     server.start()
 
     shared = LONG_PROMPT * 4
