@@ -416,6 +416,10 @@ extern "C" {
         // a source/target/parent context
         // can be utilized in various ways, for example by sharing results or llama_memory between 2 contexts
         struct llama_context * ctx_other;
+
+        // Fork extensions are appended to preserve the layout of all upstream fields.
+        uint32_t n_pipeline_copies; // pipeline scheduler copies, 0 = backend default [EXPERIMENTAL]
+        uint32_t prefill_reuse;     // CUDA prefill GEMM tile for lossless weight reuse, 0 = disabled [EXPERIMENTAL]
     };
 
     struct llama_model_tensor_override {

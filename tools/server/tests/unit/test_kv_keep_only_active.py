@@ -113,3 +113,35 @@ def test_disabled_with_flag():
     })
     assert res.status_code == 200
     assert "__TEST_TAG_CACHE_IDLE_SLOT__" not in log.drain()
+
+
+def test_prompt_cache_prefers_deeper_absolute_prefix():
+    global server
+    server.n_slots = 1
+    server.n_ctx = 2048
+    server.start()
+
+    shared = LONG_PROMPT * 8
+    prompt_a = shared + LONG_PROMPT + " Cached branch A ends here."
+    prompt_b = shared + " Cached branch B ends here."
+    prompt_short = LONG_PROMPT[:200]
+
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt_a,
+        "cache_prompt": True,
+    })
+    assert res.status_code == 200
+    n_long = res.body["timings"]["cache_n"] + res.body["timings"]["prompt_n"]
+
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt_short,
+        "cache_prompt": True,
+    })
+    assert res.status_code == 200
+
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt_b,
+        "cache_prompt": True,
+    })
+    assert res.status_code == 200
+    assert res.body["timings"]["cache_n"] > n_long // 2

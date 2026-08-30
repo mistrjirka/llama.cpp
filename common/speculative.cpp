@@ -1551,36 +1551,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
         if (!is_mem_shared) {
-            common_batch_clear(batch);
-
-            for (int k = 0; k < n_tokens; ++k) {
-                common_batch_add(batch, batch_in.token[k], batch_in.pos[k], { batch_in.seq_id[k][0] }, 0);
-            }
-
-            // shift the tgt embeddings to the right by one position
-            // assumes that the tokens in the batch are sequential for each sequence
-            // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
-            //                                                       ^--- this is a problem
-            // TODO:this is generally true, but would be nice to assert it
-            {
-                const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
-                std::memcpy(batch.embd + (size_t) 1 * n_embd, h_tgt, row_bytes * (n_tokens-1));
-            }
-
-            // fill the pending embeddings from a previous run
-            auto set_h = [&](int idx, const float * h_row) {
-                std::memcpy(batch.embd + (size_t) idx * n_embd, h_row, row_bytes);
-            };
-
-            for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
-                if (i_batch_beg[seq_id] < 0) {
-                    continue;
-                }
-
-                set_h(i_batch_beg[seq_id], pending_h[seq_id].data());
-            }
-
             auto * mem_dft = llama_get_memory(ctx_dft);
+            const int32_t n_ubatch_dft = (int32_t) llama_n_ubatch(ctx_dft);
+            GGML_ASSERT(n_ubatch_dft > 0);
 
             bool ok = true;
             for (int head = 0; head < n_mtp_layers; ++head) {
@@ -1595,11 +1568,38 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     llama_set_nextn_layer_offset(ctx_dft, head);
                 }
 
-                const int32_t rc = llama_decode(ctx_dft, batch);
-                if (rc != 0) {
-                    SPC_ERR("llama_decode(ctx_dft) head=%d failed rc=%d (pos=%d)\n",
-                            head, (int) rc, (int) batch_in.pos[0]);
-                    ok = false;
+                // The target can use a larger physical ubatch than the draft context. Stream
+                // the same token/shifted-hidden pairs through the draft at its own ubatch size.
+                for (int32_t off = 0; off < n_tokens; off += n_ubatch_dft) {
+                    const int32_t n_chunk = std::min(n_ubatch_dft, n_tokens - off);
+                    common_batch_clear(batch);
+
+                    for (int32_t j = 0; j < n_chunk; ++j) {
+                        const int32_t k = off + j;
+                        const llama_seq_id seq_id = batch_in.seq_id[k][0];
+                        common_batch_add(batch, batch_in.token[k], batch_in.pos[k], { seq_id }, 0);
+
+                        const float * h_row = nullptr;
+                        if (k == i_batch_beg[seq_id]) {
+                            h_row = pending_h[seq_id].data();
+                        } else {
+                            GGML_ASSERT(k > 0 && batch_in.seq_id[k - 1][0] == seq_id);
+                            h_row = llama_get_embeddings_nextn_ith(ctx_tgt, k - 1);
+                        }
+                        GGML_ASSERT(h_row != nullptr);
+                        std::memcpy(batch.embd + (size_t) j * n_embd, h_row, row_bytes);
+                    }
+
+                    const int32_t rc = llama_decode(ctx_dft, batch);
+                    if (rc != 0) {
+                        SPC_ERR("llama_decode(ctx_dft) head=%d failed rc=%d (pos=%d, off=%d/%d)\n",
+                                head, (int) rc, (int) batch_in.pos[off], (int) off, (int) n_tokens);
+                        ok = false;
+                        break;
+                    }
+                }
+
+                if (!ok) {
                     break;
                 }
             }
@@ -2567,6 +2567,11 @@ common_speculative_init_result::common_speculative_init_result(
 
     if (spec_mtp) {
         cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+    }
+
+    if (params.speculative.draft.n_ubatch > 0) {
+        cparams.n_ubatch = std::min<uint32_t>(cparams.n_ubatch, params.speculative.draft.n_ubatch);
+        LOG_INF("%s: draft ubatch capped at %u tokens\n", __func__, cparams.n_ubatch);
     }
 
     // the draft context holds as many tokens per sequence as the target context

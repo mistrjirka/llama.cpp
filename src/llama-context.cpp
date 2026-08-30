@@ -245,6 +245,8 @@ llama_context::llama_context(
     cparams.n_batch = cparams.causal_attn ? std::min(cparams.n_ctx, params.n_batch) : params.n_batch;
 
     cparams.n_ubatch = std::min(cparams.n_batch, params.n_ubatch == 0 ? params.n_batch : params.n_ubatch);
+    cparams.n_pipeline_copies = params.n_pipeline_copies;
+    cparams.prefill_reuse = params.prefill_reuse;
 
     cparams.n_outputs_max = params.n_outputs_max == 0 || llama_model_has_encoder(&model) ? cparams.n_batch : params.n_outputs_max;
     cparams.n_outputs_max_per_seq = params.n_outputs_max_per_seq == 0 ?
@@ -308,6 +310,8 @@ llama_context::llama_context(
     LLAMA_LOG_INFO("%s: n_ctx_seq             = %u\n",   __func__, cparams.n_ctx_seq);
     LLAMA_LOG_INFO("%s: n_batch               = %u\n",   __func__, cparams.n_batch);
     LLAMA_LOG_INFO("%s: n_ubatch              = %u\n",   __func__, cparams.n_ubatch);
+    LLAMA_LOG_INFO("%s: n_pipeline_copies     = %u\n",   __func__, cparams.n_pipeline_copies);
+    LLAMA_LOG_INFO("%s: prefill_reuse         = %u\n",   __func__, cparams.prefill_reuse);
     LLAMA_LOG_INFO("%s: causal_attn           = %d\n",   __func__, cparams.causal_attn);
     LLAMA_LOG_INFO("%s: flash_attn            = %s\n",   __func__, llama_flash_attn_type_name(params.flash_attn_type));
     LLAMA_LOG_INFO("%s: kv_unified            = %s\n",   __func__, cparams.kv_unified ? "true" : "false");
@@ -364,6 +368,12 @@ llama_context::llama_context(
                 auto ggml_backend_set_n_threads_fn = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
                 if (ggml_backend_set_n_threads_fn) {
                     set_n_threads_fns.emplace_back(backend.get(), ggml_backend_set_n_threads_fn);
+                }
+
+                using set_prefill_reuse_t = void (*)(ggml_backend_t, uint32_t);
+                auto set_prefill_reuse_fn = (set_prefill_reuse_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_set_prefill_reuse");
+                if (set_prefill_reuse_fn) {
+                    set_prefill_reuse_fn(backend.get(), cparams.prefill_reuse);
                 }
             }
         }
@@ -601,7 +611,8 @@ void llama_context::sched_reserve() {
     gf_res_prev.reset(new llm_graph_result(max_nodes));
     gf_res_reserve.reset(new llm_graph_result(max_nodes));
 
-    sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
+    sched.reset(ggml_backend_sched_new_ex(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes,
+            cparams.pipeline_parallel, cparams.op_offload, (int) cparams.n_pipeline_copies));
 
     llama_memory_context_ptr mctx;
     if (memory) {
@@ -636,7 +647,8 @@ void llama_context::sched_reserve() {
             if (cparams.pipeline_parallel) {
                 LLAMA_LOG_WARN("%s: compute buffer allocation failed, retrying without pipeline parallelism\n", __func__);
                 cparams.pipeline_parallel = false;
-                sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, false, cparams.op_offload));
+                sched.reset(ggml_backend_sched_new_ex(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes,
+                        false, cparams.op_offload, 1));
                 gf = graph_reserve(n_tokens, n_seqs, n_outputs_pp, mctx.get());
             }
             if (!gf) {
@@ -3628,6 +3640,8 @@ llama_context_params llama_context_default_params() {
         /*.sampler                     =*/ nullptr,
         /*.n_sampler                   =*/ 0,
         /*.ctx_other                   =*/ nullptr,
+        /*.n_pipeline_copies           =*/ 0,
+        /*.prefill_reuse               =*/ 0,
     };
 
     return result;

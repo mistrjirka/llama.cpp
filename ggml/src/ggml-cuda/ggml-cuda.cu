@@ -1550,14 +1550,43 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
                                            (const float *) src1_ptr, s11,
                     (const float *) beta,  (float       *)  dst_ptr, ne0));
     } else if (ne12 == 1 && ne13 == 1) {
-        CUBLAS_CHECK(
-            cublasGemmEx(cublas_h, CUBLAS_OP_T, CUBLAS_OP_N,
-                    ne01, ne11, ne10,
-                    alpha, src0_ptr, cu_data_type_a, s01,
-                           src1_ptr, cu_data_type_b, s11,
-                    beta,   dst_ptr, cu_data_type,   ne0,
-                    cu_compute_type,
-                    CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        // On Volta, large quantized prompt matmuls use the dequantize-to-F16 + cuBLAS path.
+        // A larger llama ubatch normally changes cuBLAS' N dimension (and can therefore change
+        // floating-point accumulation/kernel choice).  Keep the exact baseline N shape while
+        // reusing the already-converted src0 buffer across independent output-column tiles.
+        // This preserves the numerical path of the smaller ubatch but amortizes weight conversion.
+        const int64_t reuse_n =
+            compute_type == GGML_TYPE_F16 &&
+            ctx.prefill_reuse > 0 &&
+            volta_mma_available(cc) &&
+            ggml_is_quantized(src0->type)
+                ? (int64_t) ctx.prefill_reuse : 0;
+
+        if (reuse_n > 0 && ne11 > reuse_n) {
+            const size_t dst_element_size = cu_data_type == CUDA_R_32F ? sizeof(float) : sizeof(cuda_t);
+            for (int64_t col0 = 0; col0 < ne11; col0 += reuse_n) {
+                const int64_t n_cur = std::min<int64_t>(reuse_n, ne11 - col0);
+                const cuda_t * src1_cur = src1_ptr + col0 * s11;
+                void * dst_cur = dst_ptr + col0 * ne0 * dst_element_size;
+                CUBLAS_CHECK(
+                    cublasGemmEx(cublas_h, CUBLAS_OP_T, CUBLAS_OP_N,
+                            ne01, n_cur, ne10,
+                            alpha, src0_ptr, cu_data_type_a, s01,
+                                   src1_cur, cu_data_type_b, s11,
+                            beta,   dst_cur, cu_data_type, ne0,
+                            cu_compute_type,
+                            CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+            }
+        } else {
+            CUBLAS_CHECK(
+                cublasGemmEx(cublas_h, CUBLAS_OP_T, CUBLAS_OP_N,
+                        ne01, ne11, ne10,
+                        alpha, src0_ptr, cu_data_type_a, s01,
+                               src1_ptr, cu_data_type_b, s11,
+                        beta,   dst_ptr, cu_data_type,   ne0,
+                        cu_compute_type,
+                        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        }
     } else if (r2 == 1 && r3 == 1 && is_src0_cont_2 && is_src1_cont_2) {
         // with a [0, 2, 1, 3] perm. and ne02==1 the matrix strides need to be determined from dim 3:
         const int64_t sma = ne02 == 1 ? s03 : s02;
@@ -5485,6 +5514,12 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t 
     GGML_UNUSED(reg);
 }
 
+static void ggml_backend_cuda_set_prefill_reuse(ggml_backend_t backend, uint32_t n) {
+    auto * ctx = static_cast<ggml_backend_cuda_context *>(backend->context);
+    GGML_ASSERT(ctx != nullptr);
+    ctx->prefill_reuse = n;
+}
+
 static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
     GGML_UNUSED(reg);
     if (strcmp(name, "ggml_backend_comm_init") == 0) {
@@ -5504,6 +5539,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
     }
     if (strcmp(name, "ggml_backend_get_features") == 0) {
         return (void *)ggml_backend_cuda_get_features;
+    }
+    if (strcmp(name, "ggml_backend_cuda_set_prefill_reuse") == 0) {
+        return (void *)ggml_backend_cuda_set_prefill_reuse;
     }
     return nullptr;
 }

@@ -337,6 +337,7 @@ struct common_params_speculative_draft {
     llama_context * ctx_dft = nullptr;
 
     int32_t n_gpu_layers = -1; // number of layers to store in VRAM for the draft model (-1 - use default)
+    int32_t n_ubatch = 0;     // physical draft ubatch (0 = inherit target)
 
     ggml_type cache_type_k = GGML_TYPE_F16; // KV cache data type for the K
     ggml_type cache_type_v = GGML_TYPE_F16; // KV cache data type for the V
@@ -450,6 +451,8 @@ struct common_params {
     int32_t n_ctx                 =     0; // context size, 0 == context the model was trained with
     int32_t n_batch               =  2048; // logical batch size for prompt processing (must be >=32 to use BLAS)
     int32_t n_ubatch              =   512; // physical batch size for prompt processing (must be >=32 to use BLAS)
+    int32_t n_pipeline_copies       =     0; // pipeline scheduler copies (0 = backend default)
+    int32_t prefill_reuse           =     0; // CUDA lossless prefill-reuse GEMM tile (0 = disabled)
     int32_t n_keep                =     0; // number of tokens to keep from initial prompt
     int32_t n_chunks              =    -1; // max number of chunks to process (-1 = unlimited)
     int32_t n_parallel            =     1; // number of parallel sequences to decode
@@ -1166,6 +1169,13 @@ struct common_prompt_checkpoint {
 
     // (optional) id of the task that created the checkpoint
     int id_task = -1;
+
+    // High-value semantic/exact replay checkpoint; periodic cleanup should not discard it.
+    bool is_replay_boundary = false;
+
+    // Number of times this exact recurrent checkpoint was selected for restore.
+    // Used only as a retention/admission value signal; it does not affect model state.
+    uint32_t replay_hits = 0;
 
     llama_pos pos_min;
     llama_pos pos_max;

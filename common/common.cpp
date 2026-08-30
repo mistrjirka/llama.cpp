@@ -1726,6 +1726,8 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.n_outputs_max_per_seq = std::max(params.n_outputs_max_per_seq, 0);
     cparams.n_batch           = params.n_batch;
     cparams.n_ubatch          = params.n_ubatch;
+    cparams.n_pipeline_copies = std::max(params.n_pipeline_copies, 0);
+    cparams.prefill_reuse     = std::max(params.prefill_reuse, 0);
     cparams.n_threads         = params.cpuparams.n_threads;
     cparams.n_threads_batch   = params.cpuparams_batch.n_threads == -1 ?
                                 params.cpuparams.n_threads : params.cpuparams_batch.n_threads;
@@ -2262,6 +2264,8 @@ bool common_prompt_checkpoint::empty() const {
 
 void common_prompt_checkpoint::clear() {
     n_tokens = 0;
+    is_replay_boundary = false;
+    replay_hits = 0;
 
     pos_min = 0;
     pos_max = 0;
