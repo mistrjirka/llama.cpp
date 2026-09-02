@@ -6,6 +6,36 @@ The main target is **Qwen3.8-27B** in coding/agent workloads with a large reusab
 
 This branch is newer than `qwen38-lossless-agent-cache` and is based on much newer upstream llama.cpp. The original experimental work was later decomposed into smaller, cleaner candidates, benchmarked again, and then integrated here.
 
+> **!!! IMPORTANT: `GGML_CUDA_FORCE_MMQ=ON` IS NOT A GENERAL V100 OPTIMIZATION !!!**
+>
+> **Use FORCE_MMQ only for routed quantized MoE models such as Ornith on this V100 setup. Keep it OFF for dense models such as Qwen3.8.** In our matched 100k-context production-style test, forcing MMQ on Qwen3.8 reduced prompt processing from **452.8 to 323.2 tok/s (-28.6%)**. The same option is extremely useful for Ornith because its routed `MUL_MAT_ID` path benefits from staying on the GPU.
+
+## Large-context results to remember
+
+These are the most useful results for the long-context workloads this branch targets. "Vanilla" means a matching upstream llama.cpp build without the fork's Volta optimization being measured; MMQ state is shown explicitly because it changes Ornith performance dramatically.
+
+| model / workload | vanilla llama.cpp | optimized setup | optimized result | change vs matched vanilla |
+|---|---:|---|---:|---:|
+| Qwen3.8-27B, 100k restored + 1k PP + 64 TG, V100+3060Ti | 329.306 PP tok/s | full clean Volta CUDA stack, **MMQ OFF** | **478.146 PP tok/s** | **+45.20%** |
+| Qwen3.8-27B, 100k KV + 1024 PP, single V100 | 275.180 PP tok/s | isolated sm70 256x256 FA config, **MMQ OFF** | **349.180 PP tok/s** | **+26.89%** |
+| Ornith-1.5-35B-A3B, 100k KV + 1024 PP + 512 TG, single V100 | 485.493 PP / 59.262 TG | isolated sm70 256x256 FA config, MMQ OFF | **580.357 PP / 59.386 TG** | **+19.54% PP**, +0.21% TG |
+| Ornith-1.5-35B-A3B, 65,536 KV + 1024 PP, single V100 | 760.651 PP tok/s **with FORCE_MMQ** | Volta FA config + **FORCE_MMQ** | **895.968 PP tok/s** | **+17.79%** |
+
+The last row is the important apples-to-apples MMQ comparison: **vanilla llama.cpp was also compiled with FORCE_MMQ**, so the +17.79% is the additional long-context gain from the Volta FA optimization after MMQ is already enabled.
+
+### Practical 100k Ornith/Qwen MMQ comparison
+
+An earlier production-style full-fork benchmark used `100k cached + 1k new + 64 generated` with the fixed MTP head. It predates the final August 30 integration commit, so treat the absolute numbers as a practical configuration result rather than a clean PR-sized benchmark, but it shows the MMQ recommendation very clearly:
+
+| model | vanilla llama.cpp | optimized fork | optimized fork + FORCE_MMQ |
+|---|---:|---:|---:|
+| Qwen3.8-27B | — | **452.8 PP / 26.66 TG** | **323.2 PP / 26.54 TG** |
+| Ornith-1.5 AD-Q6_K + fixed MTP3 | 544.1 PP / 67.26 TG | 644.2 PP / 68.99 TG | **882.6 PP / 70.80 TG** |
+
+For Ornith, the optimized normal build was already about **18.4% faster than vanilla**, and adding FORCE_MMQ raised PP another **37.0%** over the optimized normal build, for about **62.2% more PP than the vanilla no-MMQ baseline**. For Qwen3.8, FORCE_MMQ did the opposite and cut PP by about **28.6%**.
+
+**Recommendation:** build **two binaries** on V100 if you run both model classes: a normal build for dense models such as Qwen3.8, and a `GGML_CUDA_FORCE_MMQ=ON` build for routed MoE models such as Ornith. Do not make FORCE_MMQ a global default.
+
 ## Performance overview
 
 The latest clean reconstruction before this integration branch was cut compared the final CUDA candidate stack against the same current-upstream revision.
