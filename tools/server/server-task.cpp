@@ -1719,10 +1719,17 @@ server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & pro
         }
     }
 
-    // calculate checkpoints size to see if it will fit with the prompt
+    // Device-backed checkpoints are transient views into llama_context::mem_storage. They cannot
+    // outlive/migrate with a prompt-cache entry. The full sequence state saved below already
+    // contains the recurrent rollback planes, so persist only portable host-backed checkpoints.
+    std::list<common_prompt_checkpoint> portable_checkpoints;
     size_t checkpoints_size = 0;
     for (const auto & ckpt : prompt.checkpoints) {
+        if (ckpt.data_tgt_on_device) {
+            continue;
+        }
         checkpoints_size += ckpt.size();
+        portable_checkpoints.push_back(ckpt);
     }
 
     const size_t state_size_new = state_size_tgt + state_size_dft + checkpoints_size;
@@ -1779,7 +1786,7 @@ server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & pro
     states.push_back({
         /*.prompt =*/ {
             /*.tokens      =*/ prompt.tokens.clone(),
-            /*.checkpoints =*/ prompt.checkpoints,
+            /*.checkpoints =*/ std::move(portable_checkpoints),
         },
         /*.data   =*/ {
             /*.main =*/ std::move(state_data_tgt),

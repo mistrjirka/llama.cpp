@@ -207,6 +207,130 @@ static bool test_multi_seq_split_replay(const common_params & params, llama_mode
     return true;
 }
 
+static bool test_previous_recurrent_snapshot(const common_params & params, llama_model * model, const int n_vocab) {
+    auto cparams = common_context_params_to_llama(params);
+    cparams.n_seq_max  = 2;
+    cparams.n_rs_seq   = std::max<uint32_t>(1, cparams.n_rs_seq);
+    cparams.n_ctx      = std::max<uint32_t>(512, cparams.n_ctx);
+    cparams.n_batch    = std::max<uint32_t>(256, cparams.n_batch);
+    cparams.n_ubatch   = std::max<uint32_t>(64, cparams.n_ubatch);
+    cparams.kv_unified = false;
+    llama_context * ctx = llama_init_from_model(model, cparams);
+    if (ctx == nullptr) {
+        fprintf(stderr, "%s : failed to init context\n", __func__);
+        return false;
+    }
+
+    const auto cleanup = [&]() { llama_free(ctx); };
+    if (llama_n_rs_seq(ctx) < 1) {
+        fprintf(stderr, "%s : skipping because n_rs_seq is disabled\n", __func__);
+        cleanup();
+        return true;
+    }
+
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+    std::vector<llama_token> tokens;
+    if (llama_vocab_type(vocab) == LLAMA_VOCAB_TYPE_NONE) {
+        tokens = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    } else {
+        tokens = common_tokenize(ctx, "Previous recurrent snapshot replay validation", true);
+    }
+    if (tokens.size() < 2) {
+        fprintf(stderr, "%s : not enough prompt tokens\n", __func__);
+        cleanup();
+        return false;
+    }
+
+    const auto decode_prefix = [&](llama_seq_id seq, uint32_t count) {
+        llama_batch batch = llama_batch_init(count, 0, 1);
+        for (uint32_t pos = 0; pos < count; ++pos) {
+            common_batch_add(batch, tokens[pos], pos, { seq }, pos + 1 == count);
+        }
+        const bool ok = llama_decode(ctx, batch) == 0;
+        llama_batch_free(batch);
+        return ok;
+    };
+    const auto decode_last = [&](llama_seq_id seq) {
+        llama_batch batch = llama_batch_init(1, 0, 1);
+        common_batch_add(batch, tokens.back(), (llama_pos) tokens.size() - 1, { seq }, true);
+        const bool ok = llama_decode(ctx, batch) == 0;
+        llama_batch_free(batch);
+        return ok;
+    };
+
+    // seq 0 is the control: evaluate the complete prompt in one batch, exactly like the server's
+    // full-recompute arm, and retain its final logits. Rollback plane 1 is then the recurrent state
+    // immediately before the final token in that same prompt execution.
+    if (!decode_prefix(0, tokens.size())) {
+        fprintf(stderr, "%s : control prompt decode failed\n", __func__);
+        cleanup();
+        return false;
+    }
+    const float * logits_control_ptr = llama_get_logits_ith(ctx, (int32_t) tokens.size() - 1);
+    if (logits_control_ptr == nullptr) {
+        fprintf(stderr, "%s : missing control logits\n", __func__);
+        cleanup();
+        return false;
+    }
+    std::vector<float> logits_control(logits_control_ptr, logits_control_ptr + n_vocab);
+
+    common_prompt_checkpoint ckpt;
+    ckpt.update_tgt(ctx, 0,
+            LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY |
+            LLAMA_STATE_SEQ_FLAGS_RECURRENT_PREV |
+            LLAMA_STATE_SEQ_FLAGS_ON_DEVICE);
+
+    // seq 1 carries the same attention/KV prefix through N-1. Replace only its recurrent state
+    // with seq 0's saved previous state, replay the final token, and compare to the full-batch
+    // control. This matches the server's 100127-checkpoint -> one-token replay behavior.
+    if (!decode_prefix(1, tokens.size() - 1)) {
+        fprintf(stderr, "%s : replay prefix decode failed\n", __func__);
+        cleanup();
+        return false;
+    }
+    ckpt.load_tgt(ctx, 1, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+    if (!decode_last(1)) {
+        fprintf(stderr, "%s : restored final-token replay failed\n", __func__);
+        cleanup();
+        return false;
+    }
+    const float * logits_restored = llama_get_logits_ith(ctx, 0);
+    if (logits_restored == nullptr) {
+        fprintf(stderr, "%s : missing restored logits\n", __func__);
+        cleanup();
+        return false;
+    }
+
+    float max_diff = 0.0f;
+    int max_diff_token = -1;
+    int control_top = 0;
+    int restored_top = 0;
+    for (int token = 0; token < n_vocab; ++token) {
+        const float diff = std::fabs(logits_control[token] - logits_restored[token]);
+        if (diff > max_diff) {
+            max_diff = diff;
+            max_diff_token = token;
+        }
+        if (logits_control[token] > logits_control[control_top]) {
+            control_top = token;
+        }
+        if (logits_restored[token] > logits_restored[restored_top]) {
+            restored_top = token;
+        }
+    }
+    fprintf(stderr, "%s : max logit drift=%g at token %d, top1=%d/%d\n",
+            __func__, (double) max_diff, max_diff_token, control_top, restored_top);
+    if (control_top != restored_top) {
+        fprintf(stderr, "%s : top-1 token mismatch\n", __func__);
+        cleanup();
+        return false;
+    }
+
+    fprintf(stderr, "%s : previous recurrent snapshot restored successfully\n", __func__);
+    cleanup();
+    return true;
+}
+
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
 
@@ -236,6 +360,10 @@ int main(int argc, char ** argv) {
 
     const llama_vocab * vocab   = llama_model_get_vocab(model);
     const int           n_vocab = llama_vocab_n_tokens(vocab);
+
+    if (!test_previous_recurrent_snapshot(params, model, n_vocab)) {
+        return 1;
+    }
 
     llama_context * ctx_src = make_ctx(params, model);
     llama_context * ctx_dst = make_ctx(params, model);

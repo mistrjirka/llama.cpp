@@ -630,6 +630,7 @@ struct common_params {
     bool    cache_prompt        = true;  // whether to enable prompt caching
     bool    cache_idle_slots    = true;  // save and clear idle slots upon starting a new task
     int32_t n_ctx_checkpoints   = 32;    // max number of context checkpoints per slot
+    bool checkpoint_recurrent_prev = false; // server: keep one recurrent rollback plane for exact replay checkpoints
     int32_t kv_unified_per_slot = 0;     // max context per parallel slot; 0 = unset
     int32_t checkpoint_min_step = 8192;  // minimum spacing between context checkpoints
     int32_t cache_ram_mib       = 8192;  // -1 = no limit, 0 - disable, 1 = 1 MiB, etc.
@@ -1181,6 +1182,10 @@ struct common_prompt_checkpoint {
     llama_pos pos_max;
 
     std::vector<uint8_t> data_tgt;
+    // ON_DEVICE checkpoints keep tensor payloads in llama_context-owned storage; data_tgt then
+    // carries only the serialization envelope. logical_size preserves accounting/eviction weight.
+    bool   data_tgt_on_device   = false;
+    size_t data_tgt_logical_size = 0;
     std::vector<uint8_t> data_dft;
 
     // (optional) speculative-decoding implementation state stashed with the checkpoint

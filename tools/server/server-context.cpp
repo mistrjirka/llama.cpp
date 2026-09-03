@@ -730,6 +730,12 @@ struct server_slot {
         other.stats = stats;
 
         other.prompt = prompt.clone();
+        // ON_DEVICE checkpoints refer to the source sequence's transient context storage and
+        // cannot be cloned to a child sequence. The copied live memory is sufficient; portable
+        // host checkpoints remain available for deeper replay.
+        other.prompt.checkpoints.remove_if([](const common_prompt_checkpoint & ckpt) {
+            return ckpt.data_tgt_on_device;
+        });
         other.init_sampler();
     }
 };
@@ -2295,9 +2301,20 @@ private:
     }
 
     // n_tokens_cur: the number of tokens added to the batch for the current slot
-    void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max, bool is_replay_boundary) {
+    void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max,
+                           bool is_replay_boundary, llama_state_seq_flags tgt_extra_flags = 0) {
         const int id_task = slot.task->id;
         const int64_t checkpoint_n_tokens = slot.prompt.n_tokens() - n_tokens_cur;
+
+        if (tgt_extra_flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) {
+            for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end();) {
+                if (it->data_tgt_on_device && it->n_tokens != checkpoint_n_tokens) {
+                    it = slot.prompt.checkpoints.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
 
         // If this exact prefix is already represented, refresh it in place instead of
         // consuming another ~constant-size recurrent checkpoint slot. A checkpoint that
@@ -2310,7 +2327,7 @@ private:
             cur.id_task = id_task;
             cur.is_replay_boundary = cur.is_replay_boundary || is_replay_boundary;
             cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
-            cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+            cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
             if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
                 cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
             }
@@ -2409,7 +2426,7 @@ private:
         //       this is not true for SWA models: https://github.com/ggml-org/llama.cpp/pull/24411#issuecomment-4677983225
         cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
 
-        cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+        cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
         // A plain attention draft context can remove arbitrary suffixes. Do not duplicate its
         // position-linear KV cache into every recurrent checkpoint; after restoring the target
         // recurrent state, the normal slot.mem.seq_rm() path trims the draft KV to n_past.
@@ -3625,10 +3642,18 @@ private:
                             const int checkpoint_ubatch = params_base.prefill_reuse > 0
                                 ? std::min(n_ubatch, params_base.prefill_reuse)
                                 : n_ubatch;
+                            const uint64_t n_task_tokens = (uint64_t) std::max<int32_t>(0, slot.task->n_tokens());
+                            const uint64_t n_prompt_new = n_task_tokens > slot.stats.n_prompt_cached
+                                ? n_task_tokens - slot.stats.n_prompt_cached
+                                : 0;
+                            const bool snapshot_prev = params_base.checkpoint_recurrent_prev &&
+                                    llama_n_rs_seq(ctx_tgt) > 0 && spec == nullptr && n_prompt_new > 64;
                             const int checkpoint_offsets[] = {4 + checkpoint_ubatch, 4};
+                            const int n_offsets = snapshot_prev ? 1 : 2;
 
                             bool should_break = false;
-                            for (int offset : checkpoint_offsets) {
+                            for (int oi = 0; oi < n_offsets; ++oi) {
+                                const int offset = checkpoint_offsets[oi];
                                 const int n_last = std::min(n_batch, offset);
                                 if (slot.task->n_tokens() == slot.prompt.n_tokens() + n_last) {
                                     should_break = true;
@@ -3885,6 +3910,21 @@ private:
             }
 
             if (slot.state == SLOT_STATE_DONE_PROMPT) {
+                const bool snapshot_prev = params_base.checkpoint_recurrent_prev &&
+                        params_base.n_ctx_checkpoints > 0 && spec == nullptr &&
+                        llama_n_rs_seq(ctx_tgt) > 0 && slot.stats.n_prompt_processed > 64 &&
+                        (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
+                         ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS || n_swa > 0);
+                if (snapshot_prev && slot.prompt.n_tokens() > 0) {
+                    const auto pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), slot.id);
+                    const auto pos_max = llama_memory_seq_pos_max(llama_get_memory(ctx_tgt), slot.id);
+                    if (pos_min > 0 && pos_max > 0) {
+                        create_checkpoint(slot, /* n_tokens_cur = */ 1, pos_min - 1, pos_max - 1,
+                                          /* is_replay_boundary = */ true,
+                                          LLAMA_STATE_SEQ_FLAGS_ON_DEVICE | LLAMA_STATE_SEQ_FLAGS_RECURRENT_PREV);
+                    }
+                }
+
                 if (slot.task->type == SERVER_TASK_TYPE_EMBEDDING) {
                     // prompt evaluated for embedding
                     send_embedding(slot, batch_view);

@@ -1716,6 +1716,15 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_CTX_CHECKPOINTS").set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
     add_opt(common_arg(
+        {"--checkpoint-recurrent-prev"},
+        {"--no-checkpoint-recurrent-prev"},
+        "use one prompt-only recurrent rollback plane to avoid the final checkpoint replay tail for suffixes >64 tokens "
+        "(experimental; validated on Qwen3.8 hybrid contexts)",
+        [](common_params & params, bool value) {
+            params.checkpoint_recurrent_prev = value;
+        }
+    ).set_env("LLAMA_ARG_CHECKPOINT_RECURRENT_PREV").set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"-cms", "--checkpoint-min-step"}, "N",
         string_format("minimum spacing between context checkpoints in tokens (default: %d, 0 = no minimum)", params.checkpoint_min_step),
         [](common_params & params, int value) {
