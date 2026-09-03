@@ -9,7 +9,7 @@
 
 | model | recommended setup | why |
 |---|---|---|
-| **Qwen3.8-27B** | normal CUDA build, **MMQ off**, **MTP on with `n-max=3`**; use the Qwen quick-start settings below | Recommended long-context Qwen setup used by this fork. |
+| **Qwen3.8-27B** | normal CUDA build, **MMQ off**, **MTP on with `n-max=3`**; on one V100, add `--spec-mtp-defer-prompt` for lower agent-turn TTFT | Recommended long-context Qwen setup used by this fork. |
 | **Ornith-1.5-35B-A3B** | build with `GGML_CUDA_FORCE_MMQ=ON` | FORCE_MMQ provides most of the V100 speedup for this routed MoE model. |
 
 If you run both model classes, keep separate normal and FORCE_MMQ binaries.
@@ -26,6 +26,39 @@ If you run both model classes, keep separate normal and FORCE_MMQ binaries.
 The Qwen row is a direct upstream-to-fork comparison. MTP is enabled on both sides, so the TG gain is **not** an MTP-on versus MTP-off comparison. Both Qwen arms use the same model, q8_0 target KV, FP16 draft KV, 262k context, `64,2` layer split, and `n-max=3`. Generated tokens were identical in the matched A/B/B/A run.
 
 See [Benchmarks](#benchmarks) for the exact baselines and component-level measurements.
+
+### Faster first token for MTP agent turns on one V100
+
+For a long coding/agent session, throughput alone can hide the delay the user actually feels. `--spec-mtp-defer-prompt` reduces **time to first streamed token (TTFT)** when a large prefix is already cached and a relatively small tool/user suffix is appended. It keeps the target prompt work unchanged, but moves MTP prompt catch-up and publication of the replay checkpoint off the first-token critical path.
+
+Single Tesla V100-SXM2-32GB, Qwen3.8-27B `UD-Q5_K_XL`, 100,000 restored tokens, q8_0 target KV, FP16 draft KV, MTP `n-max=3`, one generated control token per request:
+
+| appended prompt | normal MTP TTFT | `--spec-mtp-defer-prompt` | answer starts sooner |
+|---:|---:|---:|---:|
+| 64 | 455 ms | **445 ms** | 9 ms / 2.0% |
+| 128 | 746 ms | **693 ms** | **53 ms / 7.1%** |
+| **177** | 868 ms | **814 ms** | **54 ms / 6.3%** |
+| 256 | 954 ms | **898 ms** | **56 ms / 5.9%** |
+| 512 | 1,572 ms | **1,547 ms** | 26 ms / 1.6% |
+| 1,000 | 2,400 ms | **2,356 ms** | 44 ms / 1.8% |
+
+The 177-token point is representative of the median appended-prompt size in the agent trace used for this tuning. The final cleaned/public-option A/B/B/A run with **257 generated tokens** measured **864.9 -> 819.3 ms TTFT (-5.28%, 45.6 ms sooner)**. Generation throughput was 36.92 -> 36.78 tok/s (-0.38%), MTP acceptance stayed exactly **171 / 255**, and all four generated-token SHAs were identical.
+
+The improvement is not limited to the first SSE event. In a separate matched 64-token streaming run, token 1 arrived 48 ms earlier, token 2 was still 32 ms earlier, and token 64 was 36 ms earlier; the generated token stream was identical.
+
+Replay behavior is preserved. After a 100k + 177 request, an exact repeat still restored **100,173 cached tokens and recomputed only the final 4**. Extending the prompt by another 32 literal tokens restored **100,177** and processed only those 32 new tokens.
+
+Enable the latency path together with the normal MTP3 setup:
+
+```bash
+--spec-type draft-mtp \
+--spec-draft-n-max 3 \
+--spec-mtp-defer-prompt \
+--ctx-checkpoints 32 \
+--checkpoint-min-step 8192
+```
+
+This path is opt-in and currently intended for **draft-MTP agent serving on one V100**. The two-GPU V100 + RTX 3060 Ti setup below has not been used to validate this TTFT option.
 
 ### Agent prompt checkpointing on one V100
 
@@ -52,7 +85,7 @@ Enable it with:
 --checkpoint-recurrent-prev
 ```
 
-This option is currently **not used when speculative decoding is active**. Keep the MTP quick-start below unchanged; extending the checkpoint shortcut to the MTP path is separate work.
+`--checkpoint-recurrent-prev` remains the **non-speculative** optimization. When draft-MTP is enabled, use the separate `--spec-mtp-defer-prompt` path above instead.
 
 ## Quick start: Qwen3.8 on one V100
 
@@ -131,6 +164,7 @@ export GGML_CUDA_QWEN35_MTP_SHORTLIST="$PWD/data/mtp-shortlists/qwen38-27b-exact
   --spec-type draft-mtp \
   --spec-draft-n-max 3 \
   --spec-draft-ubatch 1024 \
+  --spec-mtp-defer-prompt \
   --cache-ram 65536 \
   --cache-idle-slots \
   --ctx-checkpoints 32 \
@@ -237,6 +271,7 @@ The benchmark groups use different baselines because they isolate different chan
 |---|---|---|
 | Qwen upstream vs fork | upstream parent `6d1479c14`, MTP `n-max=3` | `v100-optimized`, same MTP3 setup + recommended Qwen generation paths |
 | isolated Qwen generation paths | same fork, paths off, MTP `n-max=3` | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 |
+| **MTP agent TTFT** | same fork, normal MTP3 prompt path | `--spec-mtp-defer-prompt`, same target segmentation and MTP3 setup |
 | Qwen / Ornith isolated FA | matching upstream build | isolated sm70 256x256 FA config (PR #27997) |
 | Ornith upstream vs fork | upstream parent `6d1479c14`, `GGML_CUDA_FORCE_MMQ=ON`, MTP `n-max=3` | `v100-optimized`, same FORCE_MMQ + MTP3 setup |
 
@@ -532,6 +567,12 @@ These are independent of the core Qwen3.8 `256x256` optimization.
 ### Recurrent previous-state checkpoints
 
 `--checkpoint-recurrent-prev` is an opt-in server optimization for hybrid/recurrent prompt replay. For prompt suffixes above 64 tokens, it avoids forcing a separate final checkpoint tail. Instead, the server saves the immediately preceding recurrent snapshot on-device and can later restore that state and replay one token at a branch point. Rollback-plane work is disabled during single-token decode, so the optimization does not add TG work. Device-backed checkpoints are excluded from the persistent RAM prompt cache and from child-slot clones; only portable host-backed checkpoints cross those boundaries.
+
+### Deferred MTP prompt catch-up
+
+`--spec-mtp-defer-prompt` is the speculative/MTP counterpart for **user-visible latency**. The target still evaluates the same prompt segmentation, but the MTP hidden-state catch-up is captured asynchronously and consumed after the first response token is queued. The N-4 replay checkpoint is also queued device-side before the final target batch and completed after token 1, so exact prompt replay keeps the same deep cached boundary instead of falling back to the older 100k prefix.
+
+The option is deliberately restricted to draft-MTP. If the split-phase capture is unavailable, the normal speculative processing path remains the fallback.
 
 ### Quantized-weight reuse during prefill
 
