@@ -79,6 +79,15 @@ void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, co
 // process the batch and update the internal state of the speculative context
 bool common_speculative_process(common_speculative * spec, const llama_batch & batch);
 
+// Experimental split-phase MTP latency path. prepare_deferred() is called before
+// target decode so h_nextn can be copied asynchronously into a private pinned
+// buffer; flush_deferred() advances the draft context later, before drafting.
+bool common_speculative_can_defer_prompt(const common_speculative * spec);
+bool common_speculative_prepare_deferred(common_speculative * spec, const llama_batch & batch);
+void common_speculative_finish_deferred_capture(common_speculative * spec);
+bool common_speculative_flush_deferred_before_last(common_speculative * spec);
+bool common_speculative_flush_deferred(common_speculative * spec);
+
 // generate drafts for the sequences specified with `common_speculative_get_draft_params`
 void common_speculative_draft(common_speculative * spec);
 

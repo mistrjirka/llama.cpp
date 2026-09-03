@@ -2302,7 +2302,7 @@ void common_prompt_checkpoint::update_tgt(
 
     data_tgt_on_device = (flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) != 0;
     data_tgt_logical_size = llama_state_seq_get_size_ext(
-            ctx, seq_id, flags & ~LLAMA_STATE_SEQ_FLAGS_ON_DEVICE);
+            ctx, seq_id, flags & ~(LLAMA_STATE_SEQ_FLAGS_ON_DEVICE | LLAMA_STATE_SEQ_FLAGS_ASYNC_DEVICE));
     const size_t ckpt_size = llama_state_seq_get_size_ext(ctx, seq_id, flags);
 
     data_tgt.resize(ckpt_size);

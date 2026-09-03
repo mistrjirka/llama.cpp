@@ -114,6 +114,7 @@ struct llama_context {
 
     void set_embeddings (bool value);
     void set_embeddings_nextn(bool value, bool masked);
+    void set_embeddings_nextn_capture(float * data, size_t n_floats);
     void set_embeddings_layer_inp(uint32_t lid, bool enable);
     void set_nextn_layer_offset(int32_t offset);
     void set_causal_attn(bool value);
@@ -369,6 +370,11 @@ private:
 
     // host buffer for the model output (logits and embeddings)
     ggml_backend_buffer_ptr buf_output;
+
+    // Optional one-decode secondary sink for unmasked h_nextn rows. The caller
+    // owns the storage and must keep it alive until the context is synchronized.
+    float * embd_nextn_capture_data = nullptr;
+    size_t  embd_nextn_capture_size = 0;
 
     // keep copies of the per-sequence memory on the device
     std::map<llama_seq_id, llama_memory_buffers> mem_storage;

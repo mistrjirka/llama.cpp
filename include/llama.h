@@ -924,6 +924,10 @@ extern "C" {
 // Only valid with PARTIAL_ONLY for a single sequence when n_rs_seq >= 1.
 #define LLAMA_STATE_SEQ_FLAGS_RECURRENT_PREV 4
 
+// Queue ON_DEVICE tensor copies without synchronizing the backend. The caller
+// must guarantee a later synchronization before the checkpoint can be restored.
+#define LLAMA_STATE_SEQ_FLAGS_ASYNC_DEVICE 8
+
     typedef uint32_t llama_state_seq_flags;
 
     LLAMA_API size_t llama_state_seq_get_size_ext(

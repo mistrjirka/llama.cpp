@@ -1187,6 +1187,11 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
     cparams.embeddings_nextn_masked = masked;
 }
 
+void llama_context::set_embeddings_nextn_capture(float * data, size_t n_floats) {
+    embd_nextn_capture_data = data;
+    embd_nextn_capture_size = n_floats;
+}
+
 void llama_context::set_embeddings_layer_inp(uint32_t lid, bool enable) {
     LLAMA_LOG_DEBUG("%s: lid = %d, enable = %d\n", __func__, lid, enable);
 
@@ -1973,6 +1978,13 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
                 GGML_ASSERT((offset + n_rows)*n_embd <= (int64_t) embd_nextn.size);
                 ggml_backend_tensor_get_async(backend_h, t_h_nextn, embd_nextn_out, 0, n_rows*n_embd*sizeof(float));
+
+                if (embd_nextn_capture_data != nullptr) {
+                    GGML_ASSERT(!masked && "secondary nextn capture currently requires dense/unmasked rows");
+                    GGML_ASSERT((offset + n_rows)*n_embd <= (int64_t) embd_nextn_capture_size);
+                    float * capture_out = embd_nextn_capture_data + offset*n_embd;
+                    ggml_backend_tensor_get_async(backend_h, t_h_nextn, capture_out, 0, n_rows*n_embd*sizeof(float));
+                }
             }
         }
 
@@ -2741,7 +2753,10 @@ private:
 
 class llama_io_write_device : public llama_io_write_i {
 public:
-    llama_io_write_device(uint8_t * p, size_t len, llama_memory_buffers & mbufs) : ptr(p), buf_size(len), mbufs(mbufs)  {
+    llama_io_write_device(
+            uint8_t * p, size_t len, llama_memory_buffers & mbufs,
+            ggml_backend_sched_t sched, bool async_copy)
+        : ptr(p), buf_size(len), mbufs(mbufs), sched(sched), async_copy(async_copy) {
     }
 
     ~llama_io_write_device() {
@@ -2831,6 +2846,14 @@ public:
             }
 
             for (size_t i = 0; i < mbuf_cur.org.size(); ++i) {
+                if (async_copy && sched != nullptr) {
+                    ggml_tensor * src = mbuf_cur.org[i]->view_src ? mbuf_cur.org[i]->view_src : mbuf_cur.org[i];
+                    ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched, src);
+                    if (backend != nullptr) {
+                        ggml_backend_tensor_copy_async(backend, backend, mbuf_cur.org[i], mbuf_cur.cpy[i]);
+                        continue;
+                    }
+                }
                 ggml_backend_tensor_copy(mbuf_cur.org[i], mbuf_cur.cpy[i]);
             }
         }
@@ -2869,6 +2892,8 @@ private:
     std::vector<write_info> winfos;
 
     llama_memory_buffers & mbufs;
+    ggml_backend_sched_t sched = nullptr;
+    bool async_copy = false;
 };
 
 class llama_io_read_device : public llama_io_read_i {
@@ -3078,7 +3103,9 @@ size_t llama_context::state_seq_get_size(llama_seq_id seq_id, llama_state_seq_fl
 size_t llama_context::state_seq_get_data(llama_seq_id seq_id, uint8_t * dst, size_t size, llama_state_seq_flags flags) {
     std::unique_ptr<llama_io_write_i> io;
     if (flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) {
-        io = std::make_unique<llama_io_write_device>(dst, size, mem_storage[seq_id]);
+        io = std::make_unique<llama_io_write_device>(
+                dst, size, mem_storage[seq_id], sched.get(),
+                (flags & LLAMA_STATE_SEQ_FLAGS_ASYNC_DEVICE) != 0);
     } else {
         io = std::make_unique<llama_io_write_host>(dst, size);
     }
@@ -3871,6 +3898,10 @@ float * llama_get_embeddings_seq(llama_context * ctx, llama_seq_id seq_id) {
 
 void llama_set_embeddings_nextn(llama_context * ctx, bool value, bool masked) {
     ctx->set_embeddings_nextn(value, masked);
+}
+
+void llama_set_embeddings_nextn_capture(llama_context * ctx, float * data, size_t n_floats) {
+    ctx->set_embeddings_nextn_capture(data, n_floats);
 }
 
 void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool value) {
