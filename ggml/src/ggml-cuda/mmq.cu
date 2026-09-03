@@ -310,6 +310,18 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
     }
 
     if (turing_mma_available(cc)) {
+        // Experimental SM75 large-prompt crossover: Turing currently routes every
+        // supported quantized matmul through MMQ regardless of N. For dense Q5_K/Q6_K
+        // prompt GEMMs, allow an opt-in threshold to use dequantize-to-F16 + cuBLAS
+        // while keeping small-T/decode on MMQ. MoE stays on the existing route.
+        if (n_experts == 0 && (type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K)) {
+            if (const char * env = getenv("GGML_CUDA_TURING_CUBLAS_MIN_BATCH")) {
+                const int64_t threshold = std::max<int64_t>(1, atoll(env));
+                if (ne11 >= threshold) {
+                    return false;
+                }
+            }
+        }
         return true;
     }
 
