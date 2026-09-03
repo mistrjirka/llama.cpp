@@ -10,18 +10,21 @@ This branch is newer than `qwen38-lossless-agent-cache` and is based on much new
 >
 > **Use FORCE_MMQ only for routed quantized MoE models such as Ornith on this V100 setup. Keep it OFF for dense models such as Qwen3.8.** In our matched 100k-context production-style test, forcing MMQ on Qwen3.8 reduced prompt processing from **452.8 to 323.2 tok/s (-28.6%)**. The same option is extremely useful for Ornith because its routed `MUL_MAT_ID` path benefits from staying on the GPU.
 
-## Large-context results to remember
+## Large-context results to remember — PP and TG
 
-These are the most useful results for the long-context workloads this branch targets. "Vanilla" means a matching upstream llama.cpp build without the fork's Volta optimization being measured; MMQ state is shown explicitly because it changes Ornith performance dramatically.
+`PP` = prompt processing / prefill throughput. `TG` = token generation / decode throughput. Values are tokens/s. The newest Qwen MTP3 result is first because it is the current recommended decode configuration.
 
-| model / workload | vanilla llama.cpp | optimized setup | optimized result | change vs matched vanilla |
-|---|---:|---|---:|---:|
-| Qwen3.8-27B, 100k restored + 1k PP + 64 TG, V100+3060Ti | 329.306 PP tok/s | full clean Volta CUDA stack, **MMQ OFF** | **478.146 PP tok/s** | **+45.20%** |
-| Qwen3.8-27B, 100k KV + 1024 PP, single V100 | 275.180 PP tok/s | isolated sm70 256x256 FA config, **MMQ OFF** | **349.180 PP tok/s** | **+26.89%** |
-| Ornith-1.5-35B-A3B, 100k KV + 1024 PP + 512 TG, single V100 | 485.493 PP / 59.262 TG | isolated sm70 256x256 FA config, MMQ OFF | **580.357 PP / 59.386 TG** | **+19.54% PP**, +0.21% TG |
-| Ornith-1.5-35B-A3B, 65,536 KV + 1024 PP, single V100 | 760.651 PP tok/s **with FORCE_MMQ** | Volta FA config + **FORCE_MMQ** | **895.968 PP tok/s** | **+17.79%** |
+| model / workload | reference setup | reference PP | reference TG | optimized setup | optimized PP | optimized TG | change |
+|---|---|---:|---:|---|---:|---:|---:|
+| **Qwen3.8-27B UD-Q5_K_XL**, 100k restored + 1k PP + **256 TG**, single V100, MTP3 | same `v100-optimized` build, September decode paths OFF, MMQ OFF | 410.750 | **27.591** | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 | 413.418 | **36.471** | +0.65% PP, **+32.19% TG** |
+| Qwen3.8-27B, 100k restored + 1k PP + 64 TG, V100+3060Ti | matching current-upstream baseline | 329.306 | not claimed from 64-token run | full clean Volta CUDA stack, MMQ OFF | **478.146** | not claimed from 64-token run | **+45.20% PP**; separate 256-token ABBAs: **+0.86% to +1.38% TG** |
+| Qwen3.8-27B, 100k KV + 1024 PP + **512 TG**, single V100 | upstream isolated FA baseline | 276.063 | 16.269 | Volta 256x256 FA config, MMQ OFF | **352.926** | **16.366** | **+27.84% PP**, +0.60% TG |
+| Ornith-1.5-35B-A3B, 100k KV + 1024 PP + **512 TG**, single V100 | upstream isolated FA baseline | 485.493 | 59.262 | Volta 256x256 FA config, MMQ OFF | **580.357** | **59.386** | **+19.54% PP**, +0.21% TG |
+| Ornith-1.5 AD-Q6_K + fixed MTP3, 100k cached + 1k PP + **64 TG** | vanilla, MMQ OFF | 544.1 | 67.26 | full fork + FORCE_MMQ | **882.6** | **70.80** | **+62.2% PP**, +5.26% TG vs vanilla |
 
-The last row is the important apples-to-apples MMQ comparison: **vanilla llama.cpp was also compiled with FORCE_MMQ**, so the +17.79% is the additional long-context gain from the Volta FA optimization after MMQ is already enabled.
+Additional PP-only long-context confirmation: Ornith at 65,536 KV + 1024 PP with FORCE_MMQ improved from **760.651 to 895.968 PP tok/s (+17.79%)** after the Volta FA optimization. That particular run did not measure TG, so it is kept out of the PP+TG table rather than leaving the generation result implicit.
+
+The Qwen 64-token clean-stack run was also intentionally not assigned an absolute TG number: its decode interval was too short for a strong claim. Two independent 256-token ABBAs measured **+1.38%** and **+0.86% TG** with exact output.
 
 ### Current Qwen MTP3 decode stack (September 2026)
 
@@ -90,7 +93,7 @@ Two independent runs with 256 generated tokens made the decode comparison less n
 | A | **+44.70%** | +1.38% | exact output, MTP 153/202 |
 | B | **+40.01%** | +0.86% | exact output, MTP 153/202 |
 
-The large gain is therefore in **long-context prompt processing**. Token generation is essentially unchanged.
+For this **older pre-September CUDA stack**, the large gain was in long-context prompt processing and TG was essentially unchanged. The current MTP3 decode stack documented above is different: it raises Qwen TG from **27.591 to 36.471 tok/s (+32.19%)** at 100k restored context.
 
 The clean stack above contains the CUDA work integrated in this branch: the FlashAttention barrier fix, Volta 256x256 configuration, strict adaptive 2-CTA specialization, and Volta scalar GatedDeltaNet specialization. This branch additionally carries the runtime/cache features described below.
 
