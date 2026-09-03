@@ -363,7 +363,7 @@ static void launch_gated_delta_net(
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
             if constexpr (!KDA) {
                 const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-                if (cc == GGML_CUDA_CC_VOLTA && n_tokens > 1) {
+                if ((cc == GGML_CUDA_CC_VOLTA || cc == GGML_CUDA_CC_TURING) && n_tokens > 1) {
                     dim3 volta_grid(H, n_seqs, 8); // 4 warps * 4 columns = 16 columns/CTA
                     const ggml_cuda_kernel_launch_params volta_params =
                         ggml_cuda_kernel_launch_params(volta_grid, block_dims, 0, stream);
