@@ -1,6 +1,7 @@
 #include "common.cuh"
 #include "fattn-common.cuh"
 #include "fattn-mma-f16.cuh"
+#include "fattn-q8-volta.cuh"
 #include "fattn-tile.cuh"
 #include "fattn-vec.cuh"
 #include "fattn.cuh"
@@ -333,6 +334,7 @@ enum best_fattn_kernel {
     BEST_FATTN_KERNEL_TILE    = 200,
     BEST_FATTN_KERNEL_VEC     = 100,
     BEST_FATTN_KERNEL_MMA_F16 = 400,
+    BEST_FATTN_KERNEL_VOLTA_Q8_W4 = 500,
 };
 
 static bool ggml_cuda_fattn_kv_type_supported(ggml_type type) {
@@ -488,6 +490,21 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
         gqa_ratio_eff *= 2;
     }
 
+    // Opt-in validated Qwen3.8-27B target-verification route: ordinary llama q8_0 KV is
+    // widened only on shared-memory tile load and consumed by Volta tensor cores.
+    if (cc == GGML_CUDA_CC_VOLTA && std::getenv("GGML_CUDA_VOLTA_Q8_FATTN_TC") != nullptr &&
+            Q->ne[0] == 256 && Q->ne[1] == 4 && Q->ne[2] == 24 && Q->ne[3] == 1 &&
+            K->type == GGML_TYPE_Q8_0 && V->type == GGML_TYPE_Q8_0 &&
+            K->ne[0] == 256 && V->ne[0] == 256 && K->ne[2] == 4 && V->ne[2] == 4 &&
+            K->ne[3] == 1 && V->ne[3] == 1 && mask != nullptr && max_bias == 0.0f &&
+            KQV->src[4] == nullptr) {
+        float logit_softcap = 0.0f;
+        memcpy(&logit_softcap, (const float *) KQV->op_params + 2, sizeof(float));
+        if (logit_softcap == 0.0f) {
+            return BEST_FATTN_KERNEL_VOLTA_Q8_W4;
+        }
+    }
+
     if (volta_mma_available(cc) && Q->ne[0] != 40 && Q->ne[0] != 72) {
         if (can_use_vector_kernel && Q->ne[1] * gqa_ratio_eff <= 2) {
             return BEST_FATTN_KERNEL_VEC;
@@ -544,6 +561,10 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
 
     const best_fattn_kernel kernel = ggml_cuda_get_best_fattn_kernel(device, dst);
 
+    if (kernel == BEST_FATTN_KERNEL_VOLTA_Q8_W4) {
+        return ggml_q8v::get_alloc_size(dst);
+    }
+
     bool need_f16_K = false;
     bool need_f16_V = false;
 
@@ -557,6 +578,8 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
             need_f16_K = K->type == GGML_TYPE_F32;
             need_f16_V = V->type == GGML_TYPE_F32;
             break;
+        case BEST_FATTN_KERNEL_VOLTA_Q8_W4:
+            GGML_ABORT("unreachable");
         case BEST_FATTN_KERNEL_NONE:
             break;
     }
@@ -580,6 +603,9 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
             break;
         case BEST_FATTN_KERNEL_MMA_F16:
             ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);
+            break;
+        case BEST_FATTN_KERNEL_VOLTA_Q8_W4:
+            ggml_q8v::launch(ctx, dst);
             break;
     }
 }

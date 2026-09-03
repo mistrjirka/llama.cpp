@@ -443,6 +443,8 @@ extern "C" {
     enum ggml_op_hint {
         GGML_HINT_NONE             = 0,
         GGML_HINT_SRC0_IS_HADAMARD = 1,
+        // Fork-private marker for the Qwen3.5/3.8 MTP proposal-head shortlist.
+        GGML_HINT_MTP_SHORTLIST    = 2,
     };
 
     // model file types
