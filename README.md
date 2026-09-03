@@ -23,6 +23,32 @@ These are the most useful results for the long-context workloads this branch tar
 
 The last row is the important apples-to-apples MMQ comparison: **vanilla llama.cpp was also compiled with FORCE_MMQ**, so the +17.79% is the additional long-context gain from the Volta FA optimization after MMQ is already enabled.
 
+### Current Qwen MTP3 decode stack (September 2026)
+
+The latest clean integration adds four opt-in sm70 decode optimizations on top of the branch above. The q8 attention topology is adapted from the small-T INT8 Volta work in [NInfer-V100](https://github.com/geoffwatts/ninfer-v100), while retaining llama.cpp's existing q8_0 KV format.
+
+- q8_0 KV is widened only per shared-memory tile and consumed directly by Volta FP16 tensor cores for the exact Qwen3.8 target-verification `T=4` attention geometry;
+- the Qwen MTP proposal head can evaluate a validated 131,072-row shortlist instead of all 248,320 vocabulary rows;
+- Q5_K `T=4` MMVQ reuses each decoded weight fragment across all four activation columns;
+- Q6_K `T=4` uses the validated `4 warps x 4 rows/CTA` Volta launch geometry.
+
+Clean ABBA on a single V100, `100k restored + 1k new + 256 generated`, q8_0 target KV, MTP `n-max=3`, MMQ **OFF**:
+
+| model / quant | new decode stack OFF | new decode stack ON | change | correctness |
+|---|---:|---:|---:|---|
+| Qwen3.8-27B UD-Q5_K_XL | 410.750 PP / **27.591 TG** | 413.418 PP / **36.471 TG** | +0.65% PP, **+32.19% TG** | all 4 full-token SHAs identical; MTP 167/261 -> 170/252 |
+
+The PP difference is noise-scale; this is a **decode** optimization. The attention sub-kernel itself dropped from about 2.674 ms to 1.419 ms at ~101k KV and from 6.879 ms to 3.363 ms at ~260k KV for the validated W4 geometry.
+
+The same T=4 weight paths were checked on Ornith with `GGML_CUDA_FORCE_MMQ=ON`, V100 target + RTX 3060 Ti MTP draft:
+
+| Ornith quant / workload | stack OFF | stack ON | change | correctness |
+|---|---:|---:|---:|---|
+| AD-Q6_K, 100k restored + 1k + 256 TG | **70.295 TG** | **70.561 TG** | +0.38% TG; warm PP unchanged | identical 161/280 acceptance and token SHA |
+| AD-Q5_K-Q4_K, 10k cached + 1k + 256 TG | 1444.256 PP / **116.868 TG** | 1437.878 PP / **117.778 TG** | -0.44% PP (noise), **+0.78% TG** | identical 178/229 acceptance and token SHA |
+
+So these new kernels are primarily a Qwen3.8 dense-model win. They are safe on the tested Ornith configurations but should **not** replace the much more important `GGML_CUDA_FORCE_MMQ=ON` recommendation for routed MoE.
+
 ### Practical 100k Ornith/Qwen MMQ comparison
 
 An earlier production-style full-fork benchmark used `100k cached + 1k new + 64 generated` with the fixed MTP head. It predates the final August 30 integration commit, so treat the absolute numbers as a practical configuration result rather than a clean PR-sized benchmark, but it shows the MMQ recommendation very clearly:
@@ -247,6 +273,12 @@ If the V100 is the only visible NVIDIA GPU:
 ```bash
 export CUDA_VISIBLE_DEVICES=0
 
+# Validated Qwen3.8-27B V100 MTP3 decode stack.
+export GGML_CUDA_VOLTA_Q8_FATTN_TC=1
+export GGML_CUDA_VOLTA_Q5_X4=1
+export GGML_CUDA_VOLTA_Q6_W4R4=1
+export GGML_CUDA_QWEN35_MTP_SHORTLIST="$PWD/data/mtp-shortlists/qwen38-27b-exact-131072.i32"
+
 ./build/bin/llama-server \
   --model "$MODEL" \
   --alias qwen3.8-27b \
@@ -267,7 +299,7 @@ export CUDA_VISIBLE_DEVICES=0
   --cache-type-k-draft f16 \
   --cache-type-v-draft f16 \
   --spec-type draft-mtp \
-  --spec-draft-n-max 2 \
+  --spec-draft-n-max 3 \
   --spec-draft-ubatch 1024 \
   --cache-ram 65536 \
   --cache-idle-slots \
@@ -279,6 +311,15 @@ export CUDA_VISIBLE_DEVICES=0
   --perf \
   --metrics
 ```
+
+The four environment variables above are deliberately opt-in and narrowly gated:
+
+- `GGML_CUDA_VOLTA_Q8_FATTN_TC=1` only selects the validated sm70 Qwen target-verification geometry (`D=256`, 24 Q heads, 4 KV heads, `T=4`, q8_0 K/V, masked attention, no logit softcap).
+- `GGML_CUDA_VOLTA_Q5_X4=1` enables exact-arithmetic Q5_K weight-decode reuse for non-`MUL_MAT_ID` `T=4` MMVQ.
+- `GGML_CUDA_VOLTA_Q6_W4R4=1` enables the validated Q6_K `T=4` Volta launch geometry.
+- `GGML_CUDA_QWEN35_MTP_SHORTLIST=...` affects only the MTP **proposal** head with the exact Qwen3.5/3.8 27B `5120 x 248320` Q6_K geometry. Invalid maps or other geometries fall back to the full head. The included map SHA-256 is `d2f2c068e3a637224b44741d40c914c987111807450d4d6f3c7ffd04b7f0f8cd`.
+
+Use `--spec-draft-n-max 3` with this stack: three draft tokens produce the target verification width `T=4` that the optimized q8 attention and T4 weight kernels are designed for.
 
 `--gpu-layers 63` was the tested tight 262k MTP-safe placement on the development 32 GB V100. Exact headroom can change with CUDA, quantization, or later allocator changes, so re-check VRAM on another build.
 
@@ -310,6 +351,10 @@ Put the V100 first in CUDA's visible-device order, then use the tested Qwen plac
 
 ```bash
 export CUDA_VISIBLE_DEVICES=1,0
+export GGML_CUDA_VOLTA_Q8_FATTN_TC=1
+export GGML_CUDA_VOLTA_Q5_X4=1
+export GGML_CUDA_VOLTA_Q6_W4R4=1
+export GGML_CUDA_QWEN35_MTP_SHORTLIST="$PWD/data/mtp-shortlists/qwen38-27b-exact-131072.i32"
 
 ./build/bin/llama-server \
   --model "$MODEL" \
@@ -332,7 +377,7 @@ export CUDA_VISIBLE_DEVICES=1,0
   --cache-type-k-draft f16 \
   --cache-type-v-draft f16 \
   --spec-type draft-mtp \
-  --spec-draft-n-max 2 \
+  --spec-draft-n-max 3 \
   --spec-draft-ubatch 1024 \
   --cache-ram 65536 \
   --cache-idle-slots \
