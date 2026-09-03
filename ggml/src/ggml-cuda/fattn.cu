@@ -25,6 +25,23 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
         }
     }
 
+    // Qwen3.8-27B on Volta: use the NInfer-derived 32-column sm70 configuration for
+    // small/medium cached-prompt appends. The 64-column compact specialization remains faster
+    // for wide appends, so keep the measured crossover at 512 query tokens.
+    if constexpr (DKQ == 256 && DV == 256 && ncols2 == 2) {
+        const ggml_tensor * K = dst->src[1];
+        const ggml_tensor * V = dst->src[2];
+        const bool qwen38_q8 =
+            Q->ne[2] == 24 && Q->ne[3] == 1 &&
+            K->ne[0] == 256 && K->ne[2] == 4 && K->ne[3] == 1 &&
+            V->ne[0] == 256 && V->ne[2] == 4 && V->ne[3] == 1 &&
+            K->type == GGML_TYPE_Q8_0 && V->type == GGML_TYPE_Q8_0;
+        if (cc == GGML_CUDA_CC_VOLTA && qwen38_q8 && Q->ne[1] > 16 && Q->ne[1] <= 512) {
+            ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 16, ncols2>(ctx, dst);
+            return;
+        }
+    }
+
     if (Q->ne[1] <= 32/ncols2 || (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_TURING) ||
             (GGML_CUDA_CC_IS_AMD(cc) && DKQ > 256)) {
         ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 32/ncols2, ncols2>(ctx, dst);

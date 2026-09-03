@@ -9977,6 +9977,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 
     // Qwen3.8-27B target-verification geometry for the q8_0 tiled Volta path.
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    // Qwen3.8-27B Volta cached-prompt route derived from NInfer's sm70 FA configuration.
+    for (int nb : {64, 128, 256, 512}) {
+        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 1024, nb, true, false, 0, 0,
+                                                        GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    }
 
     for (int hsk : { 40, 64, 72, 80, 96, 128, 192, 256, 320, 512, 576 }) {
         for (int hsv : { 40, 64, 72, 80, 96, 128, 192, 256, 512 }) {
