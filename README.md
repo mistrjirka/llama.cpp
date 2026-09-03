@@ -242,6 +242,24 @@ The benchmark groups use different baselines because they isolate different chan
 
 Do not compare absolute values across benchmark groups unless the hardware, power limit, model quantization, GPU placement, and build settings match.
 
+### NInfer vs this fork: exact-token 100k cached append
+
+This is the closest cross-runtime comparison used during the NInfer investigation. Both runtimes use **one Tesla V100-SXM2-32GB only**; the RTX 3060 Ti is hidden, speculative decoding is disabled, and each measured request reuses the literal same first 100,000 token IDs before appending the same continuation tokens. The cold 100k construction/prime is excluded on both sides so the table measures the steady agent-style cached append.
+
+The llama.cpp side is current `v100-optimized` (`dfdcd8add`), Qwen3.8-27B `UD-Q5_K_XL`, q8_0 K/V, MMQ off. `checkpoint` means the opt-in `--checkpoint-recurrent-prev` path described below. NInfer uses the Qwen3.8-27B `groupwise-int` artifact, INT8-G64 KV, 1024-token prefill chunks, and CUDA Graphs. PP is prompt-processing throughput; higher is better.
+
+| 100k reused + suffix | fork, normal checkpoints | fork, `--checkpoint-recurrent-prev` | NInfer groupwise | fastest |
+|---|---:|---:|---:|---:|
+| +128 | 191.15 PP/s | 219.19 PP/s | **224.74 PP/s** | NInfer +2.53% |
+| +256 | 291.78 PP/s | **323.60 PP/s** | 311.76 PP/s | fork +3.80% |
+| +1000 | 434.28 PP/s | **450.47 PP/s** | 326.95 PP/s | fork +37.78% |
+
+The fork figures are warmed A/B/B/A means with six measured samples per condition. Every request asserted `cache_n=100000` and `prompt_n=suffix`; the one generated control token was identical across checkpoint-on/off arms. The NInfer figures are three steady repeated measurements from its retained private endpoint, likewise asserting exactly 100,000 reused tokens.
+
+This is deliberately **not presented as a quantization-equivalent kernel comparison**. The NInfer artifact reports about 15.92 GiB of weights and uses a different/lower-precision groupwise layout in several projections (for example Q4 gate/up and Q5 down), while the tested GGUF is about 18.83 GiB and uses Q5_K gate/up and Q6_K down; the KV formats also differ (INT8-G64 versus q8_0). The table therefore compares the two usable V100 artifacts on the same token workload, not identical numerical weights.
+
+No +177 or +512 NInfer row is reported: the preserved +177 raw-token harness failed its 100k-reuse assertion (`reused_prompt_tokens=0`), and the +512 sweep hit a CUDA-graph preparation failure. Those points are omitted rather than interpolated. NInfer's published short fresh-prompt `pp2048` result is also not mixed into this long-cache table.
+
 ### Qwen upstream vs fork (MTP3)
 
 This is the Qwen comparison used in the headline table. Both sides use MTP speculative decoding with `n-max=3`; the comparison is upstream llama.cpp versus the recommended fork paths, not MTP off versus on.
