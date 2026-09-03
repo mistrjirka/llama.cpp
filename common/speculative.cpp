@@ -167,6 +167,13 @@ struct common_speculative_impl {
 
     virtual bool process(const llama_batch & batch) = 0;
 
+    // Optional split-phase process path used to move draft-context catch-up off
+    // the first-token critical path. The default preserves current behavior.
+    virtual bool prepare_deferred(const llama_batch & /*batch*/) { return false; }
+    virtual void finish_deferred_capture() {}
+    virtual bool flush_deferred_before_last() { return true; }
+    virtual bool flush_deferred() { return true; }
+
     virtual void draft(common_speculative_draft_params_vec & dparams) = 0;
 
     virtual void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) = 0;
@@ -1394,6 +1401,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<std::vector<float>> verify_h;
     std::vector<int32_t> verify_h_rows;
 
+    struct deferred_process_batch {
+        std::vector<llama_token> tokens;
+        std::vector<llama_pos> positions;
+        std::vector<llama_seq_id> seq_ids;
+        ggml_backend_buffer_ptr h_buf;
+        float * h_nextn = nullptr; // pinned dense [n_tokens, n_embd] target snapshot
+        size_t h_n_floats = 0;
+    };
+    std::vector<deferred_process_batch> deferred_process_batches;
+
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
 
@@ -1515,7 +1532,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
     }
 
-    bool process(const llama_batch & batch_in) override {
+    bool process_impl(const llama_batch & batch_in, const float * saved_h_nextn) {
         if (batch_in.n_tokens <= 0) {
             return true;
         }
@@ -1584,7 +1601,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                             h_row = pending_h[seq_id].data();
                         } else {
                             GGML_ASSERT(k > 0 && batch_in.seq_id[k - 1][0] == seq_id);
-                            h_row = llama_get_embeddings_nextn_ith(ctx_tgt, k - 1);
+                            h_row = saved_h_nextn
+                                ? saved_h_nextn + (size_t) (k - 1) * n_embd
+                                : llama_get_embeddings_nextn_ith(ctx_tgt, k - 1);
                         }
                         GGML_ASSERT(h_row != nullptr);
                         std::memcpy(batch.embd + (size_t) j * n_embd, h_row, row_bytes);
@@ -1622,7 +1641,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             verify_h[seq_id].resize((size_t) n_rows * n_embd);
 
             for (int32_t i = 0; i < n_rows; ++i) {
-                const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);
+                const int32_t row = i_batch_beg[seq_id] + i;
+                const float * h = saved_h_nextn
+                    ? saved_h_nextn + (size_t) row * n_embd
+                    : llama_get_embeddings_nextn_ith(ctx_tgt, row);
                 std::memcpy(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes);
             }
 
@@ -1631,6 +1653,102 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
 
         return true;
+    }
+
+    bool process(const llama_batch & batch_in) override {
+        return process_impl(batch_in, nullptr);
+    }
+
+    bool prepare_deferred(const llama_batch & batch_in) override {
+        if (batch_in.n_tokens <= 0 || batch_in.token == nullptr || batch_in.embd != nullptr) {
+            return false;
+        }
+
+        auto * ctx_tgt = this->params.ctx_tgt;
+        const int32_t n_tokens = batch_in.n_tokens;
+        const size_t n_floats = (size_t) n_tokens * n_embd;
+        const size_t n_bytes = n_floats * sizeof(float);
+
+        deferred_process_batch saved;
+        saved.tokens.assign(batch_in.token, batch_in.token + n_tokens);
+        saved.positions.assign(batch_in.pos, batch_in.pos + n_tokens);
+        saved.seq_ids.resize(n_tokens);
+        for (int32_t k = 0; k < n_tokens; ++k) {
+            GGML_ASSERT(batch_in.n_seq_id[k] == 1);
+            saved.seq_ids[k] = batch_in.seq_id[k][0];
+        }
+
+        // Match llama_context's output-buffer policy: prefer the CUDA device's
+        // pinned host buffer type so the target stream can D2H-copy without a
+        // host synchronization. The one-V100 path has exactly one device.
+        ggml_backend_buffer_type_t buft = ggml_backend_cpu_buffer_type();
+        const llama_model * model_tgt = llama_get_model(ctx_tgt);
+        for (int i = 0; i < llama_model_n_devices(model_tgt); ++i) {
+            auto * dev = llama_model_get_device(model_tgt, i);
+            auto * host_buft = dev ? ggml_backend_dev_host_buffer_type(dev) : nullptr;
+            if (host_buft) {
+                buft = host_buft;
+                break;
+            }
+        }
+
+        saved.h_buf.reset(ggml_backend_buft_alloc_buffer(buft, n_bytes));
+        if (!saved.h_buf) {
+            return false;
+        }
+        saved.h_nextn = (float *) ggml_backend_buffer_get_base(saved.h_buf.get());
+        saved.h_n_floats = n_floats;
+        if (!saved.h_nextn) {
+            return false;
+        }
+
+        deferred_process_batches.push_back(std::move(saved));
+        auto & dst = deferred_process_batches.back();
+        llama_set_embeddings_nextn_capture(ctx_tgt, dst.h_nextn, dst.h_n_floats);
+        return true;
+    }
+
+    void finish_deferred_capture() override {
+        llama_set_embeddings_nextn_capture(this->params.ctx_tgt, nullptr, 0);
+    }
+
+    bool flush_deferred_count(size_t n_flush) {
+        n_flush = std::min(n_flush, deferred_process_batches.size());
+        for (size_t bi = 0; bi < n_flush; ++bi) {
+            auto & saved = deferred_process_batches[bi];
+            const int32_t n_tokens = (int32_t) saved.tokens.size();
+            std::vector<int32_t> n_seq_id((size_t) n_tokens, 1);
+            std::vector<llama_seq_id *> seq_ptrs((size_t) n_tokens);
+            for (int32_t k = 0; k < n_tokens; ++k) {
+                seq_ptrs[k] = &saved.seq_ids[k];
+            }
+
+            llama_batch replay = {};
+            replay.n_tokens = n_tokens;
+            replay.token    = saved.tokens.data();
+            replay.pos      = saved.positions.data();
+            replay.n_seq_id = n_seq_id.data();
+            replay.seq_id   = seq_ptrs.data();
+
+            if (!process_impl(replay, saved.h_nextn)) {
+                deferred_process_batches.clear();
+                return false;
+            }
+        }
+        deferred_process_batches.erase(
+                deferred_process_batches.begin(),
+                deferred_process_batches.begin() + (ptrdiff_t) n_flush);
+        return true;
+    }
+
+    bool flush_deferred_before_last() override {
+        return deferred_process_batches.size() <= 1
+            ? true
+            : flush_deferred_count(deferred_process_batches.size() - 1);
+    }
+
+    bool flush_deferred() override {
+        return flush_deferred_count(deferred_process_batches.size());
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
@@ -1782,6 +1900,31 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 dp.result->clear();
             }
         }
+    }
+
+    bool get_state(llama_seq_id seq_id, std::vector<uint8_t> & data) const override {
+        const llama_model * model_tgt = llama_get_model(params.ctx_tgt);
+        if ((!llama_model_is_recurrent(model_tgt) && !llama_model_is_hybrid(model_tgt)) ||
+                seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
+            return false;
+        }
+        const auto & h = pending_h[seq_id];
+        if (h.size() != (size_t) n_embd) {
+            return false;
+        }
+        data.resize((size_t) n_embd * sizeof(float));
+        std::memcpy(data.data(), h.data(), data.size());
+        return true;
+    }
+
+    void set_state(llama_seq_id seq_id, const std::vector<uint8_t> & data) override {
+        const llama_model * model_tgt = llama_get_model(params.ctx_tgt);
+        if ((!llama_model_is_recurrent(model_tgt) && !llama_model_is_hybrid(model_tgt)) ||
+                seq_id < 0 || seq_id >= (llama_seq_id) n_seq ||
+                data.size() != (size_t) n_embd * sizeof(float)) {
+            return;
+        }
+        std::memcpy(pending_h[seq_id].data(), data.data(), data.size());
     }
 
     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
@@ -2827,6 +2970,55 @@ bool common_speculative_process(common_speculative * spec, const llama_batch & b
 
     for (auto & impl : spec->impls) {
         result = result && impl->process(batch);
+    }
+
+    return result;
+}
+
+bool common_speculative_can_defer_prompt(const common_speculative * spec) {
+    return spec != nullptr && spec->impls.size() == 1 &&
+           spec->impls.front()->type == COMMON_SPECULATIVE_TYPE_DRAFT_MTP;
+}
+
+bool common_speculative_prepare_deferred(common_speculative * spec, const llama_batch & batch) {
+    if (!common_speculative_can_defer_prompt(spec)) {
+        return false;
+    }
+    return spec->impls.front()->prepare_deferred(batch);
+}
+
+void common_speculative_finish_deferred_capture(common_speculative * spec) {
+    if (spec == nullptr) {
+        return;
+    }
+    for (auto & impl : spec->impls) {
+        impl->finish_deferred_capture();
+    }
+}
+
+bool common_speculative_flush_deferred_before_last(common_speculative * spec) {
+    bool result = true;
+
+    if (spec == nullptr) {
+        return result;
+    }
+
+    for (auto & impl : spec->impls) {
+        result = result && impl->flush_deferred_before_last();
+    }
+
+    return result;
+}
+
+bool common_speculative_flush_deferred(common_speculative * spec) {
+    bool result = true;
+
+    if (spec == nullptr) {
+        return result;
+    }
+
+    for (auto & impl : spec->impls) {
+        result = result && impl->flush_deferred();
     }
 
     return result;

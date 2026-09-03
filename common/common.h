@@ -374,6 +374,8 @@ struct common_params_speculative {
     double synth_len = -1.0;
     std::vector<double> synth_rates;
 
+    bool mtp_defer_prompt = false; // server: move MTP prompt catch-up/checkpoint publication off token-1 critical path
+
     // used by Simple, MTP, Eagle3, etc. - all methods that require some kind of draft model
     common_params_speculative_draft draft;
 

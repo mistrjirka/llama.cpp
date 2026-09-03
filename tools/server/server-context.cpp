@@ -2302,7 +2302,8 @@ private:
 
     // n_tokens_cur: the number of tokens added to the batch for the current slot
     void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max,
-                           bool is_replay_boundary, llama_state_seq_flags tgt_extra_flags = 0) {
+                           bool is_replay_boundary, llama_state_seq_flags tgt_extra_flags = 0,
+                           bool target_only = false) {
         const int id_task = slot.task->id;
         const int64_t checkpoint_n_tokens = slot.prompt.n_tokens() - n_tokens_cur;
 
@@ -2328,6 +2329,10 @@ private:
             cur.is_replay_boundary = cur.is_replay_boundary || is_replay_boundary;
             cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
             cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
+            if (target_only) {
+                cur.clear_dft();
+                return;
+            }
             if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
                 cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
             }
@@ -2427,6 +2432,10 @@ private:
         cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
 
         cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
+        if (target_only) {
+            cur.clear_dft();
+            return;
+        }
         // A plain attention draft context can remove arbitrary suffixes. Do not duplicate its
         // position-linear KV cache into every recurrent checkpoint; after restoring the target
         // recurrent state, the normal slot.mem.seq_rm() path trims the draft KV to n_past.
@@ -2440,6 +2449,19 @@ private:
                 (int) slot.prompt.checkpoints.size(), params_base.n_ctx_checkpoints, cur.pos_min,
                 cur.pos_max, cur.n_tokens, cur.is_replay_boundary ? 1 : 0,
                 (float) cur.size() / 1024 / 1024);
+    }
+
+    void complete_checkpoint(server_slot & slot, int64_t checkpoint_n_tokens) {
+        auto it = std::find_if(slot.prompt.checkpoints.begin(), slot.prompt.checkpoints.end(),
+                [&](const common_prompt_checkpoint & cur) { return cur.n_tokens == checkpoint_n_tokens; });
+        GGML_ASSERT(it != slot.prompt.checkpoints.end());
+
+        if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
+            it->update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+        }
+        it->data_spec.clear();
+        common_speculative_get_state(spec.get(), slot.id, it->data_spec);
+
     }
 
     // returns false to decline the task, it is offered again after the decode is done
@@ -3725,7 +3747,21 @@ private:
                         // Protect two replay points that dominate agent traffic:
                         // branch at the current user turn, and exact return to a previous prompt.
                         const bool is_exact_prompt_end = slot.task->n_tokens() - n_tokens_start <= 4;
-                        create_checkpoint(slot, n_tokens_cur, pos_min, pos_max, is_last_user_message || is_exact_prompt_end);
+                        // In the deferred-MTP path, queue only the target N-4 recurrent snapshot
+                        // device-to-device on the target CUDA stream. The final-four target batch
+                        // follows on the same stream, so no host synchronization is needed here.
+                        // Draft/spec state is attached after token 1, once deferred MTP catch-up has
+                        // reached this exact boundary.
+                        const bool async_n4_checkpoint = params_base.speculative.mtp_defer_prompt &&
+                                common_speculative_can_defer_prompt(spec.get()) &&
+                                is_exact_prompt_end && slot.stats.n_prompt_processed > 64;
+                        if (async_n4_checkpoint) {
+                            create_checkpoint(slot, n_tokens_cur, pos_min, pos_max, true,
+                                    LLAMA_STATE_SEQ_FLAGS_ON_DEVICE | LLAMA_STATE_SEQ_FLAGS_ASYNC_DEVICE,
+                                    /* target_only = */ true);
+                        } else {
+                            create_checkpoint(slot, n_tokens_cur, pos_min, pos_max, is_last_user_message || is_exact_prompt_end);
+                        }
                     }
                 }
 
@@ -3765,8 +3801,16 @@ private:
         }
 
         bool has_output = false;
+        bool all_prompt = true;
         for (int i = off; i < off + batch_view.n_tokens; ++i) {
             has_output |= batch.tokens[i].output;
+            all_prompt = all_prompt && batch.tokens[i].is_prompt;
+        }
+
+        bool defer_mtp = params_base.speculative.mtp_defer_prompt && all_prompt &&
+                common_speculative_can_defer_prompt(spec.get());
+        if (defer_mtp) {
+            defer_mtp = common_speculative_prepare_deferred(spec.get(), batch_view);
         }
 
         // yield to the queue, so we can still handle metrics tasks while decoding
@@ -3774,6 +3818,12 @@ private:
         int ret = 0;
         queue_tasks.yield_to_queue([&]() {
             ret = llama_decode(ctx_tgt, batch_view);
+            // The async capture was already queued by llama_decode(). Disarm the
+            // one-decode sink without synchronizing; its pinned storage remains alive
+            // in the deferred MTP batch until flush_deferred().
+            if (defer_mtp) {
+                common_speculative_finish_deferred_capture(spec.get());
+            }
             if (ret == 0 && has_output) {
                 llama_synchronize(ctx_tgt);
             }
@@ -3837,14 +3887,14 @@ private:
         //       ref: https://github.com/ggml-org/llama.cpp/pull/22728#issuecomment-4400925384
         if (spec) {
             bool ok = true;
-            queue_tasks.yield_to_queue([&]() {
-                ok = common_speculative_process(spec.get(), batch_view);
-            });
+            if (!defer_mtp) {
+                queue_tasks.yield_to_queue([&]() {
+                    ok = common_speculative_process(spec.get(), batch_view);
+                });
+            }
 
             if (!ok) {
                 SRV_ERR("%s", "failed to process speculative batch\n");
-
-                // TODO: handle error
                 throw std::runtime_error("failed to process speculative batch");
             }
         }
@@ -3991,7 +4041,37 @@ private:
                 populate_token_probs(slot, result, slot.task->params.post_sampling_probs, params_base.special, tok_idx);
             }
 
-            if (!process_token(result, slot)) {
+            const bool keep_generating = process_token(result, slot);
+
+
+            // The first target token has now been placed on the response queue. MTP
+            // catch-up only feeds subsequent speculative drafts. For agent suffixes, first
+            // advance the draft state to N-4, complete the target snapshot queued before the
+            // final-four target batch, then replay the final four MTP rows.
+            if (params_base.speculative.mtp_defer_prompt && common_speculative_can_defer_prompt(spec.get()) && slot.stats.n_gen == 1 && slot.can_speculate()) {
+                bool ok = true;
+                const bool complete_n4_checkpoint =
+                        params_base.n_ctx_checkpoints > 0 && slot.stats.n_prompt_processed > 64;
+
+                if (complete_n4_checkpoint) {
+                    queue_tasks.yield_to_queue([&]() {
+                        ok = common_speculative_flush_deferred_before_last(spec.get());
+                    });
+                    if (!ok) {
+                        throw std::runtime_error("failed to flush deferred speculative prompt prefix");
+                    }
+                    complete_checkpoint(slot, slot.prompt.n_tokens() - 4);
+                }
+
+                queue_tasks.yield_to_queue([&]() {
+                    ok = common_speculative_flush_deferred(spec.get());
+                });
+                if (!ok) {
+                    throw std::runtime_error("failed to flush deferred speculative prompt state");
+                }
+            }
+
+            if (!keep_generating) {
                 // release slot because of stop condition
                 slot.print_timings();
                 send_final_response(slot);
