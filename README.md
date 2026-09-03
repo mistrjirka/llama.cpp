@@ -27,6 +27,33 @@ The Qwen row is a direct upstream-to-fork comparison. MTP is enabled on both sid
 
 See [Benchmarks](#benchmarks) for the exact baselines and component-level measurements.
 
+### Agent prompt checkpointing on one V100
+
+For **non-speculative** Qwen3.8 agent serving, `--checkpoint-recurrent-prev` removes a fixed checkpoint-tail cost that is disproportionately expensive when a large cached context receives a small new tool/user suffix. It keeps one recurrent rollback plane during multi-token prompt processing and stores the immediately preceding recurrent state as a device-backed checkpoint. Suffixes of 64 tokens or fewer stay on the existing checkpoint path because that split is faster at the 64-token boundary.
+
+Single Tesla V100-SXM2-32GB, 100,000-token restored state, q8_0 K/V, MTP off:
+
+| appended prompt | normal checkpoints | `--checkpoint-recurrent-prev` | change |
+|---:|---:|---:|---:|
+| 64 | 157.29 PP/s | 156.70 PP/s | -0.38% (neutral) |
+| 128 | 185.76 PP/s | **211.92 PP/s** | **+14.08%** |
+| **177** | 226.57 PP/s | **252.62 PP/s** | **+11.50%** |
+| 256 | 292.83 PP/s | **323.97 PP/s** | **+10.63%** |
+| 512 | 341.38 PP/s | **360.37 PP/s** | **+5.56%** |
+| 1,000 | 435.04 PP/s | **449.53 PP/s** | **+3.33%** |
+
+The 177-token row is included because it is representative of the median appended-prompt size in the agent trace used during this tuning work. In a five-branch replay test, the optimized path restored 100,127 tokens, recomputed one prompt token, and produced the same 16 generated tokens as full recomputation for every branch. Separate 64-TG and 512-TG A/B/B/A runs produced identical generated-token SHAs and no TG regression.
+
+Enable it with:
+
+```bash
+--ctx-checkpoints 32 \
+--checkpoint-min-step 8192 \
+--checkpoint-recurrent-prev
+```
+
+This option is currently **not used when speculative decoding is active**. Keep the MTP quick-start below unchanged; extending the checkpoint shortcut to the MTP path is separate work.
+
 ## Quick start: Qwen3.8 on one V100
 
 ### Build
@@ -483,6 +510,10 @@ The branch also contains guarded paths for other Volta FA shapes:
 - `192x128`: layout-aware FA batch tuning for the `4x16` GQA16 layout while keeping `8x8` unchanged.
 
 These are independent of the core Qwen3.8 `256x256` optimization.
+
+### Recurrent previous-state checkpoints
+
+`--checkpoint-recurrent-prev` is an opt-in server optimization for hybrid/recurrent prompt replay. For prompt suffixes above 64 tokens, it avoids forcing a separate final checkpoint tail. Instead, the server saves the immediately preceding recurrent snapshot on-device and can later restore that state and replay one token at a branch point. Rollback-plane work is disabled during single-token decode, so the optimization does not add TG work. Device-backed checkpoints are excluded from the persistent RAM prompt cache and from child-slot clones; only portable host-backed checkpoints cross those boundaries.
 
 ### Quantized-weight reuse during prefill
 
