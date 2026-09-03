@@ -3,30 +3,28 @@
 `v100-optimized` is a [`llama.cpp`](https://github.com/mistrjirka/llama.cpp) branch tuned for long-context inference on NVIDIA Volta, especially the Tesla V100 (sm70). The main workload is Qwen3.8-27B with a large reusable coding/agent context. The branch also includes Volta tuning for Ornith-1.5-35B-A3B, MTP batching, and long-session prompt-cache changes.
 
 > [!WARNING]
-> `GGML_CUDA_FORCE_MMQ=ON` is for routed quantized MoE workloads such as Ornith. Keep it off for dense Qwen3.8. In the matched 100k test below, forcing MMQ on Qwen reduced PP from 452.8 to 323.2 tok/s (-28.6%).
+> `GGML_CUDA_FORCE_MMQ=ON` is for routed quantized MoE workloads such as Ornith. Keep it off for dense Qwen3.8. In the matched 100k test below, forcing MMQ on Qwen reduced prompt-processing speed from 452.8 to 323.2 tok/s (-28.6%).
 
 ## Recommended configurations
 
-| workload | build / settings | notes |
+| model | recommended setup | why |
 |---|---|---|
-| **Qwen3.8-27B** | normal CUDA build, **MMQ off**, MTP `n-max=3`; enable the four decode environment variables in the quick start | Tested dense-model setup. The decode paths target Qwen MTP verification at `T=4`. |
-| **Ornith-1.5-35B-A3B** | build with `GGML_CUDA_FORCE_MMQ=ON` | FORCE_MMQ is the main V100 optimization for this routed MoE. The T=4 Q5/Q6 weight paths are optional; they were neutral to slightly positive in the tested Ornith cases. |
+| **Qwen3.8-27B** | normal CUDA build, **MMQ off**; use the Qwen quick-start settings below | Best tested setup for long-context prompt processing and token generation on this fork. |
+| **Ornith-1.5-35B-A3B** | build with `GGML_CUDA_FORCE_MMQ=ON` | FORCE_MMQ provides most of the V100 speedup for this routed MoE model. |
 
 If you run both model classes, keep separate normal and FORCE_MMQ binaries.
 
 ## Key long-context results
 
-`PP` is prompt-processing/prefill throughput. `TG` is token-generation/decode throughput.
-
-| benchmark | PP | TG | result |
+| workload | prompt processing (tok/s) | token generation (tok/s) | improvement |
 |---|---:|---:|---:|
-| **Qwen3.8 MTP3 decode paths**, 100k + 1k + 256, 1x V100 | 410.750 -> 413.418 | 27.591 -> 36.471 | **+32.19% TG** |
-| **Qwen3.8 full Volta prefill stack**, 100k + 1k, V100 + 3060 Ti | 329.306 -> 478.146 | +0.86% to +1.38% [1] | **+45.20% PP** |
-| **Ornith-1.5 + FORCE_MMQ**, 100k + 1k + 64 | 544.1 -> 882.6 | 67.26 -> 70.80 | **+62.2% PP, +5.26% TG** |
+| **Qwen3.8 token generation**, optimizations off -> on, 100k context, 1x V100 | 410.750 -> 413.418 | **27.591 -> 36.471** | **+32.19% generation** |
+| **Qwen3.8 prompt processing**, upstream -> optimized, 100k context, V100 + 3060 Ti | **329.306 -> 478.146** | +0.86% to +1.38% [1] | **+45.20% prompt processing** |
+| **Ornith-1.5**, vanilla -> optimized + FORCE_MMQ, 100k context, V100 + 3060 Ti | **544.1 -> 882.6** | **67.26 -> 70.80** | **+62.2% prompt processing, +5.26% generation** |
 
-Values are baseline -> optimized in tokens/s. These rows measure different parts of the fork; see [Benchmarks](#benchmarks) for the exact baselines and test conditions.
+Values are baseline -> optimized. The three rows use different matched baselines because they measure different improvements; [Benchmarks](#benchmarks) gives the exact setup for each one.
 
-[1] The matching 64-token run is too short for a stable absolute TG comparison. Two 256-token ABBA runs measured +1.38% and +0.86% TG with exact output.
+[1] The corresponding 64-token Qwen run was too short for a stable absolute generation-speed comparison. Two 256-token ABBA runs measured +1.38% and +0.86% with exact output.
 
 ## Quick start: Qwen3.8 on one V100
 
@@ -77,7 +75,7 @@ If the V100 is the only visible NVIDIA GPU:
 ```bash
 export CUDA_VISIBLE_DEVICES=0
 
-# Validated Qwen3.8-27B V100 MTP3 decode stack.
+# Qwen3.8-27B V100 token-generation optimizations.
 export GGML_CUDA_VOLTA_Q8_FATTN_TC=1
 export GGML_CUDA_VOLTA_Q5_X4=1
 export GGML_CUDA_VOLTA_Q6_W4R4=1
@@ -202,16 +200,16 @@ The benchmark groups use different baselines because they isolate different chan
 
 | benchmark | baseline | optimized side |
 |---|---|---|
-| Qwen MTP3 decode paths | same `v100-optimized` build, four decode paths off, MMQ off | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 |
-| Qwen full Volta stack | upstream `50f068fff` | same revision + final Volta CUDA candidates |
+| Qwen token generation | same `v100-optimized` build, token-generation paths off, MMQ off | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 |
+| Qwen prompt processing | upstream `50f068fff` | same revision + final Volta CUDA candidates |
 | Qwen / Ornith isolated FA | matching upstream build | isolated sm70 256x256 FA config (PR #27997) |
 | Ornith + FORCE_MMQ | vanilla, MMQ off | full fork + `GGML_CUDA_FORCE_MMQ=ON` |
 
 Do not compare absolute values across benchmark groups unless the hardware, power limit, model quantization, GPU placement, and build settings match.
 
-### Qwen MTP3 decode paths
+### Qwen token-generation optimizations
 
-Four opt-in sm70 paths target Qwen3.8 MTP verification at `T=4`:
+Four opt-in sm70 paths accelerate Qwen3.8 token generation when MTP uses `n-max=3` (target-verification width `T=4`):
 
 - q8_0 KV tiles are widened to FP16 in shared memory and consumed by Volta tensor cores for the validated target-verification attention geometry;
 - the MTP proposal head can evaluate a validated 131,072-row shortlist instead of all 248,320 vocabulary rows;
@@ -251,7 +249,7 @@ Use comparisons within this table only; its branch snapshot, build, and placemen
 
 For a machine that runs both models, build two binaries: a normal build for dense Qwen3.8 and a `GGML_CUDA_FORCE_MMQ=ON` build for routed MoE such as Ornith.
 
-### Full Volta stack benchmark
+### Qwen prompt-processing benchmark
 
 At upstream revision `50f068fff`, the final CUDA candidate stack was compared with an unmodified build of the same revision.
 
