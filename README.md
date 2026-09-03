@@ -9,22 +9,23 @@
 
 | model | recommended setup | why |
 |---|---|---|
-| **Qwen3.8-27B** | normal CUDA build, **MMQ off**; use the Qwen quick-start settings below | Best tested setup for long-context prompt processing and token generation on this fork. |
+| **Qwen3.8-27B** | normal CUDA build, **MMQ off**, **MTP on with `n-max=3`**; use the Qwen quick-start settings below | Recommended long-context Qwen setup used by this fork. |
 | **Ornith-1.5-35B-A3B** | build with `GGML_CUDA_FORCE_MMQ=ON` | FORCE_MMQ provides most of the V100 speedup for this routed MoE model. |
 
 If you run both model classes, keep separate normal and FORCE_MMQ binaries.
 
 ## Key long-context results
 
-| workload | prompt processing (tok/s) | token generation (tok/s) | improvement |
-|---|---:|---:|---:|
-| **Qwen3.8 token generation**, optimizations off -> on, 100k context, 1x V100 | 410.750 -> 413.418 | **27.591 -> 36.471** | **+32.19% generation** |
-| **Qwen3.8 prompt processing**, upstream -> optimized, 100k context, V100 + 3060 Ti | **329.306 -> 478.146** | +0.86% to +1.38% [1] | **+45.20% prompt processing** |
-| **Ornith-1.5**, vanilla -> optimized + FORCE_MMQ, 100k context, V100 + 3060 Ti | **544.1 -> 882.6** | **67.26 -> 70.80** | **+62.2% prompt processing, +5.26% generation** |
+`PP` is prompt-processing/prefill throughput. `TG` is token-generation/decode throughput. All values are tokens/s.
 
-Values are baseline -> optimized. The three rows use different matched baselines because they measure different improvements; [Benchmarks](#benchmarks) gives the exact setup for each one.
+| workload | speculative decoding | baseline | `v100-optimized` | speedup |
+|---|---|---:|---:|---:|
+| **Qwen3.8-27B**, 100k + 1k prompt + 256 generated, V100 + 3060 Ti | **MTP on, `n-max=3` on both sides** | upstream: 294.11 PP / 26.64 TG | **424.07 PP / 33.55 TG** | **+44.19% PP / +25.93% TG** |
+| **Ornith-1.5 AD-Q6_K**, 100k + 1k + 64 generated, V100 + 3060 Ti | fixed MTP3 on both sides | vanilla: 544.1 PP / 67.26 TG | **882.6 PP / 70.80 TG** with FORCE_MMQ | **+62.2% PP / +5.26% TG** |
 
-[1] The corresponding 64-token Qwen run was too short for a stable absolute generation-speed comparison. Two 256-token ABBA runs measured +1.38% and +0.86% with exact output.
+The Qwen row is a direct upstream-to-fork comparison. MTP is enabled on both sides, so the TG gain is **not** an MTP-on versus MTP-off comparison. Both Qwen arms use the same model, q8_0 target KV, FP16 draft KV, 262k context, `64,2` layer split, and `n-max=3`. Generated tokens were identical in the matched A/B/B/A run.
+
+See [Benchmarks](#benchmarks) for the exact baselines and component-level measurements.
 
 ## Quick start: Qwen3.8 on one V100
 
@@ -149,10 +150,17 @@ cmake -S . -B build \
 cmake --build build -j --target llama-server llama-cli
 ```
 
-Put the V100 first in CUDA's visible-device order, then use the tested Qwen placement:
+The `64,2` split expects the V100 to be CUDA0 and the RTX 3060 Ti to be CUDA1. Check CUDA's device order first:
 
 ```bash
-export CUDA_VISIBLE_DEVICES=1,0
+./build/bin/llama-server --list-devices
+```
+
+If it already reports the V100 as `CUDA0`, leave `CUDA_VISIBLE_DEVICES` unset. Otherwise reorder the CUDA devices so the V100 becomes CUDA0 (for example, use `CUDA_VISIBLE_DEVICES=1,0` only when the V100 is currently CUDA1). Do not copy `nvidia-smi` indices blindly; CUDA ordinals can differ.
+
+Then enable the tested Qwen paths:
+
+```bash
 export GGML_CUDA_VOLTA_Q8_FATTN_TC=1
 export GGML_CUDA_VOLTA_Q5_X4=1
 export GGML_CUDA_VOLTA_Q6_W4R4=1
@@ -200,14 +208,36 @@ The benchmark groups use different baselines because they isolate different chan
 
 | benchmark | baseline | optimized side |
 |---|---|---|
-| Qwen token generation | same `v100-optimized` build, token-generation paths off, MMQ off | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 |
-| Qwen prompt processing | upstream `50f068fff` | same revision + final Volta CUDA candidates |
+| Qwen upstream vs fork | upstream parent `6d1479c14`, MTP `n-max=3` | `v100-optimized`, same MTP3 setup + recommended Qwen generation paths |
+| isolated Qwen generation paths | same fork, paths off, MTP `n-max=3` | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 |
 | Qwen / Ornith isolated FA | matching upstream build | isolated sm70 256x256 FA config (PR #27997) |
 | Ornith + FORCE_MMQ | vanilla, MMQ off | full fork + `GGML_CUDA_FORCE_MMQ=ON` |
 
 Do not compare absolute values across benchmark groups unless the hardware, power limit, model quantization, GPU placement, and build settings match.
 
-### Qwen token-generation optimizations
+### Qwen upstream vs fork (MTP3)
+
+This is the Qwen comparison used in the headline table. Both sides use MTP speculative decoding with `n-max=3`; the comparison is upstream llama.cpp versus the recommended fork paths, not MTP off versus on.
+
+```text
+Qwen3.8-27B UD-Q5_K_XL
+100,000-token restored state + 1,000 new prompt tokens + 256 generated tokens
+262,144 context, q8_0 target KV, FP16 draft KV
+V100 + RTX 3060 Ti, layer split 64,2
+MTP n-max=3 on both sides
+```
+
+| build | PP tok/s | TG tok/s | MTP accepted / drafted |
+|---|---:|---:|---:|
+| upstream `6d1479c14` | 294.11 | 26.64 | 167 / 261 |
+| `v100-optimized` | **424.07** | **33.55** | 170 / 252 |
+| speedup | **+44.19%** | **+25.93%** | - |
+
+The figures are means from a warmed A/B/B/A run. Each measured arm followed a 256-token warm-up so first-use CUDA JIT/capture did not enter the result. All four measured arms produced identical generated tokens and content.
+
+### Isolated Qwen token-generation paths
+
+This section isolates the four newer generation paths **within the fork**. It is useful for attributing the TG gain, but it is not the upstream-versus-fork number shown above.
 
 Four opt-in sm70 paths accelerate Qwen3.8 token generation when MTP uses `n-max=3` (target-verification width `T=4`):
 
@@ -248,38 +278,6 @@ Production-style comparison with `100k cached + 1k new + 64 generated` and the f
 Use comparisons within this table only; its branch snapshot, build, and placement differ from the other benchmark groups. On Ornith, the normal fork is 18.4% faster than vanilla in PP. FORCE_MMQ adds another 37.0% over the normal fork, for 62.2% more PP than the vanilla no-MMQ baseline. On Qwen3.8, FORCE_MMQ reduces PP by 28.6%.
 
 For a machine that runs both models, build two binaries: a normal build for dense Qwen3.8 and a `GGML_CUDA_FORCE_MMQ=ON` build for routed MoE such as Ornith.
-
-### Qwen prompt-processing benchmark
-
-At upstream revision `50f068fff`, the final CUDA candidate stack was compared with an unmodified build of the same revision.
-
-Primary Qwen workload:
-
-```text
-Qwen3.8-27B UD-Q5_K_XL
-Tesla V100 32 GB + RTX 3060 Ti 8 GB
-100,000-token restored state + 1,000 new prompt tokens + 64 generated tokens
-262,144 context, parallel 1
-q8_0 target KV
-MTP n-max 2
-all model layers on GPU, layer split 64,2
-```
-
-| build | prompt processing | change | result |
-|---|---:|---:|---|
-| upstream | 329.306 tok/s | n/a | reference |
-| Volta CUDA stack | **478.146 tok/s** | **+45.20%** | exact output, MTP 37/52 every run |
-
-Two independent runs with 256 generated tokens made the decode comparison less noisy:
-
-| run | PP change | TG change | result |
-|---|---:|---:|---|
-| A | **+44.70%** | +1.38% | exact output, MTP 153/202 |
-| B | **+40.01%** | +0.86% | exact output, MTP 153/202 |
-
-This benchmark measures the prefill-oriented CUDA stack before the MTP3 decode paths were added. TG changed by less than 1.4% in the two 256-token runs.
-
-The stack contains the FlashAttention barrier fix, Volta 256x256 configuration, adaptive 2-CTA specialization, and Volta scalar GatedDeltaNet specialization.
 
 ### Isolated 256x256 FlashAttention benchmark
 
