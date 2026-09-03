@@ -21,7 +21,7 @@ If you run both model classes, keep separate normal and FORCE_MMQ binaries.
 | workload | speculative decoding | baseline | `v100-optimized` | speedup |
 |---|---|---:|---:|---:|
 | **Qwen3.8-27B**, 100k + 1k prompt + 256 generated, V100 + 3060 Ti | **MTP on, `n-max=3` on both sides** | upstream: 294.11 PP / 26.64 TG | **424.07 PP / 33.55 TG** | **+44.19% PP / +25.93% TG** |
-| **Ornith-1.5 AD-Q6_K**, 100k + 1k + 64 generated, V100 + 3060 Ti | fixed MTP3 on both sides | vanilla: 544.1 PP / 67.26 TG | **882.6 PP / 70.80 TG** with FORCE_MMQ | **+62.2% PP / +5.26% TG** |
+| **Ornith-1.5 AD-Q6_K**, 100k + 1k + 64 generated, V100 + 3060 Ti | **MTP3 and FORCE_MMQ on both sides** | upstream: 696.94 PP / 69.01 TG | **887.80 PP / 69.08 TG** | **+27.39% PP / +0.10% TG** |
 
 The Qwen row is a direct upstream-to-fork comparison. MTP is enabled on both sides, so the TG gain is **not** an MTP-on versus MTP-off comparison. Both Qwen arms use the same model, q8_0 target KV, FP16 draft KV, 262k context, `64,2` layer split, and `n-max=3`. Generated tokens were identical in the matched A/B/B/A run.
 
@@ -211,7 +211,7 @@ The benchmark groups use different baselines because they isolate different chan
 | Qwen upstream vs fork | upstream parent `6d1479c14`, MTP `n-max=3` | `v100-optimized`, same MTP3 setup + recommended Qwen generation paths |
 | isolated Qwen generation paths | same fork, paths off, MTP `n-max=3` | q8 W4 attention + 131k MTP shortlist + Q5x4 + Q6 w4r4 |
 | Qwen / Ornith isolated FA | matching upstream build | isolated sm70 256x256 FA config (PR #27997) |
-| Ornith + FORCE_MMQ | vanilla, MMQ off | full fork + `GGML_CUDA_FORCE_MMQ=ON` |
+| Ornith upstream vs fork | upstream parent `6d1479c14`, `GGML_CUDA_FORCE_MMQ=ON`, MTP `n-max=3` | `v100-optimized`, same FORCE_MMQ + MTP3 setup |
 
 Do not compare absolute values across benchmark groups unless the hardware, power limit, model quantization, GPU placement, and build settings match.
 
@@ -268,14 +268,21 @@ On the tested Ornith configurations these paths are neutral to slightly positive
 
 ### MMQ at 100k
 
-Production-style comparison with `100k cached + 1k new + 64 generated` and the fixed MTP head:
+For Ornith, the upstream-to-fork comparison must use FORCE_MMQ on both sides. Otherwise most of the apparent gain comes from changing the build mode rather than from this fork.
 
-| model | vanilla | optimized fork | optimized fork + FORCE_MMQ |
+Matched warmed A/B/B/A, `100k cached + 1k new + 64 generated`, AD-Q6_K target on V100, fixed MTP3 draft on RTX 3060 Ti, q8_0 target/draft KV, 131,072-token allocation:
+
+| build | PP tok/s | TG tok/s | MTP accepted / drafted |
 |---|---:|---:|---:|
-| Qwen3.8-27B | - | 452.8 PP / 26.66 TG | 323.2 PP / 26.54 TG |
-| Ornith-1.5 AD-Q6_K + fixed MTP3 | 544.1 PP / 67.26 TG | 644.2 PP / 68.99 TG | 882.6 PP / 70.80 TG |
+| upstream `6d1479c14` + FORCE_MMQ | 696.94 | 69.01 | 39 / 70 |
+| `v100-optimized` + FORCE_MMQ | **887.80** | **69.08** | 39 / 70 |
+| speedup | **+27.39%** | +0.10% | - |
 
-Use comparisons within this table only; its branch snapshot, build, and placement differ from the other benchmark groups. On Ornith, the normal fork is 18.4% faster than vanilla in PP. FORCE_MMQ adds another 37.0% over the normal fork, for 62.2% more PP than the vanilla no-MMQ baseline. On Qwen3.8, FORCE_MMQ reduces PP by 28.6%.
+Both measured arms were compiled with `GGML_CUDA_FORCE_MMQ=ON`. All four generated-token SHAs and response content were identical. This is the fair Ornith branch comparison used in the headline table.
+
+A second warmed A/B/B/A with 512 generated tokens confirmed the same PP result: 689.86 -> 881.44 PP tok/s (+27.77%), while TG stayed flat at 72.49 -> 72.58 tok/s (+0.13%). MTP acceptance was 327 / 551 in every arm and all generated-token SHAs matched.
+
+Qwen is different. In an earlier matched within-fork 100k test, forcing MMQ reduced PP from 452.8 to 323.2 tok/s (-28.6%) while TG stayed effectively flat (26.66 vs 26.54 tok/s).
 
 For a machine that runs both models, build two binaries: a normal build for dense Qwen3.8 and a `GGML_CUDA_FORCE_MMQ=ON` build for routed MoE such as Ornith.
 
