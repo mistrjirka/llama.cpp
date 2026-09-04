@@ -81,6 +81,26 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols2(ggml_backend_cuda_con
     GGML_ASSERT(Q->ne[2] % K->ne[2] == 0);
     const int gqa_ratio = Q->ne[2] / K->ne[2];
 
+    // Qwen3.8-style long-context GQA shards on Turing can end up with two local KV heads
+    // after tensor-parallel head-granularity rounding. For D=256, the generic GQA=6
+    // choice (ncols2=8) wastes work on two nonexistent heads; ncols2=2 is consistently
+    // faster for cached-prompt appends while keeping decode on the generic path.
+    if constexpr (DKQ == 256 && DV == 256) {
+        const bool turing_gqa6_two_head_long_prompt =
+            cc == GGML_CUDA_CC_TURING &&
+            use_gqa_opt &&
+            gqa_ratio == 6 &&
+            K->ne[2] == 2 &&
+            K->type == GGML_TYPE_F16 && V->type == GGML_TYPE_F16 &&
+            K->ne[1] >= 65536 &&
+            Q->ne[1] >= 128 && Q->ne[1] < 1024 &&
+            Q->ne[3] == 1 && K->ne[3] == 1 && V->ne[3] == 1;
+        if (turing_gqa6_two_head_long_prompt) {
+            ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1<DKQ, DV, 2>(ctx, dst);
+            return;
+        }
+    }
+
     // On Volta the GQA optimizations aren't as impactful vs. minimizing wasted compute:
     if (cc == GGML_CUDA_CC_VOLTA) {
         if (use_gqa_opt && gqa_ratio % 8 == 0) {

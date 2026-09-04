@@ -2140,19 +2140,34 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
     if constexpr (DKQ == 256 && DV == 256 && ncols1 == 32 && ncols2 == 2) {
         const ggml_tensor * Q = KQV->src[0];
         const ggml_tensor * K = KQV->src[1];
+        const ggml_tensor * V = KQV->src[2];
         bool use_volta_2cta = cc == GGML_CUDA_CC_VOLTA && !Q_in_reg && nbatch_fa == 32 &&
             nbatch_K2 == 128 && nbatch_V2 == 64 && nbatch_combine == 128 && Q->ne[1] < 1024 && Q->ne[3] == 1;
         if (use_volta_2cta) {
-            const int nsm = ggml_cuda_info().devices[id].nsm;
-            const int ntiles_x = (Q->ne[1] + ncols1 - 1) / ncols1;
             const int gqa_ratio = Q->ne[2] / K->ne[2];
-            const int ntiles_z_gqa = (gqa_ratio + ncols2 - 1) / ncols2;
-            const int ntiles_dst = ntiles_x * ntiles_z_gqa * K->ne[2] * Q->ne[3];
-            const auto whole_tile_efficiency = [ntiles_dst](const int max_blocks) {
-                const int nwaves = (ntiles_dst + max_blocks - 1) / max_blocks;
-                return 100 * ntiles_dst / (max_blocks * nwaves);
-            };
-            use_volta_2cta = whole_tile_efficiency(nsm) >= 75 && whole_tile_efficiency(2*nsm) >= 75;
+            const bool small_tp_long_prompt =
+                gqa_ratio == 6 &&
+                K->ne[2] >= 1 && K->ne[2] <= 2 &&
+                K->type == GGML_TYPE_F16 && V->type == GGML_TYPE_F16 &&
+                K->ne[1] >= 65536 &&
+                Q->ne[1] >= 128 &&
+                K->ne[3] == 1 && V->ne[3] == 1;
+
+            // The generic whole-tile efficiency proxy is too conservative for these
+            // tensor-parallel shards: the compact specialization is substantially faster
+            // across measured 128..1000-token cached appends despite lower nominal wave
+            // occupancy. Keep the original gate for all other shapes.
+            if (!small_tp_long_prompt) {
+                const int nsm = ggml_cuda_info().devices[id].nsm;
+                const int ntiles_x = (Q->ne[1] + ncols1 - 1) / ncols1;
+                const int ntiles_z_gqa = (gqa_ratio + ncols2 - 1) / ncols2;
+                const int ntiles_dst = ntiles_x * ntiles_z_gqa * K->ne[2] * Q->ne[3];
+                const auto whole_tile_efficiency = [ntiles_dst](const int max_blocks) {
+                    const int nwaves = (ntiles_dst + max_blocks - 1) / max_blocks;
+                    return 100 * ntiles_dst / (max_blocks * nwaves);
+                };
+                use_volta_2cta = whole_tile_efficiency(nsm) >= 75 && whole_tile_efficiency(2*nsm) >= 75;
+            }
         }
 
         if (use_volta_2cta) {
