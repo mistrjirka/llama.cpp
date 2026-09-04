@@ -782,6 +782,50 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
     ggml_backend_meta_split_state split_state;
     memset(&split_state, 0, sizeof(split_state));
     tensor_config tc = get_tensor_config();
+
+    // Qwen3.8-27B uses four KV heads on regular-attention layers. With two tensor-parallel
+    // devices, per-layer rotation combined with an uneven split can alternate between 1/3 and
+    // 2/2 KV-head shards. Prefer the rotation that puts the larger split weight first so the
+    // head-granularity rounding stays 2/2; recurrent and non-attention tensors keep the normal
+    // rotation used for memory balancing.
+    const bool qwen35_gqa6_regular_attention =
+        ud->n_devices == 2 &&
+        ud->model->arch == LLM_ARCH_QWEN35 &&
+        !hparams.is_recr(tc.il) &&
+        hparams.n_head(tc.il) == 24 &&
+        hparams.n_head_kv(tc.il) == 4 &&
+        hparams.n_gqa(tc.il) == 6 &&
+        hparams.n_embd_head_k(tc.il) == 256 &&
+        hparams.n_embd_head_v(tc.il) == 256;
+
+    const bool regular_attention_tensor =
+        std::regex_match(tensor_name, pattern_q_weight) ||
+        std::regex_match(tensor_name, pattern_kv_weight) ||
+        std::regex_match(tensor_name, pattern_q_bias) ||
+        std::regex_match(tensor_name, pattern_kv_bias) ||
+        std::regex_match(tensor_name, pattern_qkv_weight) ||
+        std::regex_match(tensor_name, pattern_qkv_bias) ||
+        std::regex_match(tensor_name, pattern_qk_norm) ||
+        std::regex_match(tensor_name, pattern_kv_cache) ||
+        std::regex_match(tensor_name, pattern_attn_sinks) ||
+        std::regex_match(tensor_name, pattern_attn_out_weight) ||
+        std::regex_match(tensor_name, pattern_attn_gate_weight);
+
+    if (qwen35_gqa6_regular_attention && regular_attention_tensor) {
+        const float * tensor_split = ud->model->tensor_split();
+        if (tensor_split != nullptr && tensor_split[0] > 0.0f && tensor_split[1] > 0.0f && tensor_split[0] != tensor_split[1]) {
+            const float split_sum = tensor_split[0] + tensor_split[1];
+            const float larger_share = std::max(tensor_split[0], tensor_split[1]) / split_sum;
+
+            // For four one-head-granularity KV groups, a first-device share in [0.5, 0.75)
+            // rounds to exactly two heads. More extreme splits intentionally retain the normal
+            // per-layer rotation instead of silently moving a large amount of attention state.
+            if (larger_share < 0.75f) {
+                tc.rotation = tensor_split[1] > tensor_split[0] ? 1 : 0;
+            }
+        }
+    }
+
     split_state.axis = tc.axis;
     if (split_state.axis >= 0 && split_state.axis < GGML_MAX_DIMS) {
         const int64_t blck_size = ggml_blck_size(tc.tensor_axis_0->type);
