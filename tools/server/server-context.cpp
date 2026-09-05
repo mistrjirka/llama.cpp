@@ -3389,6 +3389,14 @@ private:
                             // the largest pos_min required for a checkpoint to be useful
                             const auto pos_min_thold = std::max(0, pos_next - n_swa - (has_new_tokens ? 0 : 1));
 
+                            // If the new request strictly extends the entire cached prompt, no
+                            // rollback is required: the loaded live hybrid/recurrent state is
+                            // already exactly at n_past and the new tokens can be appended.
+                            // Requiring a replay checkpoint here throws away a valid slot-save
+                            // restore simply because SWA/recurrent pos_min is advanced. Keep the
+                            // existing checkpoint path for every actual rewind/mismatch case.
+                            const bool append_only_cache_hit = has_new_tokens && n_past == slot.prompt.n_tokens();
+
                             if (n_past > 0 && n_past <= slot.prompt.n_tokens()) {
                                 const auto pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), slot.id);
                                 if (pos_min == -1) {
@@ -3439,7 +3447,7 @@ private:
                                     SLT_WRN(slot, "%s\n", st1.str().c_str());
                                 }
 
-                                if (pos_min >= pos_min_thold) {
+                                if (!append_only_cache_hit && pos_min >= pos_min_thold) {
                                     // search for a context checkpoint
                                     const auto it = std::find_if(
                                         slot.prompt.checkpoints.rbegin(),
