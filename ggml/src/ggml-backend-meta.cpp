@@ -1172,6 +1172,14 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(co
     return ggml_backend_meta_get_split_state(buf_ctx->get_simple_tensor_container(tensor), tensor, assume_sync);
 }
 
+bool ggml_backend_meta_tensor_is_mirrored(const ggml_tensor * tensor) {
+    if (tensor->buffer == nullptr || !ggml_backend_buffer_is_meta(tensor->buffer)) {
+        return false;
+    }
+    const auto state = ggml_backend_meta_get_split_state(tensor, false);
+    return state.axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && state.n_segments == 1 && state.nr[0] == 1;
+}
+
 static void * ggml_backend_meta_buffer_get_base(ggml_backend_buffer_t buffer) {
     GGML_UNUSED(buffer);
     return (void *) 0x1000000000000000; // FIXME

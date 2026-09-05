@@ -901,14 +901,24 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
                 }
             }
         } else {
+            bool rescale = true;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 750
+            if constexpr (DKQ == 256 && DV == 256 && ncols1 == 16 && ncols2 == 2) {
+                rescale = __any_sync(0xffffffff,
+                    __half2float(__float2half(KQ_max_scale[0])) != 1.0f ||
+                    __half2float(__float2half(KQ_max_scale[1])) != 1.0f);
+            }
+#endif
+            if (rescale) {
 #pragma unroll
-            for (int col = 0; col < cols_per_thread; ++col) {
-                const half2 KQ_max_scale_h2 = make_half2(KQ_max_scale[col], KQ_max_scale[col]);
+                for (int col = 0; col < cols_per_thread; ++col) {
+                    const half2 KQ_max_scale_h2 = make_half2(KQ_max_scale[col], KQ_max_scale[col]);
 #pragma unroll
-                for (int i = 0; i < (DV/2)/T_C_VKQ::J; ++i) {
+                    for (int i = 0; i < (DV/2)/T_C_VKQ::J; ++i) {
 #pragma unroll
-                    for (int l0 = 0; l0 < T_C_VKQ::ne; l0 += 2) {
-                        VKQ_C[i].x[l0 + col] *= KQ_max_scale_h2;
+                        for (int l0 = 0; l0 < T_C_VKQ::ne; l0 += 2) {
+                            VKQ_C[i].x[l0 + col] *= KQ_max_scale_h2;
+                        }
                     }
                 }
             }

@@ -240,6 +240,8 @@ extern "C" {
         void * context;
     };
 
+    bool ggml_backend_meta_tensor_is_mirrored(const struct ggml_tensor * tensor);
+
     // Add backend dynamic loading support to the backend
 
     // Initialize the backend

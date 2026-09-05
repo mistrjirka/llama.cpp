@@ -20,10 +20,11 @@ If you run both model classes, keep separate normal and FORCE_MMQ binaries.
 
 | workload | speculative decoding | baseline | `v100-optimized` | speedup |
 |---|---|---:|---:|---:|
-| **Qwen3.8-27B**, 100k + 1k prompt + 256 generated, V100 + 3060 Ti | **MTP on, `n-max=3` on both sides** | upstream: 294.11 PP / 26.64 TG | **424.07 PP / 33.55 TG** | **+44.19% PP / +25.93% TG** |
-| **Ornith-1.5 AD-Q6_K**, 100k + 1k + 64 generated, V100 + 3060 Ti | **MTP3 and FORCE_MMQ on both sides** | upstream: 696.94 PP / 69.01 TG | **887.80 PP / 69.08 TG** | **+27.39% PP / +0.10% TG** |
+| **Qwen3.8-27B**, 100k + 1k prompt + 256 generated, **1x V100** | **MTP on, `n-max=3`** | 410.750 PP / 27.591 TG | **413.418 PP / 36.471 TG** | **+0.65% PP / +32.19% TG** |
+| **Qwen3.8-27B**, 100k KV + 1024 PP + 512 TG, **1x V100** | MTP off | 276.063 PP / 16.269 TG | **352.926 PP / 16.366 TG** | **+27.84% PP / +0.60% TG** |
+| **Ornith-1.5-35B-A3B**, 100k KV + 1024 PP + 512 TG, **1x V100** | MTP off | 485.493 PP / 59.262 TG | **580.357 PP / 59.386 TG** | **+19.54% PP / +0.21% TG** |
 
-The Qwen row is a direct upstream-to-fork comparison. MTP is enabled on both sides, so the TG gain is **not** an MTP-on versus MTP-off comparison. Both Qwen arms use the same model, q8_0 target KV, FP16 draft KV, 262k context, `64,2` layer split, and `n-max=3`. Generated tokens were identical in the matched A/B/B/A run.
+These are independent single-V100 comparisons: the first row isolates the Qwen MTP decode paths; the other two isolate the 256x256 FlashAttention configuration. MTP/MMQ conditions differ, so see [Benchmarks](#benchmarks) for exact setups and do not compare the rows as one combined test.
 
 See [Benchmarks](#benchmarks) for the exact baselines and component-level measurements.
 
@@ -358,7 +359,7 @@ Matched warmed A/B/B/A, `100k cached + 1k new + 64 generated`, AD-Q6_K target on
 | `v100-optimized` + FORCE_MMQ | **887.80** | **69.08** | 39 / 70 |
 | speedup | **+27.39%** | +0.10% | - |
 
-Both measured arms were compiled with `GGML_CUDA_FORCE_MMQ=ON`. All four generated-token SHAs and response content were identical. This is the fair Ornith branch comparison used in the headline table.
+Both measured arms were compiled with `GGML_CUDA_FORCE_MMQ=ON`. All four generated-token SHAs and response content were identical. This is a separate multi-GPU validation; it is not part of the single-V100 headline above.
 
 A second warmed A/B/B/A with 512 generated tokens confirmed the same PP result: 689.86 -> 881.44 PP tok/s (+27.77%), while TG stayed flat at 72.49 -> 72.58 tok/s (+0.13%). MTP acceptance was 327 / 551 in every arm and all generated-token SHAs matched.
 
@@ -583,6 +584,14 @@ This is an experimental fork-level tuning knob. Its incremental Qwen gain is sma
 ### Smaller pipeline scheduler allocation
 
 `--pipeline-copies 2` reduces cross-backend scheduler input copies. Its main purpose is reducing compute-buffer VRAM so larger long-context graphs fit.
+
+### Tensor-parallel copies and Volta register pressure
+
+Large contiguous host inputs that are marked as mirrored are submitted through the backend's asynchronous setter before one explicit synchronization. This reduces copy fan-out overhead while preserving the caller's input lifetime.
+
+On Volta, large-row Q6_K MMQ uses a DP4A launch configuration instead of the higher-register Ampere configuration. This is the register-pressure mitigation used by the current branch. `GGML_CUDA_VOLTA_FORCE_MMQ=moe` is an opt-in override for routed MoE workloads; leave it unset for dense Qwen3.8.
+
+The optional `GGML_CUDA_VOLTA_GQA8_NCOLS2=2` path is restricted to long-K Qwen 256-wide GQA8 attention and remains geometry- and environment-gated. Validate it on the target GPU before enabling it.
 
 ### MTP draft ubatch
 
