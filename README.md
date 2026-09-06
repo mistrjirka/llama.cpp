@@ -476,6 +476,37 @@ The Qwen-oriented adaptive 2-CTA path is restricted to the exact Volta `256x256,
 
 The strict gate leaves non-target layouts such as Ornith's unchanged.
 
+## Patch map
+
+The fork is best understood as **upstream llama.cpp plus the patches below**. Documentation-only commits are omitted. Percentages are measured examples rather than additive estimates: gains depend on model, context length, quantization and GPU placement, and later patches often move the bottleneck somewhere else.
+
+### Core V100 / Turing patches
+
+| patch | commit | main scope | what it changes | measured impact / expectation |
+|---|---|---|---|---|
+| Volta runtime foundation | `0471a9885` | V100, Qwen/Ornith | Integrated the first V100-specific FA/GDN/speculative/cache/scheduler stack used by the later patches. | Bundled foundation; **do not assign one percentage** to this commit. Use the isolated rows below. |
+| Qwen MTP3 decode stack | `4cb009882` | Qwen3.8-27B, V100 | q8_0 tiled target-verification attention, exact 131072-row MTP proposal shortlist, Q5_K T=4 weight reuse and Q6_K T=4 `w4r4` scheduling. | **+32.19% TG** in the within-fork 100k + 1k + 256 MTP3 A/B, PP +0.65%; generated-token SHA matched. |
+| Volta Qwen prompt-attention dispatch | `d3c14522d` | Qwen3.8, V100 | Adds the sm70 D256 32-column prompt configuration and a measured small/medium-suffix dispatch gate. | Part of the D256 FA stack. The isolated D256 stack measured **+27.84% Qwen PP at 100k KV**; that whole number should not be attributed to this commit alone. |
+| Recurrent previous-state checkpoint | `be6567cea` | hybrid/recurrent models, mainly non-MTP Qwen | Avoids replaying a separate checkpoint tail for cached agent turns; preserves the previous recurrent state on device. | Qwen 100k cached: **+14.08% PP at +128**, +11.50% at +177, +10.63% at +256, +5.56% at +512. |
+| Deferred MTP prompt catch-up | `214200a2c` | Qwen + draft-MTP | Defers MTP hidden-state catch-up until after the first target token is queued. | Representative +177 agent turn: **TTFT -5.28%** (864.9 → 819.3 ms), TG -0.38%, same MTP acceptance. |
+| Volta MoE MMQ + mirrored-copy/runtime cleanup | `cee72e8c8` | Ornith/MoE on V100; mixed GPU | Adds expert-only `GGML_CUDA_VOLTA_FORCE_MMQ=moe`, Volta MMQ sizing/register fixes and large mirrored-input async fan-out. | **Ornith Q5/Q4: +54.7% PP** at 100k in the current test (917.6 → 1419.3), TG flat and exact SHA. The mirrored-input subpath separately measured about +1.16% PP on a large 1k fan-out workload. |
+| Tensor-parallel head balancing | `130965904` | mixed V100 + second GPU | Rebalances Qwen tensor-parallel attention heads instead of relying only on byte/layer split. | Useful only in mixed-GPU placement; **no clean standalone percentage** retained. Evaluate as part of the mixed-GPU integration benchmark. |
+| Long-context TP attention dispatch | `86949610a` | mixed GPU, long KV | Adds geometry/long-K dispatch tuning for tensor-parallel attention. | Context- and split-dependent; no single isolated headline number. |
+| Turing prompt kernels | `2bb7aca44`, `2e468c655` | RTX 2080 Ti / SM75 | SM75-specific Qwen prompt-kernel tuning plus an optional large-prompt cuBLAS crossover. | See the RTX 2080 Ti benchmark section; these paths are intentionally separate from the V100 claims. |
+
+For Ornith specifically, the dominant fork feature is the **expert-only Volta MMQ route** in `cee72e8c8`. A matched upstream-vs-fork 100k + 1k + 512 MTP test with FORCE_MMQ enabled on both sides measured **689.86 → 881.44 PP/s (+27.77%)** with essentially unchanged TG. The newer downloaded Q5/Q4 model isolates the MMQ routing decision itself more strongly: **917.65 → 1419.32 PP/s (+54.67%)**, identical generated-token SHA.
+
+### Qwen3.8 Flash-Next patches
+
+| patch | commit | main scope | what it changes | measured impact |
+|---|---|---|---|---|
+| One-weight-ahead MoE prefetch | `9f2bf9bc2` | partially CPU-offloaded MoE prefill | Uses an independent CUDA copy context plus events to overlap the next host weight transfer with current GPU compute while keeping only one extra weight tensor live. | On the final `v100-optimized` base, Flash-Next `n-cpu-moe=18`, `ubatch=1000`: **192.59 → 202.48 PP/s (+5.13%)**, TTFT **5.232 → 5.014 s (-4.16%)**, exact output. Decode is not attributed to this prefetch path. Forced-CPU-expert Ornith test was only +0.3% PP (noise), so no Ornith win is claimed. |
+| Append-only restored hybrid cache | `4129c41b6` | Flash-Next / hybrid state restore | Preserves restored recurrent/KV/indexer state when continuing append-only instead of invalidating the reusable long-context state. | **Correctness/enabler, not a kernel speed claim.** It makes same-state 261k+ continuation benchmarking possible and bit-for-bit reproducible. |
+| Gather-based QSA attention | `fe255b46a` | Qwen3.8 Flash-Next | Physically gathers the QSA-selected original K/V cells and runs attention over the compact selection instead of rebuilding a sparse mask over the full KV window. | On the final `v100-optimized` base at ~262k context: **7.974 → 9.399 TG/s (+17.88%)**, same generated-token SHA and cache endpoint. |
+| Remove unused indexer V cache | `d1ccec3ea` | Qwen3.8 Flash-Next | Stops allocating a V cache for the QSA indexer because the indexer consumes K only. | Small VRAM saving; **no meaningful speedup claimed**. |
+
+The current block-first QSA experiment is **not** in this accepted table: it is still WIP and has no validated performance result yet.
+
 ## Implementation
 
 CUDA paths are selected by hardware and tensor geometry, not by model name.
