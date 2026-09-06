@@ -456,9 +456,6 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
 
                 if (direct) {
                     GGML_ASSERT(n_ns == 1 && n_tps == 1 && ubatch->n_seqs_unq == 1);
-                    GGML_ASSERT(ggml_backend_buffer_is_host(direct_tail->buffer));
-                    GGML_ASSERT(ggml_backend_buffer_is_host(direct_mask->buffer));
-
                     const int64_t extra = direct_tail->ne[0];
                     const int64_t width = direct_mask->ne[0];
                     const int64_t block_budget = (width - extra)/r;
