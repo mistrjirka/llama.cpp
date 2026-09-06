@@ -523,7 +523,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     }();
     static const bool fused_pool_enabled = [] {
         const char * e = getenv("QWEN4EXP_QSA_FUSED_POOL");
-        return e != nullptr && atoi(e) != 0;
+        return e == nullptr || atoi(e) != 0;
     }();
 
     // Exact fast path for ordinary autoregressive text decode. Select compressed blocks
