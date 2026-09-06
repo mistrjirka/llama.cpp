@@ -4,11 +4,11 @@
 
 A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) for NVIDIA Volta (SM70) and Turing (SM75), tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main target is long-context Qwen3.8-27B serving; Ornith-1.5-35B-A3B has additional routed-MoE tuning.
 
-**Branch:** `v100-optimized` · **Benchmark fork code:** `547593d21`
+**Branch:** `v100-optimized` · **Validated post-sync code:** `f3f0eef26` · **Upstream merged through:** `465e49b9c`
 
 ## Performance vs vanilla llama.cpp
 
-Headline numbers compare the benchmarked fork code (`547593d21`) with current upstream [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp) at `6a1a922d2` on **5 September 2026**. The same model and common runtime settings are used on both sides, with one GPU visible at a time. Mixed V100 + RTX results are not reported as single-GPU numbers.
+The headline vanilla-vs-fork tables below are the retained direct comparison from **5 September 2026**: fork snapshot `547593d21` versus upstream `6a1a922d2`. The branch has since been merged forward to upstream `465e49b9c`; the new code was regression-gated separately and is documented in [Post-upstream integration validation](#post-upstream-integration-validation). The same model and common runtime settings are used on both sides of each comparison, and mixed V100 + RTX results are not reported as single-GPU numbers.
 
 `PP` is prompt-processing throughput and `TG` is token-generation throughput. Higher is better.
 
@@ -57,6 +57,7 @@ The long-context RTX investigation also contains isolated 101k-KV attention test
 | **V100 — Qwen3.8-27B** | normal CUDA build, **MMQ off**, MTP `n-max=3`; add `--spec-mtp-defer-prompt` for lower agent-turn TTFT |
 | **V100 — Ornith-1.5-35B-A3B** | separate build with `GGML_CUDA_FORCE_MMQ=ON` |
 | **RTX 2080 Ti — Qwen3.8-27B** | SM75 build; leave `GGML_CUDA_VOLTA_*` unset; Turing paths are selected automatically |
+| **V100 + RTX 2080 Ti — Qwen3.8 Flash-Next** | q8_0 K/V, `n-cpu-moe=18`, layer split **35:14**; enable the QSA PP raw-q8 stack documented below with tile 16 |
 
 Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. If you serve both Qwen and Ornith on V100, keep separate normal and FORCE_MMQ binaries.
 
@@ -195,6 +196,38 @@ For a mixed V100 + RTX 2080 Ti system, compile with `-DCMAKE_CUDA_ARCHITECTURES=
 
 The tables below isolate individual fork options. They are useful for choosing settings, but they are **not** the vanilla-vs-fork headline comparison above.
 
+### Post-upstream integration validation
+
+The current patch stack is synced through upstream `465e49b9c` and regression-gated as code commit **`f3f0eef26`**. Hardware was the mixed **Tesla V100-SXM2 32 GB + RTX 2080 Ti 22 GB** system; logical `CUDA0` was the V100 and `CUDA1` the 2080 Ti.
+
+For Qwen3.8 Flash-Next, the new raw-q8 tiled QSA prefill path uses a **35:14** layer split, 100,000 restored tokens, +1,000 prompt tokens, q8_0 K/V, `n-cpu-moe=18`, batch/ubatch `2048/1000`, and tile width 16. The 36:13 raw-q8 placement is intentionally **not** recommended: it can run out of V100 workspace memory during the prompt.
+
+The benchmarked opt-in prefill stack is:
+
+```bash
+export GGML_CUDA_QSA_PP_REDUCE=1
+export QWEN4EXP_QSA_PP_BLOCK_TOPK=1
+export QWEN4EXP_QSA_PP_GATHER=1
+export QWEN4EXP_QSA_PP_GATHER_Q8=1
+export QWEN4EXP_QSA_PP_GATHER_TILE=16
+```
+
+Use it with `--tensor-split 35,14` for the tested V100 + 2080 Ti placement. Decode QSA gather remains enabled by default; the variables above are for the new prefill path.
+
+| validation | control / old | post-sync `f3f0eef26` | result |
+|---|---:|---:|---:|
+| Flash-Next 100k + 1k PP, same 35:14 split | 244.71 PP/s | **266.70 PP/s** | **+8.98% PP** |
+| Flash-Next final 128-token run | — | **265.43 PP/s / 23.17 TG/s** | exact 128-token SHA |
+| Flash-Next final 512-token run | — | **266.98 PP/s / 22.88 TG/s** | exact 512-token SHA |
+| Ornith Q5/Q4, pp1024 | 1830.74 PP/s | **1851.75 PP/s** | **+1.15%** |
+| Ornith Q5/Q4, tg128 | 97.55 TG/s | **98.09 TG/s** | **+0.55%** |
+
+Flash-Next generated output stayed exact. The retained 128-token hash is `fa4eabafcd8e2e384c8918d644386b7b9a66a1bb330c3420903e4244411f2046`; the 512-token hash is `0c52eae49d84c1068a2a69f4bbf9ca2f28c897c441a44afeea8d65cb46e0555b`. The raw-q8 PP comparison is an alternating same-split test, so its gain is not a layer-placement artifact.
+
+Dense Qwen3.8 was treated as a hard regression gate. Its 8k PP result was order-sensitive: old-first A/B/A/B gave **-0.51%** for the merged build, while reversing the order to new/old/new/old gave **+0.33%** (`997.79` vs `994.46` PP/s). A separate 4096-token Nsight run had the post-sync build at **1019.67 vs 1014.92 PP/s (+0.47%)**, and the short tg128 comparison was effectively flat (~-0.03%). The sign flip with ordering plus the profile result is why this is classified as **no stable dense-Qwen regression**, rather than claiming a speedup.
+
+A merge-resolution guard initially disabled Flash-Next's sparse text-decode path for IMRoPE batches and caused a large TG regression. That change was rejected and replaced by a token-input guard; after the fix, matched 128-token runs were **22.94/23.19 TG/s** on the merged build versus **18.44/20.54 TG/s** on neighboring old-build runs, with identical generated hashes. The final 512-token raw-q8 run above sustained **22.88 TG/s**.
+
 ### Faster first token for MTP agent turns on one V100
 
 For a long coding/agent session, throughput alone can hide the delay the user actually feels. `--spec-mtp-defer-prompt` reduces **time to first streamed token (TTFT)** when a large prefix is already cached and a relatively small tool/user suffix is appended. It keeps the target prompt work unchanged, but moves MTP prompt catch-up and publication of the replay checkpoint off the first-token critical path.
@@ -257,7 +290,7 @@ Enable it with:
 
 ## Detailed benchmarks and methodology
 
-The headline tables above are the direct **current-upstream vs fork** comparisons. Benchmark baseline: upstream `6a1a922d2`; fork CUDA/runtime code: `547593d21`; CUDA 12.9. The relevant methodology is summarized below.
+The headline tables above are the retained **5 September vanilla-vs-fork snapshot**: upstream `6a1a922d2`; fork CUDA/runtime code `547593d21`; CUDA 12.9. The current branch is newer (`f3f0eef26`, upstream merged through `465e49b9c`), so use the post-upstream validation section for the current integration gate. The relevant methodology for the historical headline is summarized below.
 
 ### Current-upstream V100 100k methodology
 
@@ -493,6 +526,7 @@ The fork is best understood as **upstream llama.cpp plus the patches below**. Do
 | Tensor-parallel head balancing | `130965904` | mixed V100 + second GPU | Rebalances Qwen tensor-parallel attention heads instead of relying only on byte/layer split. | Useful only in mixed-GPU placement; **no clean standalone percentage** retained. Evaluate as part of the mixed-GPU integration benchmark. |
 | Long-context TP attention dispatch | `86949610a` | mixed GPU, long KV | Adds geometry/long-K dispatch tuning for tensor-parallel attention. | Context- and split-dependent; no single isolated headline number. |
 | Turing prompt kernels | `2bb7aca44`, `2e468c655` | RTX 2080 Ti / SM75 | SM75-specific Qwen prompt-kernel tuning plus an optional large-prompt cuBLAS crossover. | See the RTX 2080 Ti benchmark section; these paths are intentionally separate from the V100 claims. |
+| Correct GDN RMSNorm-scale fusion | `5eac15130` | CUDA, hybrid/GDN models | Preserves upstream's corrected `rsqrt(sum(x^2)+eps)` GDN normalization while fusing the RMSNorm + scalar-scale pair into one CUDA launch. | Removes 480 extra launches in the profiled dense-Qwen case; current Qwen/Ornith regression results are reported in the post-upstream validation table. |
 
 For Ornith specifically, the dominant fork feature is the **expert-only Volta MMQ route** in `cee72e8c8`. A matched upstream-vs-fork 100k + 1k + 512 MTP test with FORCE_MMQ enabled on both sides measured **689.86 → 881.44 PP/s (+27.77%)** with essentially unchanged TG. The newer downloaded Q5/Q4 model isolates the MMQ routing decision itself more strongly: **917.65 → 1419.32 PP/s (+54.67%)**, identical generated-token SHA.
 
@@ -506,6 +540,8 @@ For Ornith specifically, the dominant fork feature is the **expert-only Volta MM
 | Remove unused indexer V cache | `d1ccec3ea` | Qwen3.8 Flash-Next | Stops allocating a V cache for the QSA indexer because the indexer consumes K only. | Small VRAM saving; **no meaningful speedup claimed**. |
 | Block-first QSA selection | `4bf80db6d`, `383db326c`, `70b604998`, `8f5d6a7e3` | Qwen3.8 Flash-Next direct decode | Selects 512 compressed QSA blocks before expanding only their selected physical cells; avoids materializing a context-sized cell-score vector. | Exact-output structural win and prerequisite for the fused pooling row below; no standalone percentage is assigned because the final stack was validated as a whole. |
 | Fused q8 QSA block-key pooling | `09d9e1bf1`, `cce048d1d`, `5191933b8`, `c9e919e73` | Qwen3.8 Flash-Next direct decode | Dequantizes and mean-pools each 4-row q8_0 indexer block directly into one F32 summary; uses a private QSA GET_ROWS marker; keeps 65,536 block norms off CUDA `grid.y`; enabled by default with an opt-out env flag. | 100k+1k production: **TG +17.58% at 64** and **+11.97% at 512**, PP +0.17--0.18%, exact SHA. Near 262k, warm 4x256: **12.005 → 15.675 TG/s (+30.6%)**, exact. Ornith generic-backend ABBA: PP -0.325%, TG +0.43%, exact. |
+| Fused 4-head / block-first QSA prefill | `52bac9bda`, `8010e9d13` | Qwen3.8 Flash-Next prefill | Reduces the four QSA heads together and selects complete compressed blocks before expanding them back to physical cells. | Accepted pre-sync stack moved the 100k+1k workload from roughly 208 PP/s to ~245 PP/s with exact generation. |
+| Raw-q8 tiled QSA prefill gather | `de2c9a338`, `273a76f6a`, `f3f0eef26` | Qwen3.8 Flash-Next prefill + text decode integration | Gathers only selected q8_0 K/V rows in query tiles, isolates gather/non-gather graph inputs, and keeps the sparse decode fast path enabled for token-input IMRoPE text batches. | Same-split 35:14 PP: **244.71 → 266.70 tok/s (+8.98%)**; final 512-token run **266.98 PP / 22.88 TG**, exact SHA. |
 
 ## Implementation
 
