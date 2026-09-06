@@ -356,18 +356,26 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
     GGML_ASSERT(ratio > 0);
     GGML_ASSERT(mem != nullptr && mem->get_mem_idx() != nullptr);
 
-    GGML_ASSERT(ggml_backend_buffer_is_host(cell_blk->buffer));
+    const bool direct = direct_tail != nullptr && direct_mask != nullptr;
 
-    const int64_t n_kv     = cell_blk->ne[0];
-    const int64_t n_ns     = cell_blk->ne[1];        // streams in this ubatch
+    // Direct block-top-k never consumes the context-sized cell -> block map. The graph
+    // therefore prunes that input entirely; derive the cache shape from the memory and
+    // the compact block map instead of requiring an allocated cell_blk buffer.
+    const int64_t n_kv     = get_idx()->get_n_kv();
+    const int64_t n_ns     = blk_cells->ne[1];        // streams in this ubatch
     const int64_t n_blocks = blk_pos->ne[0]/(4*n_ns);
+
+    GGML_ASSERT(direct || cell_blk != nullptr);
+    if (cell_blk != nullptr) {
+        GGML_ASSERT(cell_blk->ne[0] == n_kv && cell_blk->ne[1] == n_ns);
+    }
     const int64_t n_tokens = ubatch->n_tokens;
     const int64_t r        = ratio;
 
     GGML_ASSERT(n_tokens % n_ns == 0);
     const int64_t n_tps = n_tokens/n_ns;             // tokens per stream
 
-    int32_t * dst_cell_blk  = (int32_t *) cell_blk->data;
+    int32_t * dst_cell_blk  = cell_blk != nullptr ? (int32_t *) cell_blk->data : nullptr;
     int32_t * dst_blk_cells = (int32_t *) blk_cells->data;
     int32_t * dst_blk_pos   = (int32_t *) blk_pos->data;
     float   * dst_bias      = (float   *) bias->data;
@@ -391,7 +399,7 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
         const llama_seq_id seq_of_stream = ubatch->seq_id[s*n_tps][0];
         const auto & cells = mem->get_mem_idx()->get_cells(seq_of_stream);
 
-        int32_t * cur_cell_blk  = dst_cell_blk  + s*n_kv;
+        int32_t * cur_cell_blk  = dst_cell_blk != nullptr ? dst_cell_blk + s*n_kv : nullptr;
         int32_t * cur_blk_cells = dst_blk_cells + s*(r*n_blocks);
 
         // an incomplete block cannot be pooled; the bias below forces those tail cells in
@@ -424,13 +432,15 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
 
         GGML_ASSERT((!blk_bias || !oor) && "qsa: cell position runs past the cell window");
 
-        // per-block mode keeps an unpooled cell's real block, so the block's own -inf reaches it
-        // per-cell mode carries that -inf itself and only needs the gather in range
-        for (int64_t j = 0; j < n_kv; ++j) {
-            if (blk_of[j] >= 0 && filled[blk_of[j]] < r && !blk_bias) {
-                blk_of[j] = -1;
+        // per-block mode keeps an unpooled cell's real block, so the block's own -inf reaches it.
+        // Direct block-top-k has no cell_blk tensor at all.
+        if (cur_cell_blk != nullptr) {
+            for (int64_t j = 0; j < n_kv; ++j) {
+                if (blk_of[j] >= 0 && filled[blk_of[j]] < r && !blk_bias) {
+                    blk_of[j] = -1;
+                }
+                cur_cell_blk[j] = blk_of[j] < 0 ? 0 : blk_of[j];
             }
-            cur_cell_blk[j] = blk_of[j] < 0 ? 0 : blk_of[j];
         }
 
         for (int64_t ii = 0; ii < n_tps; ++ii) {
