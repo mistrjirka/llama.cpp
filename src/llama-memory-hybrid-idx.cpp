@@ -350,7 +350,9 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
         ggml_tensor * bias,
         const llama_ubatch * ubatch,
         uint32_t ratio,
-        bool blk_bias) const {
+        bool blk_bias,
+        ggml_tensor * direct_tail,
+        ggml_tensor * direct_mask) const {
     GGML_ASSERT(ratio > 0);
     GGML_ASSERT(mem != nullptr && mem->get_mem_idx() != nullptr);
 
@@ -440,13 +442,49 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
             const llama_pos tail_start = (q + 1)/r*r;
 
             if (blk_bias) {
-                // a block sits wholly inside or outside the tail, so one value covers it
-                // the caller adds the attention mask, which drops empty, foreign and future cells
                 float * cur_blk_bias = dst_bias + i*n_blocks;
+                const bool direct = direct_tail != nullptr && direct_mask != nullptr;
 
                 for (int64_t b = 0; b < n_blocks; ++b) {
-                    // finite, so it can never meet a -inf and produce a nan
-                    cur_blk_bias[b] = b*r >= tail_start ? 1e9f : (filled[b] < r ? -INFINITY : 0.0f);
+                    // Ordinary block-bias mode forces the causal tail into cell top-k.
+                    // Direct block-top-k instead excludes incomplete/future blocks; the true
+                    // 0..r-1 cell tail is appended explicitly below.
+                    cur_blk_bias[b] = direct
+                        ? (b*r < tail_start && filled[b] == r ? 0.0f : -INFINITY)
+                        : (b*r >= tail_start ? 1e9f : (filled[b] < r ? -INFINITY : 0.0f));
+                }
+
+                if (direct) {
+                    GGML_ASSERT(n_ns == 1 && n_tps == 1 && ubatch->n_seqs_unq == 1);
+                    GGML_ASSERT(ggml_backend_buffer_is_host(direct_tail->buffer));
+                    GGML_ASSERT(ggml_backend_buffer_is_host(direct_mask->buffer));
+
+                    const int64_t extra = direct_tail->ne[0];
+                    const int64_t width = direct_mask->ne[0];
+                    const int64_t block_budget = (width - extra)/r;
+                    GGML_ASSERT(block_budget*r + extra == width);
+
+                    int32_t * tail = (int32_t *) direct_tail->data + i*extra;
+                    float   * mask = (float   *) direct_mask->data + i*width;
+                    std::fill(tail, tail + extra, 0);
+                    std::fill(mask, mask + width, -INFINITY);
+
+                    int64_t n_tail = 0;
+                    for (int64_t j = 0; j < n_kv; ++j) {
+                        if (cells.is_empty(j) || !cells.seq_has(j, seq_id)) {
+                            continue;
+                        }
+                        const llama_pos p = cells.pos_get(j);
+                        if (p >= tail_start && p <= q) {
+                            GGML_ASSERT(n_tail < r - 1 && n_tail < extra);
+                            tail[n_tail++] = (int32_t) j;
+                        }
+                    }
+
+                    // Selected complete blocks occupy [0, block_budget*r). Tail IDs start
+                    // at block_budget*r; the rest is alignment padding and stays -inf.
+                    std::fill(mask, mask + block_budget*r, 0.0f);
+                    std::fill(mask + block_budget*r, mask + block_budget*r + n_tail, 0.0f);
                 }
 
                 continue;

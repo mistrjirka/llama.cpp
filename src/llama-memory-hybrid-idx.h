@@ -139,7 +139,8 @@ public:
     // the caller then adds the attention mask, the only part of the bias that varies within a block
     void set_input_qsa(ggml_tensor * cell_blk, ggml_tensor * blk_cells, ggml_tensor * blk_pos,
                        ggml_tensor * bias, const llama_ubatch * ubatch, uint32_t ratio,
-                       bool blk_bias) const;
+                       bool blk_bias, ggml_tensor * direct_tail = nullptr,
+                       ggml_tensor * direct_mask = nullptr) const;
 
 private:
     const llama_memory_hybrid_idx * mem = nullptr;
