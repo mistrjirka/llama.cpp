@@ -652,6 +652,9 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     score = ggml_relu(ctx0, score);
     score = ggml_cont(ctx0, ggml_permute(ctx0, score, 1, 0, 2, 3));
     score = ggml_sum_rows(ctx0, score);
+    // Private marker for the exact Qwen4Exp 4-head indexer reduction. CUDA may fuse
+    // RELU -> PERMUTE -> CONT -> SUM_ROWS for PP without affecting generic SUM_ROWS.
+    score->op_params[0] = 0x51535050; // "QSPP"
     score = ggml_reshape_3d(ctx0, score, n_blocks, n_tps, n_stream);
     cb(score, "indexer_score", il);
 

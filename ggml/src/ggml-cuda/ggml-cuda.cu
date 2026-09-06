@@ -3316,6 +3316,29 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
 
     ggml_tensor * node = cgraph->nodes[i];
 
+    // Qwen4Exp PP indexer: fuse RELU -> PERMUTE(head-first) -> CONT -> SUM_ROWS.
+    // This is opt-in and private-marked so generic models keep their established path.
+    static const bool qsa_pp_reduce = [] {
+        const char * e = getenv("GGML_CUDA_QSA_PP_REDUCE");
+        return e != nullptr && std::atoi(e) != 0;
+    }();
+    if (qsa_pp_reduce && i + 3 < cgraph->n_nodes &&
+            node->op == GGML_OP_UNARY && ggml_get_unary_op(node) == GGML_UNARY_OP_RELU &&
+            cgraph->nodes[i + 1]->op == GGML_OP_PERMUTE &&
+            cgraph->nodes[i + 2]->op == GGML_OP_CONT &&
+            cgraph->nodes[i + 3]->op == GGML_OP_SUM_ROWS &&
+            cgraph->nodes[i + 3]->op_params[0] == 0x51535050 &&
+            node->src[0] != nullptr && node->src[0]->type == GGML_TYPE_F32 &&
+            node->src[0]->ne[1] == 4 && node->src[0]->ne[2] > 1 &&
+            ggml_check_edges(cgraph, i, {{1, 0, 0}, {2, 0, 1}, {3, 0, 2}}) &&
+            ggml_can_fuse_subgraph(cgraph, i, { GGML_OP_UNARY, GGML_OP_PERMUTE, GGML_OP_CONT, GGML_OP_SUM_ROWS }, { i + 3 })) {
+        int out_nodes[] = { i + 3 };
+        if (ggml_cuda_check_fusion_memory_ranges(cgraph, i, 4, out_nodes, 1)) {
+            ggml_cuda_op_qsa_relu4_sum(*cuda_ctx, node, cgraph->nodes[i + 3]);
+            return 3;
+        }
+    }
+
     // gated_delta_net -> cpy: scatter recurrent-state snapshots into the cache
     if (node->op == GGML_OP_GATED_DELTA_NET) {
         ggml_cuda_gated_delta_net_fused_cache fused_state_cpy;
