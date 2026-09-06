@@ -7,8 +7,13 @@ Baseline for all new work: `v100-optimized` at or after `d83475883`, V100 32 GiB
 - Final public branch: `v100-optimized`.
 - Manual placement: `36,13`, `n-cpu-moe=18`, `ubatch=1000`, `--fit off`, PLE on CPU/lazy.
 - One-weight-ahead MoE prefetch: about 192.59 -> 202.48 PP/s (+5.13%) on the final V100 base, identical output.
-- Gather-QSA at ~262k: 7.974 -> 9.399 TG/s (+17.88%) on the final V100 base, identical output.
-- A newer upstream-synced experimental stack previously reached ~11.38 TG/s at the same native-context boundary, but syncing that code also regressed Ornith PP by ~2.4%. Do not merge the whole upstream stack just to recover that number.
+- Gather-QSA at ~262k: 7.974 -> 9.399 TG/s (+17.88%) on the earlier final V100 base, identical output.
+- Block-first QSA is accepted: direct single-slot decode selects 512 compressed blocks before expanding only the selected 2048 cells, removing the context-sized cell-score expansion.
+- Fused q8 QSA block-key pooling is accepted and default-on: the indexer now dequantizes and mean-pools each four-row q8_0 block directly into one F32 summary instead of materializing `4*n_blocks` F32 rows plus slice/add/scale intermediates. On the production 100k-restored + 1k workload, PP stayed flat while TG moved 17.54 -> 20.62 (+17.58%) for 64 generated tokens and 17.39 -> 19.47 (+11.97%) for 512; generated-token SHA was identical.
+- At ~262k, a same-server 4x256 test measured 12.005 -> 15.675 TG/s on warm reps (+30.6%), exact output. Both fused-off and fused-on 261632+1+511 boundary runs reached `tokens_cached=262143` with historical SHA `db879fcc...d8de9c40`; the fused run measured 16.10 TG/s and the control 13.07 TG/s in those single boundary runs.
+- Native-context QSA normalization no longer maps 65,536 compressed blocks onto CUDA `grid.y`; direct block-top-k decode lays those rows on `grid.x`, avoiding the Volta/Turing 65,535 Y-dimension limit.
+- The generic GET_ROWS portion passed the Ornith Q5/Q4 ABBA gate on the known-good `a55115f62` runtime: 1429.75 -> 1425.11 PP/s (-0.325%), 66.63 -> 66.92 TG/s (+0.43%), identical SHA.
+- The older upstream-synced ~11.38 TG/s target is now superseded by the accepted stack; do not merge the whole upstream stack merely to recover it.
 - MTP has not yet been tested on Flash-Next on this machine. There is currently no Flash-Next MTP GGUF under `/models`.
 
 ## Required acceptance gates
@@ -23,6 +28,8 @@ For every candidate that can touch generic CUDA/backend code:
 6. Record PP, TTFT, TG, VRAM, and for transfer work H2D bytes/time/overlap. For MTP also record drafted/accepted counts.
 
 ## P0 - Re-profile the final base and recover known 9.40 -> 11.38 TG headroom
+
+**Status:** superseded by the accepted block-first + fused-pooling stack, which now exceeds the old 11.38 TG/s target at native context without importing the upstream stack. Keep the candidate commits below only as future isolated references after a fresh profile.
 
 **Branch:** `perf/flashnext-qsa-recover-0906` from current `v100-optimized`.
 
@@ -41,6 +48,8 @@ Run Nsight on both 100k and ~262k after each meaningful step. The goal is to ide
 
 ## P1 - True block-first QSA top-k
 
+**Status:** accepted in `4bf80db6d`, `383db326c`, `70b604998`, and `8f5d6a7e3`. The direct single-slot path now selects compressed blocks before expanding selected cells.
+
 **Branch:** `perf/flashnext-qsa-blocktopk-v100-0906` from the best accepted P0 result.
 
 The current QSA indexer has about 65k compressed blocks at 262k context, but the graph expands their scores back to ~262k cell scores before selecting ~2k cells. Nsight on the old accepted gather path attributed roughly 15 ms/generated token across QSA layers to the large `get_rows` score expansion. Raw CUDA TOP_K itself changes little between the block and cell shapes, so eliminating score materialization matters more than merely sorting fewer entries.
@@ -58,6 +67,16 @@ Correct semantics for ratio 4 / indexer top-k 2048:
 **Proof of activation:** Nsight must show that the ~262k-cell `k_get_rows_float` score expansion disappears. Add a one-time diagnostic if needed. Compare against the dense-reference generated hash.
 
 **Success:** exact output and a measurable TG gain at 262k. If the context-sized expansion disappears but TG does not improve, profile the new graph before rejecting the mechanism.
+
+## Accepted follow-up - fused q8 QSA block-key pooling
+
+**Commits:** `09d9e1bf1`, `cce048d1d`, `5191933b8`, `c9e919e73` (with `0d1eba452` as the intermediate boundary-fix step).
+
+For direct ratio-4 q8_0 QSA decode, one marked GET_ROWS operation now dequantizes four physical indexer-K rows, accumulates them in the established F32 order and emits one mean-pooled F32 block row. A private two-word QSA marker keeps ordinary GET_ROWS nodes on the unchanged backend path. Fused pooling is default-on; `QWEN4EXP_QSA_FUSED_POOL=0` is the escape hatch.
+
+At native context, direct QSA key normalization uses `[128, n_blocks, 1]` rather than `[128, 1, n_blocks]` while normalizing, so 65,536 blocks use CUDA `grid.x` rather than overflowing the 65,535 `grid.y` limit. The tensor is reshaped back before RoPE; row order and normalization arithmetic are unchanged.
+
+**Validated result:** exact 100k+1k hashes, PP neutral (+0.17--0.18%), TG +17.58% at 64 and +11.97% at 512. Warm 4x256 native-context TG improved +30.6%. Both fused-off and fused-on 511-token boundary runs reproduced the historical `db879fcc...d8de9c40` SHA and `tokens_cached=262143`.
 
 ## P2 - Persistent compressed QSA index keys
 
@@ -103,7 +122,7 @@ After P1/P2, re-profile before porting small optimizations. Candidate references
 - upstream `09412af38`: permute-free/sliced indexer head reduction;
 - `remotes/apepojken/qwen4exp-spec-mtp` `6634bfde7`: permute-free indexer scoring for batched prefill;
 - `b6d995d50`: skinny inject matmul through mat-vec path;
-- `51c0d9c3`: contiguous GDN conv concat operand;
+- `51c0c10d5`: contiguous GDN conv concat operand;
 - `9b09f26...`: graph reuse / shared QSA input.
 
 These are primarily PP/launch-overhead candidates. Cherry-pick/test one mechanism at a time; do not claim another branch's hardware numbers.
@@ -191,15 +210,14 @@ Use branches under `exp/flashnext-lossy-*` and report quality/output divergence 
 
 ## Recommended execution order
 
-1. `perf/flashnext-qsa-recover-0906` - recover known safe headroom and make fresh 100k/262k profiles.
-2. `perf/flashnext-qsa-blocktopk-v100-0906` - remove the proven ~262k score expansion.
-3. `perf/flashnext-qsa-index-cache-v100-0906` - make historical compressed keys persistent.
-4. `perf/flashnext-qsa-fused-v100-0906` - remove generic gather/dequant intermediates.
-5. `perf/flashnext-indexer-graph-v100-0906` - clean remaining small-kernel/graph overhead.
-6. `perf/flashnext-mtp-v100-0906` - add speculation on top of the optimized ordinary path.
-7. `perf/flashnext-prefetch-ring-v100-0906` - deepen the proven PP overlap mechanism.
-8. `perf/flashnext-moe-hotset-v100-0906` - equal-budget decode residency.
-9. hybrid miss scheduling / DualDeadline.
-10. PLE cold-I/O and lossy ideas only if the production workload makes them worthwhile.
+1. Re-profile the accepted `c9e919e73` stack at 100k and ~262k; P0/P1 and fused block pooling are complete.
+2. `perf/flashnext-qsa-index-cache-v100-0906` - make historical compressed keys persistent without graph-time external `SET_ROWS`.
+3. `perf/flashnext-qsa-fused-v100-0906` - remove the remaining selected K/V gather/dequant/materialization, ideally with indexed q8 attention.
+4. `perf/flashnext-indexer-graph-v100-0906` - clean remaining top-k/indexer/HyperConnection launch overhead.
+5. `perf/flashnext-mtp-v100-0906` - add speculation on top of the optimized ordinary path.
+6. `perf/flashnext-prefetch-ring-v100-0906` - deepen the proven PP overlap mechanism.
+7. `perf/flashnext-moe-hotset-v100-0906` - revisit equal-budget decode residency only after the new profile.
+8. hybrid miss scheduling / DualDeadline.
+9. PLE cold-I/O and lossy ideas only if the production workload makes them worthwhile.
 
 The order is intentionally QSA-heavy: at native context, decode still scales far more with context than the architecture intends, and both our profiles and current llama.cpp reports identify QSA/indexer reconstruction/selection as the dominant structural hole. Once that slope is flattened, re-profile before committing time to MoE prediction or more exotic kernels.
