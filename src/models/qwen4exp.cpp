@@ -616,11 +616,11 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     cb(pooled, "indexer_k_pooled", il);
 
     // At full 262144 context there are exactly 65536 compressed blocks. CUDA RMS norm maps
-    // tensor dim 2 to grid.y, whose hardware limit is 65535 on Volta/Turing. Keep the fused
-    // block list in dim 1 while normalizing (grid.x has ample range), then reshape to the
-    // [n_dims, n_head, n_tokens] layout RoPE expects. This is a pure view/layout change: the
-    // flattened block-key order and normalization arithmetic are unchanged.
-    if (fused_pool) {
+    // tensor dim 2 to grid.y, whose hardware limit is 65535 on Volta/Turing. For ordinary
+    // direct decode, keep block rows in dim 1 while normalizing (grid.x has ample range),
+    // then reshape to the [n_dims, n_head, n_tokens] layout RoPE expects. This is a pure
+    // view/layout change; prefill and multistream keep their established graph unchanged.
+    if (direct_block_topk) {
         pooled = ggml_reshape_3d(ctx0, pooled, idx_dim, n_blocks*n_stream, 1);
         pooled = build_norm(pooled, model.layers[il].index_k_norm, nullptr, LLM_NORM_RMS, il);
         pooled = ggml_reshape_3d(ctx0, pooled, idx_dim, 1, n_blocks*n_stream);
