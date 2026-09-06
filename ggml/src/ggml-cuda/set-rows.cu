@@ -373,12 +373,66 @@ void set_rows_cuda<half, int64_t>(ggml_backend_cuda_context & ctx, const ggml_te
 }
 
 
+
+// Qwen4Exp PP block-top-k mask update.  The source is one F32 scalar per selected
+// index and -1 marks fixed-width tail padding that must not modify the full mask.
+template <typename dst_t>
+static __global__ void k_set_rows_f32_i32_skip_negative(
+        const float * src0, const int32_t * src1, dst_t * dst,
+        int64_t ne01, int64_t ne02, int64_t ne03,
+        int64_t s01, int64_t s02, int64_t s03,
+        int64_t s10, int64_t s11, int64_t s12,
+        int64_t s1, int64_t s2, int64_t s3) {
+    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+    const int64_t n = ne01 * ne02 * ne03;
+    if (i >= n) {
+        return;
+    }
+    const int64_t i01 = i % ne01;
+    const int64_t t   = i / ne01;
+    const int64_t i02 = t % ne02;
+    const int64_t i03 = t / ne02;
+    const int64_t row = src1[i01*s10 + i02*s11 + i03*s12];
+    if (row < 0) {
+        return;
+    }
+    dst[row*s1 + i02*s2 + i03*s3] = ggml_cuda_cast<dst_t>(src0[i01*s01 + i02*s02 + i03*s03]);
+}
+
 void ggml_cuda_op_set_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
 
     GGML_ASSERT(src0->type == GGML_TYPE_F32 || (src0->type == GGML_TYPE_F16 && dst->type == GGML_TYPE_F16));
     GGML_ASSERT(src1->type == GGML_TYPE_I64 || src1->type == GGML_TYPE_I32);
+
+    if (dst->op_params[0] == 0x51535042) {
+        GGML_ASSERT(src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_I32);
+        GGML_ASSERT(dst->type == GGML_TYPE_F32 || dst->type == GGML_TYPE_F16 || dst->type == GGML_TYPE_BF16);
+        GGML_ASSERT(src0->ne[0] == 1);
+        const int64_t n = src0->ne[1] * src0->ne[2] * src0->ne[3];
+        constexpr int threads = 256;
+        const dim3 blocks((unsigned int) ((n + threads - 1) / threads));
+        const ggml_cuda_kernel_launch_params lp(blocks, dim3(threads), 0, ctx.stream());
+
+        const auto launch = [&](auto * dst_ptr) {
+            using dst_t = std::remove_pointer_t<decltype(dst_ptr)>;
+            ggml_cuda_kernel_launch(k_set_rows_f32_i32_skip_negative<dst_t>, lp,
+                    (const float *) src0->data, (const int32_t *) src1->data, dst_ptr,
+                    src0->ne[1], src0->ne[2], src0->ne[3],
+                    (int64_t) (src0->nb[1]/sizeof(float)), (int64_t) (src0->nb[2]/sizeof(float)), (int64_t) (src0->nb[3]/sizeof(float)),
+                    (int64_t) (src1->nb[0]/sizeof(int32_t)), (int64_t) (src1->nb[1]/sizeof(int32_t)), (int64_t) (src1->nb[2]/sizeof(int32_t)),
+                    (int64_t) (dst->nb[1]/sizeof(dst_t)), (int64_t) (dst->nb[2]/sizeof(dst_t)), (int64_t) (dst->nb[3]/sizeof(dst_t)));
+        };
+        if (dst->type == GGML_TYPE_F32) {
+            launch((float *) dst->data);
+        } else if (dst->type == GGML_TYPE_F16) {
+            launch((half *) dst->data);
+        } else {
+            launch((nv_bfloat16 *) dst->data);
+        }
+        return;
+    }
 
     if (src0->type == GGML_TYPE_F32) {
         if (src1->type == GGML_TYPE_I64) {

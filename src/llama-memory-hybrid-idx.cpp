@@ -356,7 +356,7 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
     GGML_ASSERT(ratio > 0);
     GGML_ASSERT(mem != nullptr && mem->get_mem_idx() != nullptr);
 
-    const bool direct = direct_tail != nullptr && direct_mask != nullptr;
+    const bool block_topk = direct_tail != nullptr;
 
     // Direct block-top-k never consumes the context-sized cell -> block map. The graph
     // therefore prunes that input entirely; derive the cache shape from the memory and
@@ -365,7 +365,7 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
     const int64_t n_ns     = blk_cells->ne[1];        // streams in this ubatch
     const int64_t n_blocks = blk_pos->ne[0]/(4*n_ns);
 
-    GGML_ASSERT(direct || cell_blk != nullptr);
+    GGML_ASSERT(block_topk || cell_blk != nullptr);
     if (cell_blk != nullptr) {
         GGML_ASSERT(cell_blk->ne[0] == n_kv && cell_blk->ne[1] == n_ns);
     }
@@ -459,39 +459,60 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
                     // Ordinary block-bias mode forces the causal tail into cell top-k.
                     // Direct block-top-k instead excludes incomplete/future blocks; the true
                     // 0..r-1 cell tail is appended explicitly below.
-                    cur_blk_bias[b] = direct
+                    cur_blk_bias[b] = block_topk
                         ? (b*r < tail_start && filled[b] == r ? 0.0f : -INFINITY)
                         : (b*r >= tail_start ? 1e9f : (filled[b] < r ? -INFINITY : 0.0f));
                 }
 
-                if (direct) {
-                    GGML_ASSERT(n_ns == 1 && n_tps == 1 && ubatch->n_seqs_unq == 1);
+                if (block_topk) {
+                    GGML_ASSERT(n_ns == 1 && ubatch->n_seqs_unq == 1);
                     const int64_t extra = direct_tail->ne[0];
-                    const int64_t width = direct_mask->ne[0];
-                    const int64_t block_budget = (width - extra)/r;
-                    GGML_ASSERT(block_budget*r + extra == width);
 
                     int32_t * tail = (int32_t *) direct_tail->data + i*extra;
-                    float   * mask = (float   *) direct_mask->data + i*width;
-                    std::fill(tail, tail + extra, 0);
-                    std::fill(mask, mask + width, -INFINITY);
+                    // Gather decode masks its alignment padding separately.  Prefill uses
+                    // -1 sentinels which the private QSA SET_ROWS path treats as no-op.
+                    std::fill(tail, tail + extra, direct ? 0 : -1);
 
                     int64_t n_tail = 0;
-                    for (int64_t j = 0; j < n_kv; ++j) {
-                        if (cells.is_empty(j) || !cells.seq_has(j, seq_id)) {
-                            continue;
+                    if (direct) {
+                        // Gather decode needs exact seq ownership because these ids index K/V
+                        // directly.  There is only one query, so scanning the cache is cheap.
+                        for (int64_t j = 0; j < n_kv; ++j) {
+                            if (cells.is_empty(j) || !cells.seq_has(j, seq_id)) {
+                                continue;
+                            }
+                            const llama_pos p = cells.pos_get(j);
+                            if (p >= tail_start && p <= q) {
+                                GGML_ASSERT(n_tail < r - 1 && n_tail < extra);
+                                tail[n_tail++] = (int32_t) j;
+                            }
                         }
-                        const llama_pos p = cells.pos_get(j);
-                        if (p >= tail_start && p <= q) {
+                    } else {
+                        // Prefill may have ~1k queries.  blk_cells already maps every logical
+                        // block member to its physical cache cell, so derive the <= r-1 tail
+                        // in O(r) per query instead of rescanning O(n_kv) cells each time.
+                        for (llama_pos p = tail_start; p <= q; ++p) {
+                            const int64_t b = p/r;
+                            if (b < 0 || b >= n_blocks) {
+                                continue;
+                            }
                             GGML_ASSERT(n_tail < r - 1 && n_tail < extra);
-                            tail[n_tail++] = (int32_t) j;
+                            tail[n_tail++] = cur_blk_cells[b*r + (p%r)];
                         }
                     }
 
-                    // Selected complete blocks occupy [0, block_budget*r). Tail IDs start
-                    // at block_budget*r; the rest is alignment padding and stays -inf.
-                    std::fill(mask, mask + block_budget*r, 0.0f);
-                    std::fill(mask + block_budget*r, mask + block_budget*r + n_tail, 0.0f);
+                    if (direct) {
+                        const int64_t width = direct_mask->ne[0];
+                        const int64_t block_budget = (width - extra)/r;
+                        GGML_ASSERT(block_budget*r + extra == width);
+                        float * mask = (float *) direct_mask->data + i*width;
+                        std::fill(mask, mask + width, -INFINITY);
+
+                        // Selected complete blocks occupy [0, block_budget*r). Tail IDs start
+                        // at block_budget*r; the rest is alignment padding and stays -inf.
+                        std::fill(mask, mask + block_budget*r, 0.0f);
+                        std::fill(mask + block_budget*r, mask + block_budget*r + n_tail, 0.0f);
+                    }
                 }
 
                 continue;

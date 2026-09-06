@@ -40,6 +40,32 @@ static __global__ void k_get_rows(
     }
 }
 
+// Qwen4Exp QSA PP block selection: map selected logical block ids to the r physical
+// cache-cell ids stored in blk_cells. The map is shared by all queries in one stream.
+static __global__ void k_qsa_selected_blocks_to_cells(
+        const int32_t * blk_cells, const int32_t * top_blocks, int32_t * dst,
+        int64_t r, int64_t n_blocks, int64_t block_budget, int64_t n_tps, int64_t n_stream,
+        size_t top_s0, size_t top_s1, size_t top_s2) {
+    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+    const int64_t n = r * block_budget * n_tps * n_stream;
+    if (i >= n) {
+        return;
+    }
+    const int64_t g = i % r;
+    int64_t t = i / r;
+    const int64_t ib = t % block_budget;
+    t /= block_budget;
+    const int64_t iq = t % n_tps;
+    const int64_t is = t / n_tps;
+
+    const int32_t block = top_blocks[ib*top_s0 + iq*top_s1 + is*top_s2];
+    if (block < 0 || block >= n_blocks) {
+        dst[i] = -1;
+        return;
+    }
+    dst[i] = blk_cells[is*(r*n_blocks) + (int64_t) block*r + g];
+}
+
 // Qwen4exp QSA block pooling: four physical q8_0 rows form one compressed key.
 // The source row ids still come from the ordinary blk_cells tensor, so this does not
 // assume an identity/contiguous KV layout. Addition order matches the graph fallback.
@@ -498,6 +524,27 @@ void ggml_cuda_op_get_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(src0->nb[0] == ggml_type_size(src0->type));
     GGML_ASSERT(src1->nb[0] == ggml_type_size(src1->type));
     GGML_ASSERT(dst->nb[0]  == ggml_type_size(dst->type));
+
+    // Private Qwen4Exp block-id expansion. Unmarked GET_ROWS nodes retain the ordinary path.
+    if (ggml_get_op_params_i32(dst, 0) == 0x51534243) {
+        const int64_t r = ggml_get_op_params_i32(dst, 1);
+        GGML_ASSERT(r > 0 && src0->type == GGML_TYPE_I32 && dst->type == GGML_TYPE_I32);
+        GGML_ASSERT(src0->ne[0] % r == 0);
+        const int64_t n_blocks = src0->ne[0]/r;
+        const int64_t block_budget = src1->ne[0];
+        const int64_t n_tps = src1->ne[1];
+        const int64_t n_stream = src1->ne[2];
+        GGML_ASSERT(dst->ne[0] == r && dst->ne[1] == block_budget &&
+                    dst->ne[2] == n_tps && dst->ne[3] == n_stream);
+        constexpr int threads = 256;
+        const int64_t n = r*block_budget*n_tps*n_stream;
+        const dim3 blocks((unsigned int) ((n + threads - 1)/threads));
+        k_qsa_selected_blocks_to_cells<<<blocks, threads, 0, stream>>>(
+                (const int32_t *) src0->data, (const int32_t *) src1->data, (int32_t *) dst->data,
+                r, n_blocks, block_budget, n_tps, n_stream,
+                src1->nb[0]/sizeof(int32_t), src1->nb[1]/sizeof(int32_t), src1->nb[2]/sizeof(int32_t));
+        return;
+    }
 
     // Private Qwen4exp marker. Unmarked GET_ROWS nodes retain the ordinary backend path
     // regardless of any unrelated op_params contents.

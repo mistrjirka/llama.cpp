@@ -5189,6 +5189,32 @@ void ggml_compute_forward_get_rows(
         ggml_tensor * dst) {
 
     const ggml_tensor * src0 = dst->src[0];
+    const ggml_tensor * src1 = dst->src[1];
+
+    if (ggml_get_op_params_i32(dst, 0) == 0x51534243) {
+        const int64_t r = ggml_get_op_params_i32(dst, 1);
+        GGML_ASSERT(r > 0 && src0->type == GGML_TYPE_I32 && src1->type == GGML_TYPE_I32 && dst->type == GGML_TYPE_I32);
+        const int64_t n_blocks = src0->ne[0]/r;
+        const int64_t block_budget = src1->ne[0];
+        const int64_t n_tps = src1->ne[1];
+        const int64_t n_stream = src1->ne[2];
+        const int64_t n = r*block_budget*n_tps*n_stream;
+        const int ith = params->ith;
+        const int nth = params->nth;
+        for (int64_t i = ith; i < n; i += nth) {
+            const int64_t g = i % r;
+            int64_t t = i/r;
+            const int64_t ib = t % block_budget;
+            t /= block_budget;
+            const int64_t iq = t % n_tps;
+            const int64_t is = t / n_tps;
+            const int32_t block = *(const int32_t *) ((const char *) src1->data +
+                    ib*src1->nb[0] + iq*src1->nb[1] + is*src1->nb[2]);
+            ((int32_t *) dst->data)[i] = block < 0 || block >= n_blocks ? -1 :
+                    ((const int32_t *) src0->data)[is*(r*n_blocks) + (int64_t) block*r + g];
+        }
+        return;
+    }
 
     switch (src0->type) {
         case GGML_TYPE_Q1_0:
@@ -5301,6 +5327,9 @@ static void ggml_compute_forward_set_rows_impl(
 
                 const int64_t i1 = *(idx_t *) ((char *) src1->data + i10*nb10 + i11*nb11 + i12*nb12);
 
+                if (dst->op_params[0] == 0x51535042 && i1 < 0) {
+                    continue;
+                }
                 GGML_ASSERT(i1 >= 0 && i1 < ne1);
 
                 if constexpr (std::is_same_v<src_t, float>) {
