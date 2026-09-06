@@ -587,7 +587,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     // Exact fast path for ordinary autoregressive text decode. Select compressed blocks
     // before expanding them to physical cells, instead of materializing n_kv scores.
     const bool direct_block_topk = gather && direct_block_topk_enabled &&
-        cparams.n_seq_max == 1 && n_stream == 1 && n_tps == 1 && ubatch.n_seqs_unq == 1 && !ubatch.is_pos_2d() &&
+        cparams.n_seq_max == 1 && n_stream == 1 && n_tps == 1 && ubatch.n_seqs_unq == 1 && ubatch.token != nullptr &&
         cparams.causal_attn && !hparams.use_alibi && hparams.indexer_top_k % r == 0;
 
     static const bool pp_block_topk_enabled = [] {
