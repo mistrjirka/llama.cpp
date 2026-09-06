@@ -40,6 +40,51 @@ static __global__ void k_get_rows(
     }
 }
 
+// Qwen4exp QSA block pooling: four physical q8_0 rows form one compressed key.
+// The source row ids still come from the ordinary blk_cells tensor, so this does not
+// assume an identity/contiguous KV layout. Addition order matches the graph fallback.
+static __global__ void k_get_rows_q8_0_mean4(
+        const void * __restrict__ src0, const int32_t * __restrict__ src1, float * __restrict__ dst,
+        const int64_t ne00, const int64_t ne11, const uint3 ne12_fdv,
+        const size_t s1, const size_t s2, const size_t s3,
+        const size_t nb01, const size_t nb02, const size_t nb03,
+        const size_t s10, const size_t s11, const size_t s12) {
+
+    ggml_cuda_pdl_sync();
+    for (int64_t z = blockIdx.z; z < ne11*(int64_t)ne12_fdv.z; z += gridDim.z) {
+        for (int64_t i00 = 2*(blockIdx.y*blockDim.x + threadIdx.x); i00 < ne00; i00 += gridDim.y*blockDim.x) {
+            const int i10 = blockIdx.x;
+            const uint2 dm = fast_div_modulo((uint32_t) z, ne12_fdv);
+            const int i11 = dm.x;
+            const int i12 = dm.y;
+
+            const int ib   =  i00/QK8_0;
+            const int iqs  = (i00%QK8_0)/QR8_0;
+            const int iybs = i00 - i00%QK8_0;
+            const int y_offset = QR8_0 == 1 ? 1 : QK8_0/2;
+
+            const int i01_0 = src1[(4*i10 + 0)*s10 + i11*s11 + i12*s12];
+            const void * src0_row_0 = (const char *) src0 + i01_0*nb01 + i11*nb02 + i12*nb03;
+            float2 sum;
+            dequantize_q8_0(src0_row_0, ib, iqs, sum);
+#pragma unroll
+            for (int g = 1; g < 4; ++g) {
+                const int i01 = src1[(4*i10 + g)*s10 + i11*s11 + i12*s12];
+                const void * src0_row = (const char *) src0 + i01*nb01 + i11*nb02 + i12*nb03;
+                float2 v;
+                dequantize_q8_0(src0_row, ib, iqs, v);
+                // Preserve the fallback's sequential F32 accumulation order.
+                sum.x += v.x;
+                sum.y += v.y;
+            }
+
+            float * dst_row = dst + i10*s1 + i11*s2 + i12*s3;
+            dst_row[iybs + iqs + 0]        = sum.x * 0.25f;
+            dst_row[iybs + iqs + y_offset] = sum.y * 0.25f;
+        }
+    }
+}
+
 template<typename dst_t, dequantize_kq_t<dst_t> dequantize_kq>
 static __global__ void k_get_rows_kq(
         const void * __restrict__ src0, const int32_t * __restrict__ src1, dst_t * __restrict__ dst,
@@ -453,6 +498,29 @@ void ggml_cuda_op_get_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(src0->nb[0] == ggml_type_size(src0->type));
     GGML_ASSERT(src1->nb[0] == ggml_type_size(src1->type));
     GGML_ASSERT(dst->nb[0]  == ggml_type_size(dst->type));
+
+    const int32_t reduce_group = ggml_get_op_params_i32(dst, 0);
+    if (reduce_group > 1) {
+        GGML_ASSERT(reduce_group == 4);
+        GGML_ASSERT(src0->type == GGML_TYPE_Q8_0 && dst->type == GGML_TYPE_F32);
+        GGML_ASSERT(ne10 == 4*ne1 && ne2 == ne11 && ne3 == ne12);
+        GGML_ASSERT(ne00 % 2 == 0);
+        GGML_ASSERT(ne12 > 0 && ne11 <= std::numeric_limits<uint32_t>::max()/ne12);
+
+        const dim3 block_dims(CUDA_GET_ROWS_BLOCK_SIZE, 1, 1);
+        const int block_num_y = (ne00 + 2*CUDA_GET_ROWS_BLOCK_SIZE - 1)/(2*CUDA_GET_ROWS_BLOCK_SIZE);
+        const dim3 block_nums(ne1, MIN(block_num_y, UINT16_MAX), MIN(ne11*ne12, (int64_t) UINT16_MAX));
+        const uint3 ne12_fdv = init_fastdiv_values(ne12);
+
+        k_get_rows_q8_0_mean4<<<block_nums, block_dims, 0, stream>>>(
+            src0->data, (const int32_t *) src1->data, (float *) dst->data,
+            ne00, ne11, ne12_fdv,
+            nb1/sizeof(float), nb2/sizeof(float), nb3/sizeof(float),
+            nb01, nb02, nb03,
+            nb10/sizeof(int32_t), nb11/sizeof(int32_t), nb12/sizeof(int32_t));
+        return;
+    }
+    GGML_ASSERT(reduce_group == 0 || reduce_group == 1);
 
     get_rows_cuda(src0->data, src0->type, (const int32_t *) src1->data, dst->data, dst->type,
         ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);

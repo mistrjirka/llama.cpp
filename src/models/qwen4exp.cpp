@@ -521,6 +521,10 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
         const char * e = getenv("QWEN4EXP_QSA_BLOCK_TOPK");
         return e == nullptr || atoi(e) != 0;
     }();
+    static const bool fused_pool_enabled = [] {
+        const char * e = getenv("QWEN4EXP_QSA_FUSED_POOL");
+        return e != nullptr && atoi(e) != 0;
+    }();
 
     // Exact fast path for ordinary autoregressive text decode. Select compressed blocks
     // before expanding them to physical cells, instead of materializing n_kv scores.
@@ -582,19 +586,33 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     ggml_tensor * k_all = mctx_idx->get_k(ctx0, il);
     k_all = ggml_view_3d(ctx0, k_all, idx_dim, n_kv, n_stream, k_all->nb[2], k_all->nb[3], 0);
 
-    // gathers per stream: blk_cells row s indexes stream s's own cells
-    ggml_tensor * members = ggml_get_rows(ctx0, k_all, inp->blk_cells);
-    members = ggml_reshape_4d(ctx0, members, idx_dim, r, n_blocks, n_stream);
-
-    // mean over the block members; r is small, so summing slices beats a transpose plus sum_rows
+    // gathers per stream: blk_cells row s indexes stream s's own cells. In the opt-in
+    // direct-decode path, fuse q8 dequantization plus the four-row mean into GET_ROWS
+    // itself. This preserves arbitrary restored/cache cell layouts while avoiding the
+    // [idx_dim, 4*n_blocks] F32 intermediate and its slice/add/scale chain.
     ggml_tensor * pooled = nullptr;
-    for (int64_t i = 0; i < r; ++i) {
-        ggml_tensor * slice = ggml_cont(ctx0,
-                ggml_view_3d(ctx0, members, idx_dim, n_blocks, n_stream,
-                        members->nb[2], members->nb[3], i*members->nb[1]));
-        pooled = pooled ? ggml_add(ctx0, pooled, slice) : slice;
+    const bool fused_pool = direct_block_topk && fused_pool_enabled && r == 4 && k_all->type == GGML_TYPE_Q8_0;
+    if (fused_pool) {
+        GGML_ASSERT(inp->blk_cells->type == GGML_TYPE_I32);
+        GGML_ASSERT(inp->blk_cells->ne[0] == r*n_blocks && inp->blk_cells->ne[1] == n_stream);
+        pooled = ggml_new_tensor_4d(ctx0, GGML_TYPE_F32, idx_dim, n_blocks, n_stream, 1);
+        pooled->op     = GGML_OP_GET_ROWS;
+        pooled->src[0] = k_all;
+        pooled->src[1] = inp->blk_cells;
+        pooled->op_params[0] = (int32_t) r;
+    } else {
+        ggml_tensor * members = ggml_get_rows(ctx0, k_all, inp->blk_cells);
+        members = ggml_reshape_4d(ctx0, members, idx_dim, r, n_blocks, n_stream);
+
+        // mean over the block members; r is small, so summing slices beats a transpose plus sum_rows
+        for (int64_t i = 0; i < r; ++i) {
+            ggml_tensor * slice = ggml_cont(ctx0,
+                    ggml_view_3d(ctx0, members, idx_dim, n_blocks, n_stream,
+                            members->nb[2], members->nb[3], i*members->nb[1]));
+            pooled = pooled ? ggml_add(ctx0, pooled, slice) : slice;
+        }
+        pooled = ggml_scale(ctx0, pooled, 1.0f/(float) r);
     }
-    pooled = ggml_scale(ctx0, pooled, 1.0f/(float) r);
     cb(pooled, "indexer_k_pooled", il);
 
     // rope wants [n_dims, n_head, n_tokens]: lay every stream's blocks flat, split after.

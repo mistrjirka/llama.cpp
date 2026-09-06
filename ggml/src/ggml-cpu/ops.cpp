@@ -4991,6 +4991,45 @@ static void ggml_compute_forward_get_rows_q(
     const ggml_type type = src0->type;
     ggml_to_float_t const dequantize_row_q = ggml_get_type_traits(type)->to_float;
 
+    const int32_t reduce_group = ggml_get_op_params_i32(dst, 0);
+    if (reduce_group > 1) {
+        GGML_ASSERT(reduce_group == 4 && type == GGML_TYPE_Q8_0);
+        GGML_ASSERT(ne0 == nc && nc <= 256);
+        GGML_ASSERT(ne10 == reduce_group*ne1 && ne2 == ne11 && ne3 == ne12);
+        GGML_ASSERT(nb00 == ggml_type_size(type));
+
+        const int ith = params->ith;
+        const int nth = params->nth;
+        const int64_t nr_out = ggml_nrows(dst);
+        const int64_t dr = (nr_out + nth - 1)/nth;
+        const int64_t ir0 = dr*ith;
+        const int64_t ir1 = MIN(ir0 + dr, nr_out);
+        float tmp[256];
+
+        for (int64_t i = ir0; i < ir1; ++i) {
+            const int64_t i3 = i/(ne2*ne1);
+            const int64_t rem = i - i3*ne2*ne1;
+            const int64_t i2 = rem/ne1;
+            const int64_t i1 = rem - i2*ne1;
+            float * d = (float *) ((char *) dst->data + i1*nb1 + i2*nb2 + i3*nb3);
+
+            for (int32_t g = 0; g < reduce_group; ++g) {
+                const int64_t i01 = *(int32_t *) ((char *) src1->data + (reduce_group*i1 + g)*nb10 + i2*nb11 + i3*nb12);
+                GGML_ASSERT(i01 >= 0 && i01 < ne01);
+                float * out = g == 0 ? d : tmp;
+                dequantize_row_q((const void *) ((char *) src0->data + i01*nb01 + i2*nb02 + i3*nb03), out, nc);
+                if (g != 0) {
+                    for (int64_t j = 0; j < nc; ++j) {
+                        d[j] = d[j] + tmp[j];
+                    }
+                }
+            }
+            ggml_vec_scale_f32(nc, d, 0.25f);
+        }
+        return;
+    }
+    GGML_ASSERT(reduce_group == 0 || reduce_group == 1);
+
     assert(ne0  == nc);
     assert(ne02 == ne11);
     assert(nb00 == ggml_type_size(type));
