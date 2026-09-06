@@ -4991,9 +4991,12 @@ static void ggml_compute_forward_get_rows_q(
     const ggml_type type = src0->type;
     ggml_to_float_t const dequantize_row_q = ggml_get_type_traits(type)->to_float;
 
-    const int32_t reduce_group = ggml_get_op_params_i32(dst, 0);
-    if (reduce_group > 1) {
-        GGML_ASSERT(reduce_group == 4 && type == GGML_TYPE_Q8_0);
+    // Private Qwen4exp marker. Unmarked GET_ROWS nodes keep the ordinary CPU path.
+    const bool qsa_mean4 = ggml_get_op_params_i32(dst, 0) == 0x51534104 &&
+                           ggml_get_op_params_i32(dst, 1) == 4;
+    if (qsa_mean4) {
+        constexpr int32_t reduce_group = 4;
+        GGML_ASSERT(type == GGML_TYPE_Q8_0);
         GGML_ASSERT(ne0 == nc && nc <= 256);
         GGML_ASSERT(ne10 == reduce_group*ne1 && ne2 == ne11 && ne3 == ne12);
         GGML_ASSERT(nb00 == ggml_type_size(type));
@@ -5028,7 +5031,6 @@ static void ggml_compute_forward_get_rows_q(
         }
         return;
     }
-    GGML_ASSERT(reduce_group == 0 || reduce_group == 1);
 
     assert(ne0  == nc);
     assert(ne02 == ne11);

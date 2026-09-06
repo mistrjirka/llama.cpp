@@ -599,7 +599,9 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
         pooled->op     = GGML_OP_GET_ROWS;
         pooled->src[0] = k_all;
         pooled->src[1] = inp->blk_cells;
-        pooled->op_params[0] = (int32_t) r;
+        // Private marker consumed only by the fused mean-4 GET_ROWS backend fast path.
+        pooled->op_params[0] = 0x51534104; // "QSA" + 4
+        pooled->op_params[1] = (int32_t) r;
     } else {
         ggml_tensor * members = ggml_get_rows(ctx0, k_all, inp->blk_cells);
         members = ggml_reshape_4d(ctx0, members, idx_dim, r, n_blocks, n_stream);

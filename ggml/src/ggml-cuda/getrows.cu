@@ -499,9 +499,11 @@ void ggml_cuda_op_get_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(src1->nb[0] == ggml_type_size(src1->type));
     GGML_ASSERT(dst->nb[0]  == ggml_type_size(dst->type));
 
-    const int32_t reduce_group = ggml_get_op_params_i32(dst, 0);
-    if (reduce_group > 1) {
-        GGML_ASSERT(reduce_group == 4);
+    // Private Qwen4exp marker. Unmarked GET_ROWS nodes retain the ordinary backend path
+    // regardless of any unrelated op_params contents.
+    const bool qsa_mean4 = ggml_get_op_params_i32(dst, 0) == 0x51534104 &&
+                           ggml_get_op_params_i32(dst, 1) == 4;
+    if (qsa_mean4) {
         GGML_ASSERT(src0->type == GGML_TYPE_Q8_0 && dst->type == GGML_TYPE_F32);
         GGML_ASSERT(ne10 == 4*ne1 && ne2 == ne11 && ne3 == ne12);
         GGML_ASSERT(ne00 % 2 == 0);
@@ -520,7 +522,6 @@ void ggml_cuda_op_get_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
             nb10/sizeof(int32_t), nb11/sizeof(int32_t), nb12/sizeof(int32_t));
         return;
     }
-    GGML_ASSERT(reduce_group == 0 || reduce_group == 1);
 
     get_rows_cuda(src0->data, src0->type, (const int32_t *) src1->data, dst->data, dst->type,
         ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);
