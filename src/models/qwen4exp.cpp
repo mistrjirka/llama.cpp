@@ -599,7 +599,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     // score expansion/sort: pick complete blocks first, expand their physical cell ids,
     // then let build_attn_qsa construct the exact same token mask as before.
     const bool pp_block_topk = !direct_block_topk && (pp_block_topk_enabled || gather) &&
-        cparams.n_seq_max == 1 && n_stream == 1 && n_tps > 1 && ubatch.n_seqs_unq == 1 && !ubatch.is_pos_2d() &&
+        cparams.n_seq_max == 1 && n_stream == 1 && n_tps > 1 && ubatch.n_seqs_unq == 1 &&
         cparams.causal_attn && !hparams.use_alibi && hparams.indexer_top_k % r == 0 &&
         n_kv >= (int64_t) hparams.indexer_top_k + r - 1;
     const bool block_topk = direct_block_topk || pp_block_topk;
@@ -611,7 +611,8 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
     // nothing above depends on the layer, so the layers sharing a ratio share one input set
     llm_graph_input_qsa * inp = nullptr;
 
-    const auto it = qsa_inps.find((uint32_t) r);
+    const uint32_t qsa_key = (uint32_t) r | (gather ? 0x80000000u : 0u);
+    const auto it = qsa_inps.find(qsa_key);
     if (it != qsa_inps.end()) {
         inp = it->second;
     } else {
@@ -647,7 +648,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
 
         inp = qsa.get();
         res->add_input(std::move(qsa));
-        qsa_inps.emplace((uint32_t) r, inp);
+        qsa_inps.emplace(qsa_key, inp);
     }
 
     // cached indexer keys are raw: pooling precedes norm and rotation, so apply neither
@@ -1152,7 +1153,8 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
     if (top_k) {
         ggml_tensor * qsa_bias = nullptr;
         if (gather) {
-            auto * qsa_inp = qsa_inps.at((uint32_t) hparams.dsv4_compress_ratios[il]);
+            const uint32_t qsa_key = (uint32_t) hparams.dsv4_compress_ratios[il] | 0x80000000u;
+            auto * qsa_inp = qsa_inps.at(qsa_key);
             qsa_bias = qsa_inp->direct_mask != nullptr ? qsa_inp->direct_mask : qsa_inp->bias;
         }
 
