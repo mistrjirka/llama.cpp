@@ -2,6 +2,62 @@
 #include "dequantize.cuh"
 #include "convert.cuh"
 
+// Exact raw q8_0 row gather. Used by Qwen4exp sparse QSA so native q8 FlashAttention
+// can consume selected cache rows without first materializing F32/F16 K/V tensors.
+// q8_0 rows are copied byte-for-byte; no requantization or floating-point work occurs.
+static __global__ void k_get_rows_q8_0_raw(
+        const char * __restrict__ src0, const int32_t * __restrict__ src1, char * __restrict__ dst,
+        const int64_t row_vecs, const int64_t ne11, const uint3 ne12_fdv,
+        const size_t nb01, const size_t nb02, const size_t nb03,
+        const size_t s10, const size_t s11, const size_t s12,
+        const size_t nb1, const size_t nb2, const size_t nb3) {
+    ggml_cuda_pdl_sync();
+    for (int64_t z = blockIdx.z; z < ne11*(int64_t)ne12_fdv.z; z += gridDim.z) {
+        const int i10 = blockIdx.x;
+        const uint2 dm = fast_div_modulo((uint32_t) z, ne12_fdv);
+        const int i11 = dm.x;
+        const int i12 = dm.y;
+        const int i01 = src1[i10*s10 + i11*s11 + i12*s12];
+
+        const int4 * src_row = reinterpret_cast<const int4 *>(src0 + i01*nb01 + i11*nb02 + i12*nb03);
+        int4 * dst_row = reinterpret_cast<int4 *>(dst + i10*nb1 + i11*nb2 + i12*nb3);
+
+        for (int64_t iv = blockIdx.y*blockDim.x + threadIdx.x; iv < row_vecs; iv += gridDim.y*blockDim.x) {
+            dst_row[iv] = src_row[iv];
+        }
+    }
+}
+
+static void get_rows_cuda_q8_0_raw(
+        const void * src0_d, const int32_t * src1_d, void * dst_d,
+        const int64_t ne00, const size_t nb01, const size_t nb02, const size_t nb03,
+        const int64_t ne10, const int64_t ne11, const int64_t ne12,
+        const size_t nb10, const size_t nb11, const size_t nb12,
+        const size_t nb1, const size_t nb2, const size_t nb3,
+        cudaStream_t stream) {
+    const size_t row_bytes = ggml_row_size(GGML_TYPE_Q8_0, ne00);
+    GGML_ASSERT(row_bytes % sizeof(int4) == 0);
+    GGML_ASSERT(((uintptr_t) src0_d % alignof(int4)) == 0 && ((uintptr_t) dst_d % alignof(int4)) == 0);
+    GGML_ASSERT(nb01 % sizeof(int4) == 0 && nb02 % sizeof(int4) == 0 && nb03 % sizeof(int4) == 0);
+    GGML_ASSERT(nb1  % sizeof(int4) == 0 && nb2  % sizeof(int4) == 0 && nb3  % sizeof(int4) == 0);
+
+    const int64_t row_vecs = row_bytes / sizeof(int4);
+    const dim3 block_dims(CUDA_GET_ROWS_BLOCK_SIZE, 1, 1);
+    const int block_num_y = (row_vecs + CUDA_GET_ROWS_BLOCK_SIZE - 1) / CUDA_GET_ROWS_BLOCK_SIZE;
+    const dim3 block_nums(ne10, MIN(block_num_y, UINT16_MAX), MIN(ne11*ne12, UINT16_MAX));
+    GGML_ASSERT(ne12 > 0);
+    GGML_ASSERT(ne11 <= std::numeric_limits<uint32_t>::max() / ne12);
+    const uint3 ne12_fdv = init_fastdiv_values(ne12);
+
+    const size_t s10 = nb10 / sizeof(int32_t);
+    const size_t s11 = nb11 / sizeof(int32_t);
+    const size_t s12 = nb12 / sizeof(int32_t);
+    const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params{block_nums, block_dims, 0, stream};
+    ggml_cuda_kernel_launch(k_get_rows_q8_0_raw, launch_params,
+        (const char *) src0_d, src1_d, (char *) dst_d, row_vecs, ne11, ne12_fdv,
+        nb01, nb02, nb03, s10, s11, s12, nb1, nb2, nb3);
+}
+
 template<int qk, int qr, dequantize_kernel_t dequantize_kernel, typename dst_t>
 static __global__ void k_get_rows(
         const void * __restrict__ src0, const int32_t * __restrict__ src1, dst_t * __restrict__ dst,
@@ -502,6 +558,11 @@ void get_rows_cuda(
             break;
         case GGML_TYPE_BF16:
             ggml_cuda_get_rows_switch_src0_type(src0_d, src0_type, src1_d, (nv_bfloat16 *) dst_d,
+                ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);
+            break;
+        case GGML_TYPE_Q8_0:
+            GGML_ASSERT(src0_type == GGML_TYPE_Q8_0);
+            get_rows_cuda_q8_0_raw(src0_d, src1_d, dst_d,
                 ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);
             break;
         default:

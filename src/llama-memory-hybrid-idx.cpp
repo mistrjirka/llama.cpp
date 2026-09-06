@@ -706,6 +706,8 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
 
     GGML_ASSERT(n_tokens % n_ns == 0);
     const int64_t n_tps = n_tokens/n_ns;             // tokens per stream
+    const bool direct = block_topk && n_tps == 1 && direct_mask != nullptr;
+    const bool compact_mask = block_topk && direct_mask != nullptr;
 
     int32_t * dst_cell_blk  = cell_blk != nullptr ? (int32_t *) cell_blk->data : nullptr;
     int32_t * dst_blk_cells = (int32_t *) blk_cells->data;
@@ -785,8 +787,6 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
 
             if (blk_bias) {
                 float * cur_blk_bias = dst_bias + i*n_blocks;
-                const bool direct = direct_tail != nullptr && direct_mask != nullptr;
-
                 for (int64_t b = 0; b < n_blocks; ++b) {
                     // Ordinary block-bias mode forces the causal tail into cell top-k.
                     // Direct block-top-k instead excludes incomplete/future blocks; the true
@@ -803,7 +803,7 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
                     int32_t * tail = (int32_t *) direct_tail->data + i*extra;
                     // Gather decode masks its alignment padding separately.  Prefill uses
                     // -1 sentinels which the private QSA SET_ROWS path treats as no-op.
-                    std::fill(tail, tail + extra, direct ? 0 : -1);
+                    std::fill(tail, tail + extra, compact_mask ? 0 : -1);
 
                     int64_t n_tail = 0;
                     if (direct) {
@@ -833,7 +833,7 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
                         }
                     }
 
-                    if (direct) {
+                    if (compact_mask) {
                         const int64_t width = direct_mask->ne[0];
                         const int64_t block_budget = (width - extra)/r;
                         GGML_ASSERT(block_budget*r + extra == width);
