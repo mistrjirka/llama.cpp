@@ -1585,7 +1585,7 @@ private:
         // destination: established agent slots retain the existing LCP/LRU semantics.
         if (params_base.slot_fork_prefix && params_base.kv_unified &&
                 task.type == SERVER_TASK_TYPE_COMPLETION && !task.tokens.empty() &&
-                !task.tokens.has_mtmd && task.params.lora.empty()) {
+                !task.tokens.has_media() && task.params.lora.empty()) {
             server_slot * dst = nullptr;
 
             if (ret != nullptr) {
@@ -1611,7 +1611,7 @@ private:
 
                 for (auto & cur : slots) {
                     if (&cur == dst || cur.is_processing() || cur.prompt.tokens.empty() ||
-                            cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, params_base.lora_adapters)) {
+                            cur.prompt.tokens.has_media() || !are_lora_equal(cur.lora, params_base.lora_adapters)) {
                         continue;
                     }
 
@@ -1728,9 +1728,9 @@ private:
                 server_slot * cache_donor = nullptr;
                 size_t cache_donor_lcp = 0;
                 if (params_base.slot_fork_prefix && params_base.kv_unified &&
-                        !task.tokens.has_mtmd && task.params.lora.empty()) {
+                        !task.tokens.has_media() && task.params.lora.empty()) {
                     for (auto & cur : slots) {
-                        if (&cur == ret || cur.is_processing() || cur.prompt.tokens.empty() || cur.prompt.tokens.has_mtmd ||
+                        if (&cur == ret || cur.is_processing() || cur.prompt.tokens.empty() || cur.prompt.tokens.has_media() ||
                                 !cur.lora.empty()) {
                             continue;
                         }
@@ -2900,10 +2900,10 @@ private:
                             server_tokens candidate = server_tokens::deserialize(packed, mctx != nullptr);
                             server_slot * donor = nullptr;
                             int lcp_best = 0;
-                            if (!candidate.has_mtmd && candidate.validate(ctx_tgt)) {
+                            if (!candidate.has_media() && candidate.validate(ctx_tgt)) {
                                 for (auto & cur : slots) {
                                     if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
-                                            cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, slot->lora)) {
+                                            cur.prompt.tokens.has_media() || !are_lora_equal(cur.lora, slot->lora)) {
                                         continue;
                                     }
                                     const int lcp = cur.prompt.tokens.get_common_prefix(candidate);
@@ -2944,10 +2944,10 @@ private:
                         server_slot * restore_donor = nullptr;
                         int restore_lcp = 0;
                         if (params_base.slot_fork_prefix && params_base.kv_unified &&
-                                !slot->prompt.tokens.has_mtmd) {
+                                !slot->prompt.tokens.has_media()) {
                             for (auto & cur : slots) {
                                 if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
-                                        cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, slot->lora)) {
+                                        cur.prompt.tokens.has_media() || !are_lora_equal(cur.lora, slot->lora)) {
                                     continue;
                                 }
                                 const int lcp = cur.prompt.tokens.get_common_prefix(slot->prompt.tokens);

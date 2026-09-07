@@ -220,6 +220,9 @@ public:
 
     bool empty() const { return tokens.empty(); }
 
+    // has_mtmd records capability; a vision-enabled server can still hold text-only histories.
+    bool has_media() const { return !map_idx_to_media.empty(); }
+
     void clear() {
         map_idx_to_media.clear();
         tokens.clear();
