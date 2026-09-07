@@ -4,7 +4,7 @@
 
 A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) for NVIDIA Volta (SM70) and Turing (SM75), tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main target is long-context Qwen3.8-27B serving; Ornith-1.5-35B-A3B has additional routed-MoE tuning.
 
-**Branch:** `v100-optimized` · **Validated post-sync code:** `f3f0eef26` · **Upstream merged through:** `465e49b9c`
+**Branch:** `v100-optimized` · **Validated multi-agent code:** `439f2245e3` · **Upstream merged through:** `465e49b9c`
 
 ## Performance vs vanilla llama.cpp
 
@@ -63,6 +63,49 @@ Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. If you s
 
 > [!WARNING]
 > `GGML_CUDA_FORCE_MMQ=ON` is intended for routed quantized MoE workloads such as Ornith. Do not enable it globally for dense Qwen3.8; it is a known prompt-processing regression there.
+
+## Multi-agent KV sharing and parked sessions
+
+This fork also reduces the memory cost of parallel long-context agents. The server's exact-prefix fork is **enabled by default for unified-KV serving**: when a new text-only slot is an exact extension of an idle slot, the shared attention prefix is referenced by both sequence IDs instead of allocating a second K/V copy. The path is implemented through llama.cpp's generic sequence-memory interface rather than an Ornith-specific model hook.
+
+For server mode, **multiple slots now default to unified KV even when `--parallel N` is supplied explicitly**, so this optimization is not tied to Ornith or to the auto-slot path. `--no-kv-unified` remains an explicit compatibility opt-out. Single-slot behavior is unchanged.
+
+The automatic path remains conservative. It requires unified KV, an empty destination, an idle exact-prefix donor and compatible adapter state; multimodal prompts and LoRA requests fall back to normal slot scheduling. Use `--no-slot-fork-prefix` to disable it. It has been runtime-validated on both **Qwen3.8-27B** (dense attention, built-in MTP) and **Ornith-1.5-35B-A3B** (hybrid recurrent/attention, external Shisa MTP). Qwen's 8k-parent + 2k-child test reused all 8,000 parent tokens and produced the same deterministic output SHA and 42/61 MTP acceptance as a clean full-prefill control.
+
+For `N` histories of lengths `L_i` with one common prefix of length `P`, the attention-KV occupancy is approximately:
+
+```text
+physical KV tokens = sum(L_i) - (N - 1) * P
+```
+
+### Measured four-slot Ornith VRAM
+
+Real `AD-Q6_K-Q5_K`, V100 32 GB + RTX 2080 Ti 22 GB, four logical 400k slots, q8_0 target **and** draft KV, Shisa Q5_0 MTP3, CPU vision projector, identical model placement. Only the physical unified-KV pool changes:
+
+| physical KV pool | RTX 2080 Ti used | V100 used | total GPU memory used |
+|---:|---:|---:|---:|
+| 1.2M tokens | 19,230 MiB | 30,045 MiB | **49,275 MiB** |
+| 1.3M tokens | 20,110 MiB | 31,015 MiB | **51,125 MiB** |
+| **1.4M tokens** | **20,990 MiB** | **31,985 MiB** | **52,975 MiB** |
+
+The measured slope is almost exactly **1,850 MiB per 100k physical q8 KV tokens**. Four independent 400k caches would require a 1.6M-token pool; relative to that reservation, the validated 1.4M shared pool avoids about **3,700 MiB (~3.6 GiB) of GPU memory**. Extrapolating the measured slope puts a 1.6M configuration at about 56,675 MiB, beyond this 54 GB GPU pair. The 1.4M pool therefore turns an otherwise non-fitting 4x400k layout into a working one whenever the four full histories share at least **66,667 prefix tokens**. A 100k common parent would need only about 1.3M physical tokens; 1.4M is retained as the safer default headroom.
+
+### More agent sessions than GPU slots
+
+A GPU slot is now execution capacity rather than a permanent agent identity. The server's host prompt cache can park **multiple complete agent states** behind a smaller number of live slots. Parked entries include target state, draft/MTP state and speculative carry. On reuse, the deepest matching history is loaded into a free/replaced slot; if a compatible prefix is still live in another unified-KV slot, the parked target and draft states restore **directly onto that prefix** and allocate only the divergent tail.
+
+This was forced in a Qwen test with an ~8.5k physical pool: a 5.5k child could not coexist as a full copy beside its 4k parent, but the parked child restored successfully by reusing the live 4k parent in both target and draft KV. The resumed output SHA and 47/47 MTP acceptance matched the always-live child control exactly. A separate one-slot A -> B -> C -> A test restored 5,000 cached tokens from RAM and matched the live-cache continuation exactly, including 42/63 MTP acceptance. Ornith's hybrid/recurrent A -> B -> C -> A test also matched exactly, including 43/57 MTP acceptance.
+
+The parked RAM bank can be persisted with:
+
+```text
+POST /prompt-cache?action=save     {"filename":"prompt-cache.bin"}
+POST /prompt-cache?action=restore  {"filename":"prompt-cache.bin"}
+```
+
+`--slot-save-path` supplies the directory, as with ordinary slot snapshots. In an end-to-end wrapper test, two parked Qwen agents occupied a 625.5 MB bank; after the server process was killed and recreated, the bank restored in **141 ms** before serving traffic, the live slot restored separately, and the parked-agent continuation matched the live-cache control SHA exactly. RAM-cache eviction remains size-bounded/oldest-first through `--cache-ram`.
+
+For multi-agent unified-KV serving, prefer a host cache without aggressive idle clearing: keep useful live slots resident and let LRU replacement or KV pressure park states to RAM. This is the mode used by the companion `local-llm-setup` configuration.
 
 ## Quick start: Qwen3.8 on one V100 (SM70)
 
@@ -657,6 +700,10 @@ The optional `GGML_CUDA_VOLTA_GQA8_NCOLS2=2` path is restricted to long-K Qwen 2
 
 Server changes for coding-agent traffic:
 
+- multi-slot server mode defaults to unified KV unless `--no-kv-unified` is explicitly requested;
+- exact-prefix sequence sharing is enabled by default for unified-KV serving and can be disabled with `--no-slot-fork-prefix`;
+- prompt-cache entries preserve target, draft and speculative/MTP state, and the whole parked-agent bank can be saved/restored through `/prompt-cache`;
+- parked states can restore directly onto an already-live compatible prefix instead of temporarily duplicating the prefix in KV;
 - prompt-cache states are chosen by the deepest usable absolute prefix rather than ratio alone;
 - recurrent checkpoints preserve likely replay boundaries;
 - duplicate exact checkpoint prefixes are refreshed rather than stored twice;
