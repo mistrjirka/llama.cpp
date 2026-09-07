@@ -592,7 +592,11 @@ struct llama_sampler * common_sampler_get(const struct common_sampler * gsmpl) {
 }
 
 llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_context * ctx, int idx, bool grammar_first) {
-    static const bool batch_output = std::getenv("LLAMA_EXPERIMENT_SAMPLING_VIEW") != nullptr;
+    static const bool batch_output = [] {
+        const char * value = std::getenv("LLAMA_SAMPLING_VIEW");
+        if (!value) value = std::getenv("LLAMA_EXPERIMENT_SAMPLING_VIEW");
+        return !value || std::strcmp(value, "1") == 0;
+    }();
     llama_sampling_output output{};
     if (batch_output) {
         GGML_ASSERT(llama_get_sampling_output_ith(ctx, idx, &output));

@@ -1347,6 +1347,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     int32_t n_mtp_layers  = 1;
     bool    is_mem_shared = false;   // gemma4
     bool    chain_heads   = false;   // derived in the ctor: n_mtp_layers > 1 && !is_mem_shared
+    bool cache_only_refresh = false; // only the validated single-layer, non-shared heads
+    bool bulk_hidden_read = false;
 
     // Per-sequence cross-batch carryover: pair (h_p, x_{p+1}) at MTP pos p+1.
     // The last h-row of one process() call needs the first token of the NEXT
@@ -1434,6 +1436,21 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         is_mem_shared = llama_get_ctx_other(ctx_dft) == ctx_tgt;
         chain_heads   = n_mtp_layers > 1 && !is_mem_shared;
 
+        const auto enabled = [](const char * name, const char * legacy) {
+            const char * value = std::getenv(name);
+            if (!value) value = std::getenv(legacy);
+            return !value || std::strcmp(value, "1") == 0;
+        };
+        char draft_arch[32] = {};
+        llama_model_meta_val_str(llama_get_model(ctx_dft), "general.architecture", draft_arch, sizeof(draft_arch));
+        const bool supported_head = std::strcmp(draft_arch, "qwen35") == 0 ||
+                                    std::strcmp(draft_arch, "qwen35moe") == 0;
+        cache_only_refresh = supported_head && n_mtp_layers == 1 && !is_mem_shared &&
+            enabled("LLAMA_MTP_KV_ONLY", "LLAMA_EXPERIMENT_MTP_KV_ONLY");
+        bulk_hidden_read = enabled("LLAMA_MTP_BULK_HIDDEN", "LLAMA_EXPERIMENT_MTP_BULK_HIDDEN");
+        SPC_INF("cache-only refresh=%d, bulk hidden reads=%d\n", (int) cache_only_refresh, (int) bulk_hidden_read);
+
+
         if (chain_heads) {
             this->params.n_max = std::min(this->params.n_max, n_mtp_layers);
 
@@ -1505,7 +1522,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         // MTP targets explicitly export dense, unmasked nextn rows. Read the whole
         // completed target output once; draft-context decodes below cannot invalidate it.
         // The saved deferred buffer is already owned and requires no synchronization.
-        if (!saved_h_nextn && std::getenv("LLAMA_EXPERIMENT_MTP_BULK_HIDDEN") != nullptr) {
+        if (!saved_h_nextn && bulk_hidden_read) {
             saved_h_nextn = llama_get_embeddings_nextn(this->params.ctx_tgt);
             if (!saved_h_nextn) {
                 SPC_ERR("%s", "missing dense target nextn output\n");
@@ -1580,10 +1597,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                         std::memcpy(batch.embd + (size_t) j * n_embd, h_row, row_bytes);
                     }
 
-                    const char * kv_env = std::getenv("LLAMA_EXPERIMENT_MTP_KV_ONLY");
-                    const bool kv_only = kv_env && std::strcmp(kv_env, "1") == 0 &&
-                            n_mtp_layers == 1 && !is_mem_shared;
-                    const int32_t rc = kv_only ? llama_decode_mtp_kv(ctx_dft, batch) : llama_decode(ctx_dft, batch);
+                    const int32_t rc = cache_only_refresh
+                        ? llama_decode_mtp_kv(ctx_dft, batch) : llama_decode(ctx_dft, batch);
                     if (rc != 0) {
                         SPC_ERR("llama_decode(ctx_dft) head=%d failed rc=%d (pos=%d, off=%d/%d)\n",
                                 head, (int) rc, (int) batch_in.pos[off], (int) off, (int) n_tokens);
