@@ -197,8 +197,12 @@ std::vector<std::unique_ptr<field>> make_llama_cmpl_schema(const common_params &
     // Request-local ceiling only: never resize the target/draft contexts or
     // mutate the process-wide MTP configuration. Zero keeps K/V warm without
     // preparing a speculative prompt/checkpoint for this request.
-    const char * request_budget = std::getenv("LLAMA_EXPERIMENT_MTP_REQUEST_BUDGET");
-    if (request_budget && std::string(request_budget) == "1" &&
+    static const bool request_budget_enabled = [] {
+        const char * value = std::getenv("LLAMA_MTP_REQUEST_BUDGET");
+        if (!value) value = std::getenv("LLAMA_EXPERIMENT_MTP_REQUEST_BUDGET");
+        return !value || std::string(value) == "1";
+    }();
+    if (request_budget_enabled &&
             std::find(params_base.speculative.types.begin(), params_base.speculative.types.end(),
                 COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params_base.speculative.types.end() &&
             std::all_of(params_base.speculative.types.begin(), params_base.speculative.types.end(),
@@ -207,7 +211,7 @@ std::vector<std::unique_ptr<field>> make_llama_cmpl_schema(const common_params &
         add((new field_num("speculative_n_max", params.speculative.draft.n_max))
             ->set_hard_limits(0, max_depth)
             ->add_alias("speculative.n_max")
-            ->set_desc("Experimental per-request MTP ceiling. Zero pauses proposals while preserving draft KV; cannot exceed the server's configured depth.")
+            ->set_desc("Per-request MTP ceiling. Zero pauses proposals while preserving draft KV; cannot exceed the server's configured depth.")
             ->set_handler([max_depth](field_eval_context & ctx, const json & data) {
                 const char * key = data.contains("speculative_n_max") && !data.at("speculative_n_max").is_null()
                     ? "speculative_n_max" : "speculative.n_max";

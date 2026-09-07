@@ -497,9 +497,12 @@ struct server_slot {
             return 0;
         }
 
-        const char * request_budget = std::getenv("LLAMA_EXPERIMENT_MTP_REQUEST_BUDGET");
-        const bool use_request_budget = request_budget && std::strcmp(request_budget, "1") == 0 &&
-                common_speculative_can_defer_prompt(spec);
+        static const bool request_budget_enabled = [] {
+            const char * value = std::getenv("LLAMA_MTP_REQUEST_BUDGET");
+            if (!value) value = std::getenv("LLAMA_EXPERIMENT_MTP_REQUEST_BUDGET");
+            return !value || std::strcmp(value, "1") == 0;
+        }();
+        const bool use_request_budget = request_budget_enabled && common_speculative_can_defer_prompt(spec);
         const int request_max = use_request_budget ? task->params.speculative.draft.n_max : INT_MAX;
         if (request_max <= 0) {
             return 0;
@@ -3408,9 +3411,12 @@ private:
                             slot.spec_ckpt.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                         }
 
-                        const char * skip_copy = std::getenv("LLAMA_EXPERIMENT_MTP_SKIP_PROMPT_COPY");
-                        if (skip_copy && std::strcmp(skip_copy, "1") == 0 &&
-                                common_speculative_can_defer_prompt(spec.get())) {
+                        static const bool skip_prompt_copy = [] {
+                            const char * value = std::getenv("LLAMA_MTP_SKIP_PROMPT_COPY");
+                            if (!value) value = std::getenv("LLAMA_EXPERIMENT_MTP_SKIP_PROMPT_COPY");
+                            return !value || std::strcmp(value, "1") == 0;
+                        }();
+                        if (skip_prompt_copy && common_speculative_can_defer_prompt(spec.get())) {
                             // A sole MTP implementation consumes the next token,
                             // target-hidden carry and existing KV, not this vector.
                             // Keep a valid empty object for generic diagnostic code.

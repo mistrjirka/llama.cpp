@@ -402,19 +402,22 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
 
         uint32_t new_head = cells.size();
         static const bool indexed = [] {
-            const char * value = std::getenv("LLAMA_EXPERIMENT_KV_INDEXED_RM");
-            return value && std::strcmp(value, "1") == 0;
+            const char * value = std::getenv("LLAMA_KV_INDEXED_RM");
+            if (!value) value = std::getenv("LLAMA_EXPERIMENT_KV_INDEXED_RM");
+            return !value || std::strcmp(value, "1") == 0;
         }();
         if (indexed) {
             new_head = cells.seq_rm_range(seq_id, p0, p1);
-        } else for (uint32_t i = 0; i < cells.size(); ++i) {
-            if (!cells.pos_in(i, p0, p1)) {
-                continue;
-            }
+        } else {
+            for (uint32_t i = 0; i < cells.size(); ++i) {
+                if (!cells.pos_in(i, p0, p1)) {
+                    continue;
+                }
 
-            if (cells.seq_has(i, seq_id) && cells.seq_rm(i, seq_id)) {
-                if (new_head == cells.size()) {
-                    new_head = i;
+                if (cells.seq_has(i, seq_id) && cells.seq_rm(i, seq_id)) {
+                    if (new_head == cells.size()) {
+                        new_head = i;
+                    }
                 }
             }
         }

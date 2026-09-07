@@ -81,7 +81,7 @@ json task_params::to_json(bool only_metrics) const {
             {"generation_prompt",         chat_parser_params.generation_prompt},
             {"samplers",                  samplers},
             {"speculative.types",         common_speculative_type_name_str(speculative.types)},
-        {"speculative_n_max",          speculative.draft.n_max},
+            {"speculative_n_max",          speculative.draft.n_max},
             {"timings_per_token",         timings_per_token},
             {"post_sampling_probs",       post_sampling_probs},
             {"backend_sampling",          sampling.backend_sampling},
