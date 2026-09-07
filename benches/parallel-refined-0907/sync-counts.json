@@ -1,0 +1,20 @@
+[
+  {
+    "arm": "off/TG",
+    "synchronizations": 19529,
+    "summed_sync_api_ms": 3856.885896,
+    "profiled_wall_ms": 6242.195345
+  },
+  {
+    "arm": "both/TG",
+    "synchronizations": 8848,
+    "summed_sync_api_ms": 3726.825263,
+    "profiled_wall_ms": 6147.009706
+  },
+  {
+    "arm": "gpu/TG",
+    "synchronizations": 21676,
+    "summed_sync_api_ms": 3922.717556,
+    "profiled_wall_ms": 9116.985919
+  }
+]

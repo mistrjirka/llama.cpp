@@ -1,0 +1,25 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32494 MiB):
+  Device 0: Tesla V100-SXM2-32GB, compute capability 7.0, VMM: yes, VRAM: 32494 MiB
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+Testing 2 devices
+
+Backend 1/2: CUDA0
+  Device description: Tesla V100-SXM2-32GB
+  Device memory: 32494 MB (32183 MB free)
+
+  FLASH_ATTN_EXT(hsk=256,hsv=256,nh=2,nr23=[8,1],kv=4096,nb=4,mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0): ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+              12682 runs -    80.05 us/run - 268.44 MFLOP/run - [1;34m  3.35 TFLOPS[0m
+  FLASH_ATTN_EXT(hsk=256,hsv=256,nh=2,nr23=[8,1],kv=4096,nb=8,mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0): ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+              11594 runs -    87.55 us/run - 536.87 MFLOP/run - [1;34m  6.13 TFLOPS[0m
+  FLASH_ATTN_EXT(hsk=256,hsv=256,nh=2,nr23=[8,1],kv=4096,nb=16,mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0): ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+             10246 runs -    97.74 us/run -   1.07 GFLOP/run - [1;34m 10.99 TFLOPS[0m
+  FLASH_ATTN_EXT(hsk=256,hsv=256,nh=2,nr23=[8,1],kv=100096,nb=4,mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0): ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+             1040 runs -   966.49 us/run -   6.56 GFLOP/run - [1;34m  6.79 TFLOPS[0m
+  FLASH_ATTN_EXT(hsk=256,hsv=256,nh=2,nr23=[8,1],kv=100096,nb=8,mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0): ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+              912 runs -  1102.11 us/run -  13.12 GFLOP/run - [1;34m 11.90 TFLOPS[0m
+  FLASH_ATTN_EXT(hsk=256,hsv=256,nh=2,nr23=[8,1],kv=100096,nb=16,mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0):                      672 runs -  1494.46 us/run -  26.24 GFLOP/run - [1;34m 17.56 TFLOPS[0m
+  Backend CUDA0: [1;32mOK[0m
+Backend 2/2: CPU
+  Skipping
+2/2 backends passed
+[1;32mOK[0m

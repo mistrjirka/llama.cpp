@@ -130,3 +130,7 @@ These papers motivate the experiments. Their reported GPU/model speedups are not
 ## Nsight follow-up
 
 Actual Systems timelines and Compute counters are now recorded in [the Nsight report](../nsight-parallel-0907/REPORT.md). They identify target-side and orchestration costs, low two-GPU decode overlap, and resource/issue stalls in the direct-Q8 prototype. No production defaults changed.
+
+## Refined implementation follow-up
+
+See [the refined implementation report](../parallel-refined-0907/REPORT.md) for batched output reads, measured removal of local-memory traffic, cooperative QK, shape-selective attention benchmarks on real source prompts, and the unresolved numerical-parity checks. All new controls remain opt-in.

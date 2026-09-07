@@ -1,0 +1,18 @@
+{
+  "off_on": {
+    "n": 64,
+    "greedy_disagreements": 2,
+    "max_common_probability_delta": 0.42843781653024815,
+    "mean_common_probability_delta": 0.018667548059013453,
+    "mean_coarse_KL_nats": 0.019302884077614005,
+    "max_coarse_KL_nats": 0.4779318648993036
+  },
+  "off_off": {
+    "n": 64,
+    "greedy_disagreements": 0,
+    "max_common_probability_delta": 0.0,
+    "mean_common_probability_delta": 0.0,
+    "mean_coarse_KL_nats": 0.0,
+    "max_coarse_KL_nats": 0.0
+  }
+}
