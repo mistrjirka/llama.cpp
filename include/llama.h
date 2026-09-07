@@ -926,6 +926,15 @@ extern "C" {
                           size_t   n_token_capacity,
                           size_t * n_token_count_out);
 
+    // Read only a sequence file's token metadata without changing any live KV/state.
+    // With tokens_out == NULL, only the required token count is reported.
+    // Returns the number of file bytes consumed, or zero on invalid/truncated input.
+    LLAMA_API size_t llama_state_seq_load_file_tokens(
+                      const char * filepath,
+                     llama_token * tokens_out,
+                          size_t   n_token_capacity,
+                          size_t * n_token_count_out);
+
     // Restore a sequence file while losslessly reusing an already-live text prefix.
     // The serialized recurrent tail remains that of the restored destination sequence.
     LLAMA_API size_t llama_state_seq_load_file_prefix(

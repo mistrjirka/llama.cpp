@@ -1,0 +1,15 @@
+{
+  "passed": [
+    "count_only",
+    "token_only",
+    "capacity_guard",
+    "truncated_header",
+    "wrong_magic",
+    "wrong_version",
+    "truncated_tokens",
+    "null_path",
+    "null_count",
+    "empty_tokens"
+  ],
+  "count": 10
+}

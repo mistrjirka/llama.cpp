@@ -69,3 +69,7 @@ The first two priorities also apply without shared prefixes: masked-span avoidan
 - MineDraft (March 2026): https://arxiv.org/html/2603.18016v1 — its extra draft GPU is not a free optimization on this already memory-constrained two-GPU setup.
 
 These results use different GPUs, models, precisions and request counts. They justify experiments, not transplanting headline speedups. Target and draft KV remain Q8; no lossy eviction or reduced-precision cache is proposed here.
+
+## Follow-up prototype
+
+The direct-prefix-first experiment has now been implemented and screened, but is **not approved for production**. See [the measured results and unresolved code-output differences](prefix-first/EXPERIMENT.md). The latest Nightjar revision checked in this follow-up is v5, 15 June 2026.

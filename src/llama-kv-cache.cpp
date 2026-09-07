@@ -2177,7 +2177,7 @@ bool llama_kv_cache::state_read_prefix(
         return false;
     }
     try {
-        if (!state_read_data(io, strm, cell_count, sinfo)) {
+        if (!state_read_data(io, strm, cell_count, sinfo, prefix_pos)) {
             seq_rm(seq_id, -1, -1);
             return false;
         }
@@ -2674,23 +2674,25 @@ bool llama_kv_cache::state_read_meta(llama_io_read_i & io, uint32_t strm, uint32
     return true;
 }
 
-bool llama_kv_cache::state_read_data(llama_io_read_i & io, uint32_t strm, uint32_t cell_count, const slot_info & sinfo) {
+bool llama_kv_cache::state_read_data(llama_io_read_i & io, uint32_t strm, uint32_t cell_count, const slot_info & sinfo, llama_pos shared_prefix_end) {
     auto & cells = v_cells[strm];
 
     // batch the scatter reads per contiguous run of destination indices
     // from inclusive, to exclusive - same convention as cell_ranges_t
     // contiguous cells yield a single run covering the whole block
-    struct cell_run { uint32_t from; uint32_t to; };
+    struct cell_run { uint32_t from; uint32_t to; bool shared; };
     std::vector<cell_run> runs;
     if (cell_count > 0) {
         const auto & idxs = sinfo.idxs[0];
         uint32_t i0 = 0;
         while (i0 < cell_count) {
+            const bool shared = shared_prefix_end >= 0 && cells.pos_get(idxs[i0]) < shared_prefix_end;
             uint32_t i1 = i0 + 1;
-            while (i1 < cell_count && idxs[i1] == idxs[i1 - 1] + 1) {
+            while (i1 < cell_count && idxs[i1] == idxs[i1 - 1] + 1 &&
+                    shared == (shared_prefix_end >= 0 && cells.pos_get(idxs[i1]) < shared_prefix_end)) {
                 ++i1;
             }
-            runs.push_back({idxs[i0], idxs[i1 - 1] + 1});
+            runs.push_back({idxs[i0], idxs[i1 - 1] + 1, shared});
             i0 = i1;
         }
     }
@@ -2743,7 +2745,14 @@ bool llama_kv_cache::state_read_data(llama_io_read_i & io, uint32_t strm, uint32
         }
 
         for (const auto & r : runs) {
-            io.read_tensor(k, (size_t) r.from * k_size_row, (size_t) (r.to - r.from) * k_size_row);
+            const size_t bytes = (size_t) (r.to - r.from) * k_size_row;
+            if (r.shared) {
+                // Never overwrite a live donor: token-equivalent independently computed
+                // prefixes can differ numerically. Reuse the donor exactly as ordinary dedup does.
+                io.skip(bytes);
+            } else {
+                io.read_tensor(k, (size_t) r.from * k_size_row, bytes);
+            }
         }
     }
 
@@ -2777,7 +2786,12 @@ bool llama_kv_cache::state_read_data(llama_io_read_i & io, uint32_t strm, uint32
             }
 
             for (const auto & r : runs) {
-                io.read_tensor(v, (size_t) r.from * v_size_row, (size_t) (r.to - r.from) * v_size_row);
+                const size_t bytes = (size_t) (r.to - r.from) * v_size_row;
+                if (r.shared) {
+                    io.skip(bytes);
+                } else {
+                    io.read_tensor(v, (size_t) r.from * v_size_row, bytes);
+                }
             }
         }
     } else {
@@ -2821,7 +2835,12 @@ bool llama_kv_cache::state_read_data(llama_io_read_i & io, uint32_t strm, uint32
             for (uint32_t j = 0; j < n_embd_v_gqa; ++j) {
                 for (const auto & r : runs) {
                     const size_t dst_offset = ((size_t) r.from + j * cells.size()) * v_size_el;
-                    io.read_tensor(v, dst_offset, (size_t) (r.to - r.from) * v_size_el);
+                    const size_t bytes = (size_t) (r.to - r.from) * v_size_el;
+                    if (r.shared) {
+                        io.skip(bytes);
+                    } else {
+                        io.read_tensor(v, dst_offset, bytes);
+                    }
                 }
             }
         }

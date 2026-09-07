@@ -2687,6 +2687,15 @@ public:
         buf_size -= size;
     }
 
+    void skip(size_t size) override {
+        if (size > buf_size) {
+            throw std::runtime_error("unexpectedly reached end of buffer");
+        }
+        ptr += size;
+        buf_size -= size;
+        size_read += size;
+    }
+
     size_t n_bytes() override {
         return size_read;
     }
@@ -2743,6 +2752,15 @@ public:
         temp_buffer.resize(size);
         read(temp_buffer.data(), size);
         ggml_backend_tensor_set(tensor, temp_buffer.data(), offset, size);
+    }
+
+    void skip(size_t size) override {
+        const size_t pos = file->tell();
+        if (size > file->size() - pos) {
+            throw std::runtime_error("unexpectedly reached end of sequence file");
+        }
+        file->seek(pos + size, SEEK_SET);
+        size_read += size;
     }
 
     size_t n_bytes() override {
@@ -4355,10 +4373,43 @@ size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, lla
     }
 }
 
+size_t llama_state_seq_load_file_tokens(
+        const char * filepath, llama_token * tokens_out,
+        size_t n_token_capacity, size_t * n_token_count_out) {
+    if (filepath == nullptr || n_token_count_out == nullptr) {
+        return 0;
+    }
+    *n_token_count_out = 0;
+    try {
+        llama_file file(filepath, "rb");
+        const uint32_t magic = file.read_u32();
+        const uint32_t version = file.read_u32();
+        if (magic != LLAMA_STATE_SEQ_MAGIC || version != LLAMA_STATE_SEQ_VERSION) {
+            return 0;
+        }
+        const uint32_t count = file.read_u32();
+        if (count > (file.size() - file.tell()) / sizeof(llama_token)) {
+            return 0;
+        }
+        *n_token_count_out = count;
+        if (tokens_out != nullptr) {
+            if (count > n_token_capacity) {
+                return 0;
+            }
+            file.read_raw(tokens_out, sizeof(llama_token) * count);
+        }
+        return file.tell();
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: error reading sequence tokens: %s\n", __func__, err.what());
+        return 0;
+    }
+}
+
 size_t llama_state_seq_load_file_prefix(
         llama_context * ctx, const char * filepath, llama_seq_id dest_seq_id,
         llama_seq_id prefix_seq_id, llama_pos prefix_pos, llama_token * tokens_out,
         size_t n_token_capacity, size_t * n_token_count_out) {
+    ctx->synchronize();
     try {
         return ctx->state_seq_load_file_prefix(dest_seq_id, prefix_seq_id, prefix_pos, filepath,
                 tokens_out, n_token_capacity, n_token_count_out);

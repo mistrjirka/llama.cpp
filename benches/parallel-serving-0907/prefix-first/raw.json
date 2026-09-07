@@ -1,0 +1,1082 @@
+[
+  {
+    "arm": "A",
+    "round": 0,
+    "repeat": 0,
+    "warmup": true,
+    "wall_s": 12.636671647022013,
+    "restore_s": 1.8991030970355496,
+    "output_tps_whole_turn": 40.51699801194558,
+    "mean_request_pp": 156.23275510196072,
+    "mean_request_tg": 28.468949819526628,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 12.582870403013658,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5537.333,
+          "prompt_per_token_ms": 5.537332999999999,
+          "prompt_per_second": 180.59235375586047,
+          "predicted_n": 128,
+          "predicted_ms": 4283.333,
+          "predicted_per_token_ms": 33.72703149606299,
+          "predicted_per_second": 29.649807754848855,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 12.49525616801111,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7427.56,
+          "prompt_per_token_ms": 7.427560000000001,
+          "prompt_per_second": 134.63371551357375,
+          "predicted_n": 128,
+          "predicted_ms": 4969.73,
+          "predicted_per_token_ms": 39.131732283464565,
+          "predicted_per_second": 25.554708203463772,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 12.61286337900674,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5399.006,
+          "prompt_per_token_ms": 5.399006,
+          "prompt_per_second": 185.21927925251424,
+          "predicted_n": 128,
+          "predicted_ms": 4287.927,
+          "predicted_per_token_ms": 33.76320472440945,
+          "predicted_per_second": 29.618041538487013,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 12.540253988001496,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 8033.053,
+          "prompt_per_token_ms": 8.033053,
+          "prompt_per_second": 124.48567188589445,
+          "predicted_n": 128,
+          "predicted_ms": 4371.285,
+          "predicted_per_token_ms": 34.41956692913386,
+          "predicted_per_second": 29.05324178130687,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-common.so.0.4.0",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-server-impl.so",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "A",
+    "round": 0,
+    "repeat": 1,
+    "warmup": false,
+    "wall_s": 12.595227173005696,
+    "restore_s": 1.956428992038127,
+    "output_tps_whole_turn": 40.65031880467603,
+    "mean_request_pp": 141.1016760009725,
+    "mean_request_tg": 29.052651110752258,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 12.49766242702026,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6373.82,
+          "prompt_per_token_ms": 6.373819999999999,
+          "prompt_per_second": 156.8917854598969,
+          "predicted_n": 128,
+          "predicted_ms": 4836.841,
+          "predicted_per_token_ms": 38.08536220472441,
+          "predicted_per_second": 26.256806870434644,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 12.491393453034107,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6969.987,
+          "prompt_per_token_ms": 6.969987,
+          "prompt_per_second": 143.4722905509006,
+          "predicted_n": 128,
+          "predicted_ms": 4244.689,
+          "predicted_per_token_ms": 33.42274803149606,
+          "predicted_per_second": 29.91974205884106,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 12.554313602973707,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7083.399,
+          "prompt_per_token_ms": 7.083399,
+          "prompt_per_second": 141.1751618114411,
+          "predicted_n": 128,
+          "predicted_ms": 4208.602,
+          "predicted_per_token_ms": 33.13859842519685,
+          "predicted_per_second": 30.176291319540315,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 12.522662965988275,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 8138.851,
+          "prompt_per_token_ms": 8.138850999999999,
+          "prompt_per_second": 122.86746618165144,
+          "predicted_n": 128,
+          "predicted_ms": 4253.5,
+          "predicted_per_token_ms": 33.49212598425197,
+          "predicted_per_second": 29.857764194193017,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-common.so.0.4.0",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-server-impl.so",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "A",
+    "round": 0,
+    "repeat": 2,
+    "warmup": false,
+    "wall_s": 12.47234621096868,
+    "restore_s": 1.9524032219778746,
+    "output_tps_whole_turn": 41.05081685029932,
+    "mean_request_pp": 155.87020445854378,
+    "mean_request_tg": 29.07747047515089,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 12.452616464055609,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5508.177,
+          "prompt_per_token_ms": 5.508177,
+          "prompt_per_second": 181.54826905526096,
+          "predicted_n": 128,
+          "predicted_ms": 4206.757,
+          "predicted_per_token_ms": 33.12407086614173,
+          "predicted_per_second": 30.189526041081052,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 12.432560032990295,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5506.972,
+          "prompt_per_token_ms": 5.506971999999999,
+          "prompt_per_second": 181.587994273441,
+          "predicted_n": 128,
+          "predicted_ms": 4213.619,
+          "predicted_per_token_ms": 33.17810236220472,
+          "predicted_per_second": 30.140361527703384,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 12.359912541985977,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7400.97,
+          "prompt_per_token_ms": 7.40097,
+          "prompt_per_second": 135.1174237971509,
+          "predicted_n": 128,
+          "predicted_ms": 4846.113,
+          "predicted_per_token_ms": 38.15837007874016,
+          "predicted_per_second": 26.20657009029711,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 12.389942297013476,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7985.49,
+          "prompt_per_token_ms": 7.9854899999999995,
+          "prompt_per_second": 125.22713070832222,
+          "predicted_n": 128,
+          "predicted_ms": 4265.549,
+          "predicted_per_token_ms": 33.587,
+          "predicted_per_second": 29.773424241522015,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-common.so.0.4.0",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-server-impl.so",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "B",
+    "round": 1,
+    "repeat": 0,
+    "warmup": true,
+    "wall_s": 9.582801687007304,
+    "restore_s": 1.781813000969123,
+    "output_tps_whole_turn": 53.42905099394756,
+    "mean_request_pp": 219.91849050427447,
+    "mean_request_tg": 34.18215241847976,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 9.473512162978295,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5327.178,
+          "prompt_per_token_ms": 5.327178,
+          "prompt_per_second": 187.71664847692344,
+          "predicted_n": 128,
+          "predicted_ms": 4039.107,
+          "predicted_per_token_ms": 31.80399212598425,
+          "predicted_per_second": 31.44259362279831,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 9.563838134985417,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 3871.737,
+          "prompt_per_token_ms": 3.871737,
+          "prompt_per_second": 258.28200624164293,
+          "predicted_n": 128,
+          "predicted_ms": 3589.794,
+          "predicted_per_token_ms": 28.266094488188976,
+          "predicted_per_second": 35.37807461932356,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 9.544644106004853,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 3871.082,
+          "prompt_per_token_ms": 3.871082,
+          "prompt_per_second": 258.3257084195065,
+          "predicted_n": 128,
+          "predicted_ms": 3593.416,
+          "predicted_per_token_ms": 28.294614173228346,
+          "predicted_per_second": 35.34241512811208,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 9.513580621976871,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5702.893,
+          "prompt_per_token_ms": 5.702893,
+          "prompt_per_second": 175.34959887902508,
+          "predicted_n": 128,
+          "predicted_ms": 3674.181,
+          "predicted_per_token_ms": 28.93055905511811,
+          "predicted_per_second": 34.5655263036851,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-common.so.0.4.0",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-server-impl.so",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "B",
+    "round": 1,
+    "repeat": 1,
+    "warmup": false,
+    "wall_s": 9.315711720963009,
+    "restore_s": 1.8526277700439095,
+    "output_tps_whole_turn": 54.96091069970037,
+    "mean_request_pp": 204.4731347550658,
+    "mean_request_tg": 35.010357104175,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 9.226097833015956,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4424.507,
+          "prompt_per_token_ms": 4.424506999999999,
+          "prompt_per_second": 226.01388132056297,
+          "predicted_n": 128,
+          "predicted_ms": 3915.754,
+          "predicted_per_token_ms": 30.83270866141732,
+          "predicted_per_second": 32.4330895148163,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 9.246577054960653,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4795.613,
+          "prompt_per_token_ms": 4.795613,
+          "prompt_per_second": 208.52391550360713,
+          "predicted_n": 128,
+          "predicted_ms": 3548.713,
+          "predicted_per_token_ms": 27.942622047244097,
+          "predicted_per_second": 35.78762216048466,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 9.275232703017537,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4891.329,
+          "prompt_per_token_ms": 4.891329,
+          "prompt_per_second": 204.44341404963765,
+          "predicted_n": 128,
+          "predicted_ms": 3516.021,
+          "predicted_per_token_ms": 27.68520472440945,
+          "predicted_per_second": 36.120375845309226,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 9.260131651943084,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5589.361,
+          "prompt_per_token_ms": 5.589361,
+          "prompt_per_second": 178.9113281464554,
+          "predicted_n": 128,
+          "predicted_ms": 3557.389,
+          "predicted_per_token_ms": 28.010937007874016,
+          "predicted_per_second": 35.7003408960898,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-common.so.0.4.0",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-server-impl.so",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "B",
+    "round": 1,
+    "repeat": 2,
+    "warmup": false,
+    "wall_s": 9.474030717974529,
+    "restore_s": 1.8550375810009427,
+    "output_tps_whole_turn": 54.04246779869651,
+    "mean_request_pp": 206.17794190821087,
+    "mean_request_tg": 33.35351176662121,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 9.41359516402008,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4859.287,
+          "prompt_per_token_ms": 4.859287,
+          "prompt_per_second": 205.79150809573503,
+          "predicted_n": 128,
+          "predicted_ms": 3661.834,
+          "predicted_per_token_ms": 28.833338582677165,
+          "predicted_per_second": 34.68207461070054,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 9.411563333007507,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4858.137,
+          "prompt_per_token_ms": 4.858137,
+          "prompt_per_second": 205.84022229097286,
+          "predicted_n": 128,
+          "predicted_ms": 3666.959,
+          "predicted_per_token_ms": 28.873692913385824,
+          "predicted_per_second": 34.63360239370007,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 9.303480094997212,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4838.011,
+          "prompt_per_token_ms": 4.838011000000001,
+          "prompt_per_second": 206.69651226506096,
+          "predicted_n": 128,
+          "predicted_ms": 4380.645,
+          "predicted_per_token_ms": 34.493267716535435,
+          "predicted_per_second": 28.99116454312093,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 9.472065951034892,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4845.348,
+          "prompt_per_token_ms": 4.8453479999999995,
+          "prompt_per_second": 206.38352498107463,
+          "predicted_n": 128,
+          "predicted_ms": 3617.491,
+          "predicted_per_token_ms": 28.484181102362204,
+          "predicted_per_second": 35.10720551896328,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-common.so.0.4.0",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-server-impl.so",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "B",
+    "round": 2,
+    "repeat": 0,
+    "warmup": true,
+    "wall_s": 9.468559762986843,
+    "restore_s": 1.792026774957776,
+    "output_tps_whole_turn": 54.073693657343554,
+    "mean_request_pp": 215.01206820593217,
+    "mean_request_tg": 32.55282993356188,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 9.396574143960606,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4680.788,
+          "prompt_per_token_ms": 4.680788,
+          "prompt_per_second": 213.63924193960506,
+          "predicted_n": 128,
+          "predicted_ms": 3753.429,
+          "predicted_per_token_ms": 29.554559055118112,
+          "predicted_per_second": 33.83572727764399,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 9.28116172394948,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4658.943,
+          "prompt_per_token_ms": 4.658943,
+          "prompt_per_second": 214.6409604066845,
+          "predicted_n": 128,
+          "predicted_ms": 4534.583,
+          "predicted_per_token_ms": 35.7053779527559,
+          "predicted_per_second": 28.006985427325954,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 9.389587042969652,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4565.797,
+          "prompt_per_token_ms": 4.565797,
+          "prompt_per_second": 219.01981187512283,
+          "predicted_n": 128,
+          "predicted_ms": 3758.252,
+          "predicted_per_token_ms": 29.592535433070864,
+          "predicted_per_second": 33.79230557184564,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 9.465876878995914,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4700.391,
+          "prompt_per_token_ms": 4.700391,
+          "prompt_per_second": 212.7482586023163,
+          "predicted_n": 128,
+          "predicted_ms": 3673.036,
+          "predicted_per_token_ms": 28.921543307086615,
+          "predicted_per_second": 34.576301457431946,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-common.so.0.4.0",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-server-impl.so",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "B",
+    "round": 2,
+    "repeat": 1,
+    "warmup": false,
+    "wall_s": 9.372788856038824,
+    "restore_s": 1.8443933629896492,
+    "output_tps_whole_turn": 54.626217219234796,
+    "mean_request_pp": 223.52538076963586,
+    "mean_request_tg": 34.82025331831175,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 9.235309863986913,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5216.144,
+          "prompt_per_token_ms": 5.216144,
+          "prompt_per_second": 191.7124987346975,
+          "predicted_n": 128,
+          "predicted_ms": 3914.442,
+          "predicted_per_token_ms": 30.822377952755904,
+          "predicted_per_second": 32.44396008422145,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 9.34720566100441,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 3832.448,
+          "prompt_per_token_ms": 3.832448,
+          "prompt_per_second": 260.9298286630373,
+          "predicted_n": 128,
+          "predicted_ms": 3523.523,
+          "predicted_per_token_ms": 27.744275590551183,
+          "predicted_per_second": 36.04347126441348,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 9.326298369967844,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 5581.327,
+          "prompt_per_token_ms": 5.581327,
+          "prompt_per_second": 179.1688607386738,
+          "predicted_n": 128,
+          "predicted_ms": 3642.831,
+          "predicted_per_token_ms": 28.683708661417324,
+          "predicted_per_second": 34.86299529129954,
+          "draft_n": 117,
+          "draft_n_accepted": 88
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 9.370227405976038,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 3812.569,
+          "prompt_per_token_ms": 3.812569,
+          "prompt_per_second": 262.29033494213485,
+          "predicted_n": 128,
+          "predicted_ms": 3534.593,
+          "predicted_per_token_ms": 27.831440944881887,
+          "predicted_per_second": 35.93058663331252,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-common.so.0.4.0",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-server-impl.so",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "B",
+    "round": 2,
+    "repeat": 2,
+    "warmup": false,
+    "wall_s": 9.48176933801733,
+    "restore_s": 1.8290536219719797,
+    "output_tps_whole_turn": 53.998360616844636,
+    "mean_request_pp": 207.24521434234924,
+    "mean_request_tg": 33.366715442653366,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 9.385409366048407,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4831.406,
+          "prompt_per_token_ms": 4.831406,
+          "prompt_per_second": 206.97908641915004,
+          "predicted_n": 128,
+          "predicted_ms": 3661.141,
+          "predicted_per_token_ms": 28.82788188976378,
+          "predicted_per_second": 34.68863941596349,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 9.405589074012823,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4830.229,
+          "prompt_per_token_ms": 4.830229,
+          "prompt_per_second": 207.0295217887185,
+          "predicted_n": 128,
+          "predicted_ms": 3666.421,
+          "predicted_per_token_ms": 28.869456692913385,
+          "predicted_per_second": 34.63868442822033,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 9.32170995499473,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4820.319,
+          "prompt_per_token_ms": 4.8203190000000005,
+          "prompt_per_second": 207.4551497525371,
+          "predicted_n": 128,
+          "predicted_ms": 4379.245,
+          "predicted_per_token_ms": 34.48224409448819,
+          "predicted_per_second": 29.00043272299221,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 9.479209932964295,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 4818.88,
+          "prompt_per_token_ms": 4.81888,
+          "prompt_per_second": 207.5170994089913,
+          "predicted_n": 128,
+          "predicted_ms": 3614.207,
+          "predicted_per_token_ms": 28.458322834645667,
+          "predicted_per_second": 35.13910520343744,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-common.so.0.4.0",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama-server-impl.so",
+      "/workspace/llama-multiagent-cache/build-sm70-75/bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "A",
+    "round": 3,
+    "repeat": 0,
+    "warmup": true,
+    "wall_s": 13.038402609992772,
+    "restore_s": 1.8873069700202905,
+    "output_tps_whole_turn": 39.26861405611127,
+    "mean_request_pp": 141.5587515749268,
+    "mean_request_tg": 27.232060422510692,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 12.944021611998323,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7054.21,
+          "prompt_per_token_ms": 7.05421,
+          "prompt_per_second": 141.7593181943832,
+          "predicted_n": 128,
+          "predicted_ms": 4441.123,
+          "predicted_per_token_ms": 34.96947244094488,
+          "predicted_per_second": 28.596370782795255,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 12.961673173005693,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7053.431,
+          "prompt_per_token_ms": 7.053431,
+          "prompt_per_second": 141.7749744769602,
+          "predicted_n": 128,
+          "predicted_ms": 4446.092,
+          "predicted_per_token_ms": 35.008598425196844,
+          "predicted_per_second": 28.56441117277825,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 12.823465875990223,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7108.944,
+          "prompt_per_token_ms": 7.108944,
+          "prompt_per_second": 140.6678685329354,
+          "predicted_n": 128,
+          "predicted_ms": 5616.441,
+          "predicted_per_token_ms": 44.223944881889764,
+          "predicted_per_second": 22.612184477679016,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 13.03611078899121,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7040.625,
+          "prompt_per_token_ms": 7.040625,
+          "prompt_per_second": 142.0328450954283,
+          "predicted_n": 128,
+          "predicted_ms": 4355.987,
+          "predicted_per_token_ms": 34.29911023622047,
+          "predicted_per_second": 29.155275256790254,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-common.so.0.4.0",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-server-impl.so",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "A",
+    "round": 3,
+    "repeat": 1,
+    "warmup": false,
+    "wall_s": 12.61990660999436,
+    "restore_s": 1.9294897359795868,
+    "output_tps_whole_turn": 40.570823209937274,
+    "mean_request_pp": 146.97722469497225,
+    "mean_request_tg": 27.999819839639684,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 12.423784922983032,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6857.403,
+          "prompt_per_token_ms": 6.857403000000001,
+          "prompt_per_second": 145.82780099113324,
+          "predicted_n": 128,
+          "predicted_ms": 5441.793,
+          "predicted_per_token_ms": 42.84876377952756,
+          "predicted_per_second": 23.337896167678558,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 12.526069714978803,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6748.014,
+          "prompt_per_token_ms": 6.748014,
+          "prompt_per_second": 148.19174945398748,
+          "predicted_n": 128,
+          "predicted_ms": 4312.334,
+          "predicted_per_token_ms": 33.95538582677165,
+          "predicted_per_second": 29.450408989656182,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 12.506479825009592,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6746.87,
+          "prompt_per_token_ms": 6.7468699999999995,
+          "prompt_per_second": 148.21687686290088,
+          "predicted_n": 128,
+          "predicted_ms": 4317.766,
+          "predicted_per_token_ms": 33.99815748031496,
+          "predicted_per_second": 29.413358667422,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 12.617193990969099,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6864.715,
+          "prompt_per_token_ms": 6.864715,
+          "prompt_per_second": 145.67247147186737,
+          "predicted_n": 128,
+          "predicted_ms": 4262.086,
+          "predicted_per_token_ms": 33.55973228346457,
+          "predicted_per_second": 29.79761553380199,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-common.so.0.4.0",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-server-impl.so",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama.so.0.4.0"
+    ]
+  },
+  {
+    "arm": "A",
+    "round": 3,
+    "repeat": 2,
+    "warmup": false,
+    "wall_s": 12.723958847986069,
+    "restore_s": 1.9199688590015285,
+    "output_tps_whole_turn": 40.23904872036258,
+    "mean_request_pp": 143.89814162293354,
+    "mean_request_tg": 27.788495121677105,
+    "rows": [
+      {
+        "slot": 0,
+        "wall_s": 12.645408867974766,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 7015.305,
+          "prompt_per_token_ms": 7.015305000000001,
+          "prompt_per_second": 142.5454773527309,
+          "predicted_n": 128,
+          "predicted_ms": 4349.624,
+          "predicted_per_token_ms": 34.249007874015746,
+          "predicted_per_second": 29.19792607361004,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 1,
+        "wall_s": 12.516351924976334,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6971.865,
+          "prompt_per_token_ms": 6.971865,
+          "prompt_per_second": 143.43364365202137,
+          "predicted_n": 128,
+          "predicted_ms": 5464.348,
+          "predicted_per_token_ms": 43.02636220472441,
+          "predicted_per_second": 23.24156514189799,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 2,
+        "wall_s": 12.642015182005707,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6846.846,
+          "prompt_per_token_ms": 6.846845999999999,
+          "prompt_per_second": 146.05264964335404,
+          "predicted_n": 128,
+          "predicted_ms": 4354.836,
+          "predicted_per_token_ms": 34.29004724409449,
+          "predicted_per_second": 29.16298110881787,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      },
+      {
+        "slot": 3,
+        "wall_s": 12.721851726993918,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 1000,
+          "prompt_ms": 6965.69,
+          "prompt_per_token_ms": 6.9656899999999995,
+          "prompt_per_second": 143.56079584362786,
+          "predicted_n": 128,
+          "predicted_ms": 4297.581,
+          "predicted_per_token_ms": 33.83922047244094,
+          "predicted_per_second": 29.551508162382515,
+          "draft_n": 114,
+          "draft_n_accepted": 89
+        },
+        "sha": "b08698090ce28d16412bebb642270eb12b6f673d1143d84fbcd68940d7d5ae2d"
+      }
+    ],
+    "libraries": [
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-common.so.0.4.0",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama-server-impl.so",
+      "/workspace/oai-qwen38-pp-lab/results/prefix-first-0907/baseline-bin/libllama.so.0.4.0"
+    ]
+  }
+]

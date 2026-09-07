@@ -1,6 +1,8 @@
 #include "llama-io.h"
 
 #include <vector>
+#include <algorithm>
+#include <array>
 
 void llama_io_write_i::write_string(const std::string & str) {
     uint32_t str_size = str.size();
@@ -17,4 +19,13 @@ void llama_io_read_i::read_string(std::string & str) {
     read(buf.data(), str_size);
 
     str.assign(buf.data(), str_size);
+}
+
+void llama_io_read_i::skip(size_t size) {
+    std::array<uint8_t, 4096> scratch;
+    while (size > 0) {
+        const size_t n = std::min(size, scratch.size());
+        read(scratch.data(), n);
+        size -= n;
+    }
 }

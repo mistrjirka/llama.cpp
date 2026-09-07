@@ -1,0 +1,216 @@
+diff --git a/include/llama.h b/include/llama.h
+index 44d8a4bc2..fe98f2e65 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -926,6 +926,15 @@ extern "C" {
+                           size_t   n_token_capacity,
+                           size_t * n_token_count_out);
+ 
++    // Read only a sequence file's token metadata without changing any live KV/state.
++    // With tokens_out == NULL, only the required token count is reported.
++    // Returns the number of file bytes consumed, or zero on invalid/truncated input.
++    LLAMA_API size_t llama_state_seq_load_file_tokens(
++                      const char * filepath,
++                     llama_token * tokens_out,
++                          size_t   n_token_capacity,
++                          size_t * n_token_count_out);
++
+     // Restore a sequence file while losslessly reusing an already-live text prefix.
+     // The serialized recurrent tail remains that of the restored destination sequence.
+     LLAMA_API size_t llama_state_seq_load_file_prefix(
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 3b429c734..34b3e6838 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -4355,10 +4355,43 @@ size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, lla
+     }
+ }
+ 
++size_t llama_state_seq_load_file_tokens(
++        const char * filepath, llama_token * tokens_out,
++        size_t n_token_capacity, size_t * n_token_count_out) {
++    if (filepath == nullptr || n_token_count_out == nullptr) {
++        return 0;
++    }
++    *n_token_count_out = 0;
++    try {
++        llama_file file(filepath, "rb");
++        const uint32_t magic = file.read_u32();
++        const uint32_t version = file.read_u32();
++        if (magic != LLAMA_STATE_SEQ_MAGIC || version != LLAMA_STATE_SEQ_VERSION) {
++            return 0;
++        }
++        const uint32_t count = file.read_u32();
++        if (count > (file.size() - file.tell()) / sizeof(llama_token)) {
++            return 0;
++        }
++        *n_token_count_out = count;
++        if (tokens_out != nullptr) {
++            if (count > n_token_capacity) {
++                return 0;
++            }
++            file.read_raw(tokens_out, sizeof(llama_token) * count);
++        }
++        return file.tell();
++    } catch (const std::exception & err) {
++        LLAMA_LOG_ERROR("%s: error reading sequence tokens: %s\n", __func__, err.what());
++        return 0;
++    }
++}
++
+ size_t llama_state_seq_load_file_prefix(
+         llama_context * ctx, const char * filepath, llama_seq_id dest_seq_id,
+         llama_seq_id prefix_seq_id, llama_pos prefix_pos, llama_token * tokens_out,
+         size_t n_token_capacity, size_t * n_token_count_out) {
++    ctx->synchronize();
+     try {
+         return ctx->state_seq_load_file_prefix(dest_seq_id, prefix_seq_id, prefix_pos, filepath,
+                 tokens_out, n_token_capacity, n_token_count_out);
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index 250b51298..c9d19775d 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -2884,96 +2884,68 @@ private:
+                     size_t nread = 0;
+                     try {
+                         size_t n_packed = 0;
+-                        llama_tokens packed;
+-                        nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id, nullptr, 0, &n_packed);
+-                        if (nread != 0) {
+-                            packed.resize(std::max<size_t>(1, n_packed));
+-                            nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id, packed.data(), packed.size(), &n_packed);
++                        if (llama_state_seq_load_file_tokens(filepath.c_str(), nullptr, 0, &n_packed) == 0) {
++                            throw std::runtime_error("Invalid slot token metadata");
+                         }
+-
+-                        // A self-contained slot can need more temporary KV cells than remain, even
+-                        // when its final shared-prefix representation fits. A failed ordinary load
+-                        // still populated the saved token list. Verify the best live donor prefix
+-                        // and retry by mapping those serialized rows directly onto donor cells.
+-                        if (nread == 0 && params_base.slot_fork_prefix && params_base.kv_unified && n_packed > 0) {
+-                            packed.resize(n_packed);
+-                            server_tokens candidate = server_tokens::deserialize(packed, mctx != nullptr);
+-                            server_slot * donor = nullptr;
+-                            int lcp_best = 0;
+-                            if (!candidate.has_media() && candidate.validate(ctx_tgt)) {
+-                                for (auto & cur : slots) {
+-                                    if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
+-                                            cur.prompt.tokens.has_media() || !are_lora_equal(cur.lora, slot->lora)) {
+-                                        continue;
+-                                    }
+-                                    const int lcp = cur.prompt.tokens.get_common_prefix(candidate);
+-                                    if (lcp > lcp_best) {
+-                                        donor = &cur;
+-                                        lcp_best = lcp;
+-                                    }
+-                                }
+-                            }
+-                            if (donor != nullptr && lcp_best > 0) {
+-                                nread = llama_state_seq_load_file_prefix(ctx_tgt, filepath.c_str(), slot->id,
+-                                        donor->id, lcp_best, packed.data(), packed.size(), &n_packed);
+-                                if (nread != 0) {
+-                                    SLT_INF(*slot, "restored directly onto prefix from slot %d, n_tokens = %d\n",
+-                                            donor->id, lcp_best);
+-                                }
+-                            }
+-                        }
+-                        if (nread == 0) {
+-                            throw std::runtime_error("No available space in KV cache or invalid slot save file");
++                        llama_tokens packed(std::max<size_t>(1, n_packed));
++                        if (llama_state_seq_load_file_tokens(filepath.c_str(), packed.data(), packed.size(), &n_packed) == 0) {
++                            throw std::runtime_error("Unable to read slot token metadata");
+                         }
+                         packed.resize(n_packed);
+-
+                         server_tokens restored = server_tokens::deserialize(packed, mctx != nullptr);
+-
+-                        if (restored.size() > (size_t) slot->n_ctx) {
+-                            throw std::runtime_error("Restored prompt does not fit in the slot context");
++                        if (restored.size() > (size_t) slot->n_ctx || !restored.validate(ctx_tgt)) {
++                            throw std::runtime_error("Invalid tokens or context size in slot save file");
+                         }
+ 
+-                        if (!restored.validate(ctx_tgt)) {
+-                            throw std::runtime_error("Invalid tokens in slot save file");
+-                        }
+-
+-                        slot->prompt.clear();
+-                        slot->prompt.tokens = std::move(restored);
+-
+-                        // Find one donor once and use the same exact prefix for target/draft dedup.
++                        // Select the donor before allocating KV. Loading a full copy and only then
++                        // deduplicating leaves holes: attention spans the highest physical cell,
++                        // so those holes penalize every subsequent PP and TG step.
+                         server_slot * restore_donor = nullptr;
+                         int restore_lcp = 0;
+-                        if (params_base.slot_fork_prefix && params_base.kv_unified &&
+-                                !slot->prompt.tokens.has_media()) {
++                        if (params_base.slot_fork_prefix && params_base.kv_unified && !restored.has_media()) {
+                             for (auto & cur : slots) {
+                                 if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
+                                         cur.prompt.tokens.has_media() || !are_lora_equal(cur.lora, slot->lora)) {
+                                     continue;
+                                 }
+-                                const int lcp = cur.prompt.tokens.get_common_prefix(slot->prompt.tokens);
++                                const int lcp = cur.prompt.tokens.get_common_prefix(restored);
+                                 if (lcp > restore_lcp) {
+                                     restore_donor = &cur;
+                                     restore_lcp = lcp;
+                                 }
+                             }
+                         }
++                        packed.resize(std::max<size_t>(1, n_packed));
++                        if (restore_donor != nullptr && restore_lcp > 0) {
++                            nread = llama_state_seq_load_file_prefix(ctx_tgt, filepath.c_str(), slot->id,
++                                    restore_donor->id, restore_lcp, packed.data(), packed.size(), &n_packed);
++                            if (nread != 0) {
++                                SLT_INF(*slot, "restored directly onto prefix from slot %d, n_tokens = %d\n",
++                                        restore_donor->id, restore_lcp);
++                            }
++                        }
++                        // Unsupported memory implementations retain their ordinary restore path.
++                        if (nread == 0) {
++                            nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id,
++                                    packed.data(), packed.size(), &n_packed);
++                        }
++                        if (nread == 0) {
++                            throw std::runtime_error("No available space in KV cache or invalid slot save file");
++                        }
++                        slot->prompt.clear();
++                        slot->prompt.tokens = std::move(restored);
+ 
+                         // New MTP-aware snapshots contain the draft KV as a companion. Old slot
+                         // files remain valid; they simply fall back to deferred draft catch-up.
+                         const std::string filepath_dft = filepath + ".draft";
+                         if (ctx_dft != nullptr && std::filesystem::exists(filepath_dft)) {
+                             size_t n_dft_packed = 0;
+-                            size_t nread_dft = llama_state_seq_load_file(
+-                                    ctx_dft, filepath_dft.c_str(), slot->id, nullptr, 0, &n_dft_packed);
+-                            llama_tokens dft_packed;
+-                            if (nread_dft != 0) {
+-                                dft_packed.resize(std::max<size_t>(1, n_dft_packed));
+-                                nread_dft = llama_state_seq_load_file(
+-                                        ctx_dft, filepath_dft.c_str(), slot->id,
+-                                        dft_packed.data(), dft_packed.size(), &n_dft_packed);
++                            if (llama_state_seq_load_file_tokens(filepath_dft.c_str(), nullptr, 0, &n_dft_packed) == 0) {
++                                throw std::runtime_error("Invalid draft slot token metadata");
+                             }
+-                            if (nread_dft == 0 && restore_donor != nullptr && restore_lcp > 0) {
+-                                dft_packed.resize(std::max<size_t>(1, n_dft_packed));
++                            llama_tokens dft_packed(std::max<size_t>(1, n_dft_packed));
++                            size_t nread_dft = 0;
++                            if (restore_donor != nullptr && restore_lcp > 0) {
+                                 nread_dft = llama_state_seq_load_file_prefix(
+                                         ctx_dft, filepath_dft.c_str(), slot->id, restore_donor->id, restore_lcp,
+                                         dft_packed.data(), dft_packed.size(), &n_dft_packed);
+@@ -2982,6 +2954,10 @@ private:
+                                             restore_donor->id, restore_lcp);
+                                 }
+                             }
++                            if (nread_dft == 0) {
++                                nread_dft = llama_state_seq_load_file(ctx_dft, filepath_dft.c_str(), slot->id,
++                                        dft_packed.data(), dft_packed.size(), &n_dft_packed);
++                            }
+                             if (nread_dft == 0) {
+                                 throw std::runtime_error("No available space in draft KV cache or invalid draft slot state");
+                             }
