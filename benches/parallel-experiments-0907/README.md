@@ -29,7 +29,7 @@ The hardened v2 produced **byte-identical serialized target, draft and speculati
 
 The leading investigation is layout-dependent attention/numerical execution, since serialized inputs match, but its root cause is not established. No claim of preserved coding quality is made. `LLAMA_EXPERIMENT_PREFIX_FIRST=1` is therefore required to prefer compact restore in the final branch. Without it, the established ordinary-first policy is retained, including the prefix-aware fallback when an ordinary restore cannot fit.
 
-The final build with all experiments disabled passed the same teacher-forced check with **0/96 baseline differences**. This is a focused regression check, not proof covering all models and workloads.
+The final build with all experiments disabled passed the same teacher-forced check with **0/96 baseline differences**. The summary is retained in `final-default-forced-token-check.json`, and final GPU-reference output is in `final-q8-correctness.txt`. This is a focused regression check, not proof covering all models and workloads.
 
 ## 2. Direct-Q8 attention: correct primitive, slower serving
 
