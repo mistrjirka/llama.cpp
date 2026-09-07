@@ -719,23 +719,32 @@ struct server_slot {
         return res;
     }
 
-    void copy_state_to(server_slot & other) const {
-        GGML_ASSERT(state == SLOT_STATE_DONE_PROMPT);
-
+    void clone_prompt_memory_to(server_slot & other) const {
         mem.seq_rm(other.id,     -1, -1);
         mem.seq_cp(id, other.id, -1, -1);
 
-        other.i_batch = i_batch;
-
-        other.stats = stats;
-
         other.prompt = prompt.clone();
         // ON_DEVICE checkpoints refer to the source sequence's transient context storage and
-        // cannot be cloned to a child sequence. The copied live memory is sufficient; portable
+        // cannot be cloned to another sequence. The copied live memory is sufficient; portable
         // host checkpoints remain available for deeper replay.
         other.prompt.checkpoints.remove_if([](const common_prompt_checkpoint & ckpt) {
             return ckpt.data_tgt_on_device;
         });
+
+        // MTP carries one hidden row outside the llama memory objects. A fork must copy that
+        // per-sequence state as well or the first draft after the branch starts from stale data.
+        std::vector<uint8_t> spec_state;
+        if (common_speculative_get_state(spec, id, spec_state)) {
+            common_speculative_set_state(spec, other.id, spec_state);
+        }
+    }
+
+    void copy_state_to(server_slot & other) const {
+        GGML_ASSERT(state == SLOT_STATE_DONE_PROMPT);
+
+        clone_prompt_memory_to(other);
+        other.i_batch = i_batch;
+        other.stats = stats;
         other.init_sampler();
     }
 };
@@ -1554,6 +1563,7 @@ private:
         server_slot * ret = nullptr;
 
         bool update_cache = false;
+        bool forked_prefix = false;
 
         // if a specific slot is requested, use it (still goes through cache update logic below)
         if (task.id_slot != -1) {
@@ -1563,8 +1573,64 @@ private:
             }
         }
 
+        // With a unified KV stream, an exact branch can share the donor's attention cells
+        // by sequence-id metadata instead of duplicating the prefix. Only fork into an empty
+        // destination: established agent slots retain the existing LCP/LRU semantics.
+        if (params_base.slot_fork_prefix && params_base.kv_unified &&
+                task.type == SERVER_TASK_TYPE_COMPLETION && !task.tokens.empty() &&
+                !task.tokens.has_mtmd && task.params.lora.empty()) {
+            server_slot * dst = nullptr;
+
+            if (ret != nullptr) {
+                if (!ret->is_processing() && ret->prompt.tokens.empty()) {
+                    dst = ret;
+                }
+            } else if (task.id_slot == -1) {
+                int64_t t_last = -1;
+                for (auto & cur : slots) {
+                    if (cur.is_processing() || !cur.prompt.tokens.empty()) {
+                        continue;
+                    }
+                    if (dst == nullptr || cur.t_last_used <= t_last) {
+                        dst = &cur;
+                        t_last = cur.t_last_used;
+                    }
+                }
+            }
+
+            if (dst != nullptr) {
+                server_slot * donor = nullptr;
+                size_t donor_tokens = 0;
+
+                for (auto & cur : slots) {
+                    if (&cur == dst || cur.is_processing() || cur.prompt.tokens.empty() ||
+                            cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, params_base.lora_adapters)) {
+                        continue;
+                    }
+
+                    const size_t n_cur = cur.prompt.tokens.size();
+                    if (n_cur > task.tokens.size() || n_cur <= donor_tokens) {
+                        continue;
+                    }
+                    if (cur.prompt.tokens.get_common_prefix(task.tokens) != n_cur) {
+                        continue;
+                    }
+
+                    donor = &cur;
+                    donor_tokens = n_cur;
+                }
+
+                if (donor != nullptr) {
+                    donor->clone_prompt_memory_to(*dst);
+                    ret = dst;
+                    forked_prefix = true;
+                    SLT_INF(*dst, "forked exact prefix from slot %d, n_tokens = %zu\n", donor->id, donor_tokens);
+                }
+            }
+        }
+
         // find the slot that has at least n% prompt similarity
-        if (slot_prompt_similarity != 0.0f) {
+        if (!forked_prefix && slot_prompt_similarity != 0.0f) {
             float f_sim_best = 0;
 
             for (server_slot & slot : slots) {
@@ -2683,6 +2749,44 @@ private:
                         break;
                     }
 
+                    // Preserve the speculative context too. The traditional slot file remains
+                    // unchanged; MTP-aware servers add backward-compatible companions.
+                    if (ctx_dft != nullptr) {
+                        const std::string filepath_dft = filepath + ".draft";
+                        const size_t nwrite_dft = llama_state_seq_save_file(
+                            ctx_dft, filepath_dft.c_str(), slot->id,
+                            reinterpret_cast<const llama_token *>(packed.data()), packed.size() / sizeof(llama_token));
+                        if (nwrite_dft == 0) {
+                            std::filesystem::remove(filepath);
+                            std::filesystem::remove(filepath_dft);
+                            send_error(task, "Unable to save draft slot state", ERROR_TYPE_SERVER);
+                            break;
+                        }
+
+                        std::vector<uint8_t> spec_state;
+                        const std::string filepath_spec = filepath + ".spec";
+                        if (common_speculative_get_state(spec.get(), slot->id, spec_state)) {
+                            std::ofstream out(filepath_spec, std::ios::binary | std::ios::trunc);
+                            const uint32_t magic = 0x31504353u; // "SCP1" little-endian, speculative carry v1
+                            const uint64_t size = spec_state.size();
+                            out.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
+                            out.write(reinterpret_cast<const char *>(&size), sizeof(size));
+                            if (size > 0) {
+                                out.write(reinterpret_cast<const char *>(spec_state.data()), (std::streamsize) size);
+                            }
+                            if (!out.good()) {
+                                out.close();
+                                std::filesystem::remove(filepath);
+                                std::filesystem::remove(filepath_dft);
+                                std::filesystem::remove(filepath_spec);
+                                send_error(task, "Unable to save speculative slot state", ERROR_TYPE_SERVER);
+                                break;
+                            }
+                        } else {
+                            std::filesystem::remove(filepath_spec);
+                        }
+                    }
+
                     const int64_t t_end = ggml_time_us();
                     const double t_save_ms = (t_end - t_start) / 1000.0;
 
@@ -2725,6 +2829,38 @@ private:
                             packed.resize(std::max<size_t>(1, n_packed));
                             nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id, packed.data(), packed.size(), &n_packed);
                         }
+
+                        // A self-contained slot can need more temporary KV cells than remain, even
+                        // when its final shared-prefix representation fits. A failed ordinary load
+                        // still populated the saved token list. Verify the best live donor prefix
+                        // and retry by mapping those serialized rows directly onto donor cells.
+                        if (nread == 0 && params_base.slot_fork_prefix && params_base.kv_unified && n_packed > 0) {
+                            packed.resize(n_packed);
+                            server_tokens candidate = server_tokens::deserialize(packed, mctx != nullptr);
+                            server_slot * donor = nullptr;
+                            int lcp_best = 0;
+                            if (!candidate.has_mtmd && candidate.validate(ctx_tgt)) {
+                                for (auto & cur : slots) {
+                                    if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
+                                            cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, slot->lora)) {
+                                        continue;
+                                    }
+                                    const int lcp = cur.prompt.tokens.get_common_prefix(candidate);
+                                    if (lcp > lcp_best) {
+                                        donor = &cur;
+                                        lcp_best = lcp;
+                                    }
+                                }
+                            }
+                            if (donor != nullptr && lcp_best > 0) {
+                                nread = llama_state_seq_load_file_prefix(ctx_tgt, filepath.c_str(), slot->id,
+                                        donor->id, lcp_best, packed.data(), packed.size(), &n_packed);
+                                if (nread != 0) {
+                                    SLT_INF(*slot, "restored directly onto prefix from slot %d, n_tokens = %d\n",
+                                            donor->id, lcp_best);
+                                }
+                            }
+                        }
                         if (nread == 0) {
                             throw std::runtime_error("No available space in KV cache or invalid slot save file");
                         }
@@ -2742,6 +2878,79 @@ private:
 
                         slot->prompt.clear();
                         slot->prompt.tokens = std::move(restored);
+
+                        // Find one donor once and use the same exact prefix for target/draft dedup.
+                        server_slot * restore_donor = nullptr;
+                        int restore_lcp = 0;
+                        if (params_base.slot_fork_prefix && params_base.kv_unified &&
+                                !slot->prompt.tokens.has_mtmd) {
+                            for (auto & cur : slots) {
+                                if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
+                                        cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, slot->lora)) {
+                                    continue;
+                                }
+                                const int lcp = cur.prompt.tokens.get_common_prefix(slot->prompt.tokens);
+                                if (lcp > restore_lcp) {
+                                    restore_donor = &cur;
+                                    restore_lcp = lcp;
+                                }
+                            }
+                        }
+
+                        // New MTP-aware snapshots contain the draft KV as a companion. Old slot
+                        // files remain valid; they simply fall back to deferred draft catch-up.
+                        const std::string filepath_dft = filepath + ".draft";
+                        if (ctx_dft != nullptr && std::filesystem::exists(filepath_dft)) {
+                            size_t n_dft_packed = 0;
+                            size_t nread_dft = llama_state_seq_load_file(
+                                    ctx_dft, filepath_dft.c_str(), slot->id, nullptr, 0, &n_dft_packed);
+                            llama_tokens dft_packed;
+                            if (nread_dft != 0) {
+                                dft_packed.resize(std::max<size_t>(1, n_dft_packed));
+                                nread_dft = llama_state_seq_load_file(
+                                        ctx_dft, filepath_dft.c_str(), slot->id,
+                                        dft_packed.data(), dft_packed.size(), &n_dft_packed);
+                            }
+                            if (nread_dft == 0 && restore_donor != nullptr && restore_lcp > 0) {
+                                dft_packed.resize(std::max<size_t>(1, n_dft_packed));
+                                nread_dft = llama_state_seq_load_file_prefix(
+                                        ctx_dft, filepath_dft.c_str(), slot->id, restore_donor->id, restore_lcp,
+                                        dft_packed.data(), dft_packed.size(), &n_dft_packed);
+                                if (nread_dft != 0) {
+                                    SLT_INF(*slot, "restored draft directly onto prefix from slot %d, n_tokens = %d\n",
+                                            restore_donor->id, restore_lcp);
+                                }
+                            }
+                            if (nread_dft == 0) {
+                                throw std::runtime_error("No available space in draft KV cache or invalid draft slot state");
+                            }
+                        }
+
+                        const std::string filepath_spec = filepath + ".spec";
+                        if (spec && std::filesystem::exists(filepath_spec)) {
+                            std::ifstream in(filepath_spec, std::ios::binary);
+                            uint32_t magic = 0;
+                            uint64_t size = 0;
+                            in.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+                            in.read(reinterpret_cast<char *>(&size), sizeof(size));
+                            if (!in.good() || magic != 0x31504353u || size > 64 * 1024 * 1024) {
+                                throw std::runtime_error("Invalid speculative slot state");
+                            }
+                            std::vector<uint8_t> spec_state((size_t) size);
+                            if (size > 0) {
+                                in.read(reinterpret_cast<char *>(spec_state.data()), (std::streamsize) size);
+                            }
+                            if (!in.good()) {
+                                throw std::runtime_error("Unable to read speculative slot state");
+                            }
+                            common_speculative_set_state(spec.get(), slot->id, spec_state);
+                        }
+
+                        if (restore_donor != nullptr && restore_lcp > 0 &&
+                                slot->mem.seq_share_prefix(restore_donor->id, slot->id, restore_lcp)) {
+                            SLT_INF(*slot, "deduplicated restored prefix with slot %d, n_tokens = %d\n",
+                                    restore_donor->id, restore_lcp);
+                        }
                     } catch (const std::exception & err) {
                         slot->prompt_clear();
                         send_error(task, std::string("Unable to restore slot: ") + err.what(), ERROR_TYPE_INVALID_REQUEST);

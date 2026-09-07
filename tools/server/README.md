@@ -169,6 +169,7 @@ For the full list of features, please refer to [server's changelog](https://gith
 | `-cms, --checkpoint-min-step N` | minimum spacing between context checkpoints in tokens (default: 8192, 0 = no minimum)<br/>(env: LLAMA_ARG_CHECKPOINT_MIN_SPACING_NT) |
 | `-cram, --cache-ram N` | set the maximum cache size in MiB (default: 8192, -1 - no limit, 0 - disable)[(more info)](https://github.com/ggml-org/llama.cpp/pull/16391)<br/>(env: LLAMA_ARG_CACHE_RAM) |
 | `-kvu, --kv-unified, -no-kvu, --no-kv-unified` | use single unified KV buffer shared across all sequences (default: enabled if number of slots is auto)<br/>(env: LLAMA_ARG_KV_UNIFIED) |
+| `--slot-fork-prefix, --no-slot-fork-prefix` | with unified KV, fork an idle exact-prefix slot into an empty slot instead of consuming the donor; shared attention KV cells are referenced by both sequences (default: disabled)<br/>(env: LLAMA_ARG_SLOT_FORK_PREFIX) |
 | `--cache-idle-slots, --no-cache-idle-slots` | save idle slots to the prompt cache on new task, and clear them when using unified KV (default: enabled, requires cache-ram)<br/>(env: LLAMA_ARG_CACHE_IDLE_SLOTS) |
 | `--context-shift, --no-context-shift` | whether to use context shift on infinite text generation (default: disabled)<br/>(env: LLAMA_ARG_CONTEXT_SHIFT) |
 | `-r, --reverse-prompt PROMPT` | halt generation at PROMPT, return control in interactive mode |
@@ -1154,6 +1155,8 @@ In *router mode* the query param `?model={model_id}` has to be set. This endpoin
 
 `filename`: Name of the file to save the slot's prompt cache. The file will be saved in the directory specified by the `--slot-save-path` server parameter.
 
+When speculative decoding has its own draft context, the server also writes `<filename>.draft` for the draft sequence state and, when available, `<filename>.spec` for the small per-sequence speculative carry. These companions are optional and backward-compatible: restoring an older slot file without them falls back to rebuilding draft state.
+
 **Response format**
 
 ```json
@@ -1172,7 +1175,7 @@ In *router mode* the query param `?model={model_id}` has to be set. This endpoin
 
 *Options:*
 
-`filename`: Name of the file to restore the slot's prompt cache from. The file should be located in the directory specified by the `--slot-save-path` server parameter.
+`filename`: Name of the file to restore the slot's prompt cache from. The file should be located in the directory specified by the `--slot-save-path` server parameter. If matching `.draft`/`.spec` companions exist, speculative state is restored as part of the slot operation. With `--slot-fork-prefix` and unified KV, restore can map a saved common prefix directly onto an already-restored donor so the temporary full duplicate does not need to fit.
 
 **Response format**
 

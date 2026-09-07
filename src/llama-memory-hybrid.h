@@ -62,6 +62,7 @@ public:
 
     bool seq_rm  (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1) override;
     void seq_cp  (llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) override;
+    bool seq_share_prefix(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p1) override;
     void seq_keep(llama_seq_id seq_id)                                                          override;
     void seq_add (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, llama_pos shift) override;
     void seq_div (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, int d) override;
@@ -75,6 +76,9 @@ public:
 
     void state_write(llama_io_write_i & io, llama_seq_id seq_id = -1, llama_state_seq_flags flags = 0) const override;
     void state_read (llama_io_read_i  & io, llama_seq_id seq_id = -1, llama_state_seq_flags flags = 0)       override;
+    bool state_read_prefix(
+            llama_io_read_i & io, llama_seq_id seq_id, llama_seq_id prefix_seq_id,
+            llama_pos prefix_pos, llama_state_seq_flags flags = 0) override;
 
     //
     // llama_memory_hybrid specific API

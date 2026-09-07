@@ -109,6 +109,12 @@ struct llama_memory_i {
 
     virtual bool seq_rm  (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1) = 0;
     virtual void seq_cp  (llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) = 0;
+    // Repoint the destination's attention prefix at the source's cells without changing
+    // recurrent tail state. Returns false for memory types that cannot do this exactly.
+    virtual bool seq_share_prefix(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p1) {
+        (void) seq_id_src; (void) seq_id_dst; (void) p1;
+        return false;
+    }
     virtual void seq_keep(llama_seq_id seq_id) = 0;
     virtual void seq_add (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, llama_pos shift) = 0;
     virtual void seq_div (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, int d) = 0;
@@ -124,6 +130,15 @@ struct llama_memory_i {
 
     virtual void state_write(llama_io_write_i & io, llama_seq_id seq_id = -1, llama_state_seq_flags flags = 0) const = 0;
     virtual void state_read (llama_io_read_i  & io, llama_seq_id seq_id = -1, llama_state_seq_flags flags = 0) = 0;
+
+    // Restore a sequence while mapping its text attention prefix onto an existing
+    // donor sequence. Implementations must consume the same serialized state format.
+    virtual bool state_read_prefix(
+            llama_io_read_i & io, llama_seq_id seq_id, llama_seq_id prefix_seq_id,
+            llama_pos prefix_pos, llama_state_seq_flags flags = 0) {
+        (void) io; (void) seq_id; (void) prefix_seq_id; (void) prefix_pos; (void) flags;
+        return false;
+    }
 };
 
 using llama_memory_ptr = std::unique_ptr<llama_memory_i>;

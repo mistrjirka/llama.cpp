@@ -318,6 +318,20 @@ public:
         return seq[i].test(seq_id);
     }
 
+    // the cell index of sequence seq_id at exact position p; UINT32_MAX if absent.
+    // Text-only prefix sharing requires positions to be unique within the sequence.
+    uint32_t seq_pos_idx(llama_seq_id seq_id, llama_pos p) const {
+        assert(seq_id >= 0);
+        assert(seq_id < LLAMA_MAX_SEQ);
+
+        const auto & sp = seq_pos[seq_id];
+        auto it = sp.lower_bound({ p, 0 });
+        if (it == sp.end() || it->first != p) {
+            return UINT32_MAX;
+        }
+        return it->second;
+    }
+
     // the token of the cell of sequence seq_id at the largest position <= p
     // when several cells share that position, the one with the highest index wins
     // return LLAMA_TOKEN_NULL if the sequence has no cell at or before p

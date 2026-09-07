@@ -3843,6 +3843,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--slot-fork-prefix"},
+        {"--no-slot-fork-prefix"},
+        "when unified KV is enabled, preserve an idle exact-prefix slot by sharing its state with an empty slot (default: disabled)",
+        [](common_params & params, bool value) {
+            params.slot_fork_prefix = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_SLOT_FORK_PREFIX"));
+    add_opt(common_arg(
         {"--lora-init-without-apply"},
         string_format("load LoRA adapters without applying them (apply later via POST /lora-adapters) (default: %s)", params.lora_init_without_apply ? "enabled" : "disabled"),
         [](common_params & params) {

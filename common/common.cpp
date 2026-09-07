@@ -1658,6 +1658,15 @@ void common_memory::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, lla
     }
 }
 
+bool common_memory::seq_share_prefix(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p1) const {
+    // Try the draft first so a target dedup is never left half-applied if the draft
+    // memory type cannot represent shared prefix cells.
+    if (ctx_dft && !llama_memory_seq_share_prefix(llama_get_memory(ctx_dft), seq_id_src, seq_id_dst, p1)) {
+        return false;
+    }
+    return llama_memory_seq_share_prefix(llama_get_memory(ctx_tgt), seq_id_src, seq_id_dst, p1);
+}
+
 void common_memory::seq_add(llama_seq_id seq_id, llama_pos p0, llama_pos p1, llama_pos delta) const {
     common_context_seq_add(ctx_tgt, seq_id, p0, p1, delta);
     if (ctx_dft) {
