@@ -126,3 +126,7 @@ GGML_CUDA_VOLTA_Q8_MULTI=1 GGML_CUDA_VOLTA_Q8_MULTI_PACK=16 \
 - [Nightjar](https://arxiv.org/html/2512.22420v2): speculative-depth adaptation to load and measured goodput.
 
 These papers motivate the experiments. Their reported GPU/model speedups are not substituted for measurements on this V100/2080 Ti system. No experiment here lowers target or draft KV precision, evicts attention tokens, or bypasses target verification.
+
+## Nsight follow-up
+
+Actual Systems timelines and Compute counters are now recorded in [the Nsight report](../nsight-parallel-0907/REPORT.md). They identify target-side and orchestration costs, low two-GPU decode overlap, and resource/issue stalls in the direct-Q8 prototype. No production defaults changed.

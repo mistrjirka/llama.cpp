@@ -1,0 +1,10 @@
+{
+  "4": {
+    "smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio": "12.632269",
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": "2.609727"
+  },
+  "16": {
+    "smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio": "39.757744",
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": "79.520472"
+  }
+}

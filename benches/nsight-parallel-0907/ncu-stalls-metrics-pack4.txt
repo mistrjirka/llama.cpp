@@ -1,0 +1,63 @@
+[138212] test-backend-ops@127.0.0.1
+  void partial_kernel<4>(const float *, const block_q8_0 *, const block_q8_0 *, const __half *, int, int, int, float, long, long, long, long, long, long, long, float *, float *, float *) (2, 128, 1)x(128, 1, 1), Context 1, Stream 14, Device 0, CC 7.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Memory Workload Analysis
+    ----------------- ----------- ------------
+    Metric Name       Metric Unit Metric Value
+    ----------------- ----------- ------------
+    Memory Throughput     Gbyte/s       132.78
+    Mem Busy                    %        21.83
+    Max Bandwidth               %        34.09
+    L1/TEX Hit Rate             %        87.92
+    L2 Hit Rate                 %        90.08
+    Mem Pipes Busy              %         4.44
+    ----------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %         7.73
+    Issued Warp Per Scheduler                        0.08
+    No Eligible                            %        92.27
+    Active Warps Per Scheduler          warp         1.73
+    Eligible Warps Per Scheduler        warp         0.09
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 92.27%
+          Every scheduler is capable of issuing one instruction per cycle, but for this workload each scheduler only
+          issues an instruction every 12.9 cycles. This might leave hardware resources underutilized and may lead to
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this workload allocates an average
+          of 1.73 active warps per scheduler, but only an average of 0.09 warps were eligible per cycle. Eligible
+          warps are the subset of active warps that are ready to issue their next instruction. Every cycle with no
+          eligible warp results in no instruction being issued and the issue slot remains unused. To increase the
+          number of eligible warps, avoid possible load imbalances due to highly different execution durations per
+          warp. Reducing stalls indicated on the Warp State Statistics and Source Counters sections can help, too.
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle        22.43
+    Warp Cycles Per Executed Instruction           cycle        22.47
+    Avg. Active Threads Per Warp                                   32
+    Avg. Not Predicated Off Threads Per Warp                    31.56
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could
+          enable the rule to provide more guidance.
+    ----- --------------------------------------------------------------------------------------------------------------
+    OPT   Est. Speedup: 56.31%
+          On average, each warp of this workload spends 12.6 cycles being stalled waiting for the L1 instruction queue
+          for local and global (LG) memory operations to be not full. Typically, this stall occurs only when executing
+          local or global memory instructions extremely frequently. Avoid redundant global memory accesses. Try to
+          avoid using thread-local memory by checking if dynamically indexed arrays are declared in local scope, or if
+          the kernel has excessive register pressure causing spills. If applicable, consider combining multiple
+          lower-width memory operations into fewer wider memory operations and try interleaving memory operations and
+          math instructions. This stall type represents about 56.3% of the total average of 22.4 cycles between
+          issuing two instructions.
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on
+          sampling data. The Profiling Guide
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details
+          on each stall reason.

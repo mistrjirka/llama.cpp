@@ -1,0 +1,470 @@
+{
+  "wall_ms": 4234.595446,
+  "unmatched_kernels": 0,
+  "cpu_scopes": {
+    "decode/target/n=1": {
+      "calls": 1,
+      "summed_ms": 18.469282
+    },
+    "MTP/flush": {
+      "calls": 4,
+      "summed_ms": 2.405894
+    },
+    "decode/process/n=1": {
+      "calls": 1,
+      "summed_ms": 1.160513
+    },
+    "MTP/drafting": {
+      "calls": 39,
+      "summed_ms": 578.765485
+    },
+    "decode/draft/n=1": {
+      "calls": 3,
+      "summed_ms": 3.0855490000000003
+    },
+    "decode/target/n=7": {
+      "calls": 1,
+      "summed_ms": 49.410201
+    },
+    "MTP/process": {
+      "calls": 40,
+      "summed_ms": 122.073806
+    },
+    "decode/process/n=7": {
+      "calls": 1,
+      "summed_ms": 3.985812
+    },
+    "decode/draft/n=4": {
+      "calls": 111,
+      "summed_ms": 245.50107000000008
+    },
+    "decode/target/n=16": {
+      "calls": 37,
+      "summed_ms": 961.1748310000002
+    },
+    "decode/process/n=16": {
+      "calls": 37,
+      "summed_ms": 105.97895200000005
+    },
+    "decode/draft/n=3": {
+      "calls": 3,
+      "summed_ms": 6.062677999999999
+    },
+    "decode/target/n=13": {
+      "calls": 1,
+      "summed_ms": 83.612112
+    },
+    "decode/process/n=13": {
+      "calls": 1,
+      "summed_ms": 2.650666
+    },
+    "decode/target/n=3": {
+      "calls": 1,
+      "summed_ms": 21.44565
+    },
+    "decode/process/n=3": {
+      "calls": 1,
+      "summed_ms": 2.276094
+    }
+  },
+  "gpu_kernels": [
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "other",
+      "calls": 23460,
+      "summed_ms": 143.71907200000072
+    },
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "matmul",
+      "calls": 9429,
+      "summed_ms": 321.93490499999956
+    },
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "attention",
+      "calls": 270,
+      "summed_ms": 108.13427599999999
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "family": "other",
+      "calls": 55211,
+      "summed_ms": 301.6397599999982
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "family": "matmul",
+      "calls": 22970,
+      "summed_ms": 860.0548409999913
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "family": "q8-to-f16",
+      "calls": 630,
+      "summed_ms": 144.7455280000001
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "family": "attention",
+      "calls": 630,
+      "summed_ms": 258.95199900000006
+    },
+    {
+      "component": "process",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "other",
+      "calls": 1852,
+      "summed_ms": 5.7551470000000124
+    },
+    {
+      "component": "process",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "matmul",
+      "calls": 794,
+      "summed_ms": 22.916637000000026
+    },
+    {
+      "component": "process",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "attention",
+      "calls": 82,
+      "summed_ms": 33.887483
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "other",
+      "calls": 8541,
+      "summed_ms": 66.28558999999986
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "matmul",
+      "calls": 1518,
+      "summed_ms": 153.63029399999996
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "attention",
+      "calls": 234,
+      "summed_ms": 52.11148299999997
+    },
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "q8-to-f16",
+      "calls": 258,
+      "summed_ms": 91.85146499999996
+    },
+    {
+      "component": "process",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "q8-to-f16",
+      "calls": 80,
+      "summed_ms": 28.455242
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "family": "q8-to-f16",
+      "calls": 228,
+      "summed_ms": 80.86375499999994
+    }
+  ],
+  "api": [
+    {
+      "component": "outside-decode",
+      "name": "cudaStreamSynchronize_v3020",
+      "calls": 11808,
+      "summed_ms": 1714.081574000004
+    },
+    {
+      "component": "target",
+      "name": "cudaStreamSynchronize_v3020",
+      "calls": 1880,
+      "summed_ms": 618.4139769999986
+    },
+    {
+      "component": "target",
+      "name": "cudaGraphLaunch_v10000",
+      "calls": 68,
+      "summed_ms": 180.247888
+    },
+    {
+      "component": "target",
+      "name": "cudaLaunchKernel_v7000",
+      "calls": 30956,
+      "summed_ms": 131.27194799999987
+    },
+    {
+      "component": "outside-decode",
+      "name": "cudaMemcpyAsync_v3020",
+      "calls": 240,
+      "summed_ms": 31.917254000000018
+    },
+    {
+      "component": "draft",
+      "name": "cudaLaunchKernel_v7000",
+      "calls": 7105,
+      "summed_ms": 28.85605299999992
+    },
+    {
+      "component": "draft",
+      "name": "cudaStreamSynchronize_v3020",
+      "calls": 2223,
+      "summed_ms": 17.45281
+    },
+    {
+      "component": "draft",
+      "name": "cudaGraphLaunch_v10000",
+      "calls": 77,
+      "summed_ms": 16.889612999999997
+    },
+    {
+      "component": "process",
+      "name": "cudaLaunchKernel_v7000",
+      "calls": 2808,
+      "summed_ms": 15.409478999999973
+    },
+    {
+      "component": "process",
+      "name": "cudaStreamSynchronize_v3020",
+      "calls": 738,
+      "summed_ms": 14.346894
+    },
+    {
+      "component": "draft",
+      "name": "cudaMemcpyAsync_v3020",
+      "calls": 2390,
+      "summed_ms": 12.200104000000003
+    },
+    {
+      "component": "draft",
+      "name": "cudaMemsetAsync_v3020",
+      "calls": 1848,
+      "summed_ms": 6.164857999999994
+    },
+    {
+      "component": "target",
+      "name": "cudaMemcpyAsync_v3020",
+      "calls": 873,
+      "summed_ms": 5.321682999999996
+    },
+    {
+      "component": "target",
+      "name": "cudaGraphExecUpdate_v10020",
+      "calls": 6,
+      "summed_ms": 4.802802
+    },
+    {
+      "component": "target",
+      "name": "cudaGraphDestroy_v10000",
+      "calls": 6,
+      "summed_ms": 3.244142
+    },
+    {
+      "component": "draft",
+      "name": "cudaGraphDestroy_v10000",
+      "calls": 39,
+      "summed_ms": 2.3330890000000006
+    },
+    {
+      "component": "outside-decode",
+      "name": "cudaMallocHost_v3020",
+      "calls": 1,
+      "summed_ms": 2.087946
+    },
+    {
+      "component": "process",
+      "name": "cudaMemcpyAsync_v3020",
+      "calls": 328,
+      "summed_ms": 1.9869160000000003
+    },
+    {
+      "component": "draft",
+      "name": "cudaGraphExecUpdate_v10020",
+      "calls": 39,
+      "summed_ms": 1.5740840000000003
+    },
+    {
+      "component": "draft",
+      "name": "cudaMemcpy2DAsync_v3020",
+      "calls": 308,
+      "summed_ms": 1.5520380000000007
+    },
+    {
+      "component": "target",
+      "name": "cudaMemcpyPeerAsync_v4000",
+      "calls": 45,
+      "summed_ms": 1.3582489999999996
+    },
+    {
+      "component": "outside-decode",
+      "name": "cudaFreeHost_v3020",
+      "calls": 1,
+      "summed_ms": 1.230022
+    },
+    {
+      "component": "draft",
+      "name": "cudaGraphInstantiate_v12000",
+      "calls": 3,
+      "summed_ms": 1.067242
+    },
+    {
+      "component": "draft",
+      "name": "cudaGraphExecDestroy_v10000",
+      "calls": 3,
+      "summed_ms": 0.422701
+    },
+    {
+      "component": "target",
+      "name": "cudaStreamWaitEvent_v3020",
+      "calls": 45,
+      "summed_ms": 0.30619700000000005
+    },
+    {
+      "component": "draft",
+      "name": "cudaStreamIsCapturing_v10000",
+      "calls": 308,
+      "summed_ms": 0.23888500000000032
+    },
+    {
+      "component": "target",
+      "name": "cudaStreamEndCapture_v10000",
+      "calls": 6,
+      "summed_ms": 0.19517999999999996
+    },
+    {
+      "component": "target",
+      "name": "cudaEventRecord_v3020",
+      "calls": 45,
+      "summed_ms": 0.190923
+    },
+    {
+      "component": "draft",
+      "name": "cudaStreamBeginCapture_v10000",
+      "calls": 39,
+      "summed_ms": 0.17511399999999996
+    },
+    {
+      "component": "draft",
+      "name": "cudaStreamEndCapture_v10000",
+      "calls": 39,
+      "summed_ms": 0.158505
+    },
+    {
+      "component": "target",
+      "name": "cudaStreamBeginCapture_v10000",
+      "calls": 6,
+      "summed_ms": 0.021498999999999997
+    }
+  ],
+  "copies": [
+    {
+      "component": "outside-decode",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 2,
+      "calls": 72,
+      "summed_ms": 6.136300999999997,
+      "bytes": 79036416
+    },
+    {
+      "component": "outside-decode",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "kind": 2,
+      "calls": 168,
+      "summed_ms": 14.605074000000002,
+      "bytes": 184418304
+    },
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 1,
+      "calls": 361,
+      "summed_ms": 12.095581999999986,
+      "bytes": 153603972
+    },
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 2,
+      "calls": 45,
+      "summed_ms": 0.4422389999999999,
+      "bytes": 5046272
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "kind": 1,
+      "calls": 406,
+      "summed_ms": 12.21635299999998,
+      "bytes": 153606436
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "kind": 2,
+      "calls": 91,
+      "summed_ms": 46.91763000000001,
+      "bytes": 616914944
+    },
+    {
+      "component": "process",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 1,
+      "calls": 328,
+      "summed_ms": 12.417592999999977,
+      "bytes": 157535488
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 1,
+      "calls": 1053,
+      "summed_ms": 11.968445999999947,
+      "bytes": 140743712
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 8,
+      "calls": 912,
+      "summed_ms": 3.1139139999999936,
+      "bytes": 452953920
+    },
+    {
+      "component": "draft",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 2,
+      "calls": 1029,
+      "summed_ms": 1.8469410000000088,
+      "bytes": 3772032
+    },
+    {
+      "component": "target",
+      "gpu": "NVIDIA GeForce RTX 2080 Ti",
+      "kind": 8,
+      "calls": 18,
+      "summed_ms": 0.039743999999999995,
+      "bytes": 19759104
+    },
+    {
+      "component": "target",
+      "gpu": "Tesla V100-SXM2-32GB",
+      "kind": 8,
+      "calls": 42,
+      "summed_ms": 0.10742399999999999,
+      "bytes": 46104576
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "attributed.nsys-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/nsight-parallel-0907/attributed.nsys-rep",
+    "bytes": 13187617,
+    "sha256": "da2ce4ca4baacdb1673851baf48907fdbb5464a4d8c8edd6c869b77c6cfee569"
+  },
+  "ncu-stalls-pack16.ncu-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/nsight-parallel-0907/ncu-stalls-pack16.ncu-rep",
+    "bytes": 1005503,
+    "sha256": "886bd1ec2887bdf5b719c57abeda0a966613336d3c48349a01034bb3448c363d"
+  },
+  "ncu-stalls-pack4.ncu-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/nsight-parallel-0907/ncu-stalls-pack4.ncu-rep",
+    "bytes": 1004556,
+    "sha256": "9f3952cfab82aa1bef72f8f5215a0d9faa7063a8be80a613f802d60b06200f70"
+  },
+  "ncu-test-pack16.ncu-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/nsight-parallel-0907/ncu-test-pack16.ncu-rep",
+    "bytes": 1038939,
+    "sha256": "2b33b2c4866001463e8815e3e0bedeed971a763a34528b06fba6ba250956ee2c"
+  },
+  "ncu-test-pack4.ncu-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/nsight-parallel-0907/ncu-test-pack4.ncu-rep",
+    "bytes": 1038935,
+    "sha256": "d28b5a24ea848d628a5490a1a0bdf4d2e2cd43ba6d84acd76b5ac6d38d3bf0fc"
+  },
+  "parallel.nsys-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/nsight-parallel-0907/parallel.nsys-rep",
+    "bytes": 52705427,
+    "sha256": "9535627abe99d4c4ca0084e0b3bd2a5b04a9b61ed0c6a66f899fbf7a244ecca3"
+  }
+}

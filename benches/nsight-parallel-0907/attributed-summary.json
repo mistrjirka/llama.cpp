@@ -1,0 +1,5027 @@
+[
+  {
+    "phase": "attributed-mtp3/PP",
+    "wall_ms": 5778.832435,
+    "kernel_ms": 5321.209588999999,
+    "kernel_count": 56879,
+    "gpu_busy_pct": {
+      "NVIDIA GeForce RTX 2080 Ti": 28.365175655071578,
+      "Tesla V100-SXM2-32GB": 67.83673802786082
+    },
+    "both_gpu_active_pct": 4.684685670419513,
+    "neither_gpu_active_pct": 8.482771987487123,
+    "top_kernels": [
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_ext_f16<(int)256, (int)256, (int)8, (int)8, (bool)0, (bool)0, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 133,
+        "total_ms": 1954.6612409999998,
+        "registers": [
+          254
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          67584
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_ext_f16<(int)256, (int)256, (int)4, (int)8, (bool)0, (bool)0, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 94,
+        "total_ms": 782.33703,
+        "registers": [
+          250
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          17408
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)13, (int)128, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 784,
+        "total_ms": 777.2215049999991,
+        "registers": [
+          221
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          54864
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)14, (int)64, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 448,
+        "total_ms": 265.7179990000001,
+        "registers": [
+          126
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          27432
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)13, (int)128, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 336,
+        "total_ms": 155.77478499999992,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          57856
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void dequantize_block_q8_0_f16<(bool)0>(const void *, __half *, long)",
+        "count": 3927,
+        "total_ms": 135.7643369999999,
+        "registers": [
+          31
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          2176
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)13, (int)96, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 168,
+        "total_ms": 118.06075499999994,
+        "registers": [
+          205
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          50640
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)14, (int)128, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 168,
+        "total_ms": 94.632552,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          57856
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void gated_delta_net_cuda_128x4_volta<(bool)1>(const float *, const float *, const float *, const float *, const float *, const float *, float *, float *, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, float, long, int)",
+        "count": 420,
+        "total_ms": 86.60988400000004,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)128, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 987,
+        "total_ms": 74.91598000000005,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          57856
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void dequantize_block_q8_0_f16<(bool)0>(const void *, __half *, long)",
+        "count": 188,
+        "total_ms": 66.250376,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          2176
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void cutlass::Kernel2<cutlass_70_tensorop_s884gemm_f16_128x128_tn_align8>(T1::Params)",
+        "count": 448,
+        "total_ms": 56.22561800000002,
+        "registers": [
+          236
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          32768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void gated_delta_net_cuda_128x4_volta<(bool)1>(const float *, const float *, const float *, const float *, const float *, const float *, float *, float *, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, float, long, int)",
+        "count": 180,
+        "total_ms": 52.849655,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_s884gemm_fp16_64x64_ldg8_tn",
+        "count": 1722,
+        "total_ms": 50.111793999999996,
+        "registers": [
+          106
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          16896
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_s884gemm_fp16_256x128_ldg8_tn",
+        "count": 518,
+        "total_ms": 48.50195999999999,
+        "registers": [
+          250
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          65536
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)6, (int)128, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 330,
+        "total_ms": 39.52374200000001,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          57856
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void convert_unary<float, __half>(const void *, T2 *, long, long, long, uint3, long, long, long)",
+        "count": 3647,
+        "total_ms": 24.43715900000006,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)13, (int)96, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 72,
+        "total_ms": 23.158868999999992,
+        "registers": [
+          252
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          53632
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void concat_non_cont<unsigned int, (int)0>(const char *, const char *, char *, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 420,
+        "total_ms": 18.86267299999999,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void ssm_conv_long_token_f32<(bool)1, (unsigned long)128, (unsigned long)4, (long)32>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+        "count": 357,
+        "total_ms": 17.674933999999986,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          17920
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mm_ids_helper<(int)8>(const int *, int *, int *, int *, int, int, int, int, int, bool)",
+        "count": 1596,
+        "total_ms": 16.235796999999994,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          48,
+          64,
+          352,
+          672,
+          688,
+          912,
+          984,
+          1008,
+          1020,
+          1024
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)13, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 112,
+        "total_ms": 16.209462000000006,
+        "registers": [
+          125
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          39056
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 2471,
+        "total_ms": 15.614316000000061,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          512
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_gated_op_kernel<&op_silu, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 1512,
+        "total_ms": 15.267659999999989,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "moe_weighted_reduction_f32(const float *, const float *, const float *, float *, long, int)",
+        "count": 560,
+        "total_ms": 15.122285000000002,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)96, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 234,
+        "total_ms": 15.111882000000001,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          53632
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)14, (int)96, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 36,
+        "total_ms": 13.720947999999996,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          53632
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void concat_non_cont<unsigned int, (int)0>(const char *, const char *, char *, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 180,
+        "total_ms": 12.312383000000002,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_sgemm_32x128_tn",
+        "count": 392,
+        "total_ms": 12.255777000000013,
+        "registers": [
+          57
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          16384
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void cutlass::Kernel2<cutlass_70_wmma_tensorop_s161616gemm_f16_32x32_64x2_tn_align8>(T1::Params)",
+        "count": 917,
+        "total_ms": 12.119676000000013,
+        "registers": [
+          96
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          17408
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rms_norm_f32<(int)256, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 700,
+        "total_ms": 11.938305999999988,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void cpy_scalar<&cpy_1_scalar<float, float>>(const char *, char *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+        "count": 1820,
+        "total_ms": 11.835448000000044,
+        "registers": [
+          34
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0, (bool)0>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 2265,
+        "total_ms": 11.352645000000017,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)14, (int)48, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 28,
+        "total_ms": 10.741185999999999,
+        "registers": [
+          124
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          25320
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)128, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 693,
+        "total_ms": 10.532918999999994,
+        "registers": [
+          80
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)14, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 56,
+        "total_ms": 10.188767999999998,
+        "registers": [
+          158
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          39056
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rms_norm_f32<(int)1024, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 1140,
+        "total_ms": 9.35636200000003,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          1024
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)1, (bool)1>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 1064,
+        "total_ms": 9.211849000000027,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_argsort_f32_i32<(ggml_sort_order)1>(const float *, int *, int, int)",
+        "count": 532,
+        "total_ms": 9.114247999999984,
+        "registers": [
+          18
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1024
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rms_norm_scale_f32<(int)256>(const float *, float *, int, long, long, long, float, float, float)",
+        "count": 840,
+        "total_ms": 8.924974,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "moe_weighted_reduction_f32(const float *, const float *, const float *, float *, long, int)",
+        "count": 274,
+        "total_ms": 8.476582999999998,
+        "registers": [
+          62
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void ssm_conv_long_token_f32<(bool)1, (unsigned long)128, (unsigned long)4, (long)32>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+        "count": 153,
+        "total_ms": 8.318121,
+        "registers": [
+          47
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          17920
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_gated_op_kernel<&op_silu, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 714,
+        "total_ms": 8.248683999999988,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rms_norm_f32<(int)256, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 368,
+        "total_ms": 7.593119000000004,
+        "registers": [
+          59
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_get_rows_float<float, float>(const T1 *, const int *, T2 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 997,
+        "total_ms": 7.341293000000002,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "volta_sgemm_128x64_tn",
+        "count": 236,
+        "total_ms": 6.964868999999999,
+        "registers": [
+          122
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          12800
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 308,
+        "total_ms": 6.956939999999994,
+        "registers": [
+          128
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          40640
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_get_rows_float_vec<float>(const T1 *, const int *, T1 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 462,
+        "total_ms": 6.769071999999999,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)128, (bool)1>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 306,
+        "total_ms": 6.333998000000007,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          57856
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mm_ids_helper<(int)8>(const int *, int *, int *, int *, int, int, int, int, int, bool)",
+        "count": 780,
+        "total_ms": 6.103917000000013,
+        "registers": [
+          38
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          48,
+          64,
+          192,
+          352,
+          400,
+          512,
+          672,
+          688,
+          912,
+          984,
+          1008,
+          1020,
+          1024
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)13, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 48,
+        "total_ms": 5.625103999999999,
+        "registers": [
+          140
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rms_norm_f32<(int)1024, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 650,
+        "total_ms": 5.601033000000007,
+        "registers": [
+          59
+        ],
+        "blocks": [
+          1024
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rms_norm_scale_f32<(int)256>(const float *, float *, int, long, long, long, float, float, float)",
+        "count": 360,
+        "total_ms": 5.486988999999997,
+        "registers": [
+          59
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 560,
+        "total_ms": 5.347540000000007,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)64, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 45,
+        "total_ms": 4.967123000000001,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          48384
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cpy_scalar<&cpy_1_scalar<float, float>>(const char *, char *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+        "count": 814,
+        "total_ms": 4.94381899999999,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 980,
+        "total_ms": 4.84213,
+        "registers": [
+          19
+        ],
+        "blocks": [
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0, (bool)0>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 966,
+        "total_ms": 4.710198999999971,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_mul, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 980,
+        "total_ms": 4.464598000000022,
+        "registers": [
+          19
+        ],
+        "blocks": [
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)128, (bool)1>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 306,
+        "total_ms": 4.309204000000001,
+        "registers": [
+          80
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 259,
+        "total_ms": 4.304819000000004,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_set_rows_quant<long, block_q8_0, (int)32, &quantize_f32_q8_0_block>(const float *, const T1 *, T2 *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, uint3, uint3, uint3)",
+        "count": 280,
+        "total_ms": 4.221494000000001,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)1, (bool)1>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 456,
+        "total_ms": 4.087053999999998,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_argsort_f32_i32<(ggml_sort_order)1>(const float *, int *, int, int)",
+        "count": 260,
+        "total_ms": 3.9749850000000007,
+        "registers": [
+          17
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1024
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_f<float, float, (int)1, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 532,
+        "total_ms": 3.7957369999999973,
+        "registers": [
+          33
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_get_rows_float_vec<float>(const T1 *, const int *, T1 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 198,
+        "total_ms": 3.5520509999999996,
+        "registers": [
+          58
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)14, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 24,
+        "total_ms": 3.5277629999999998,
+        "registers": [
+          149
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_get_rows_float<float, float>(const T1 *, const int *, T2 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 458,
+        "total_ms": 3.198709000000001,
+        "registers": [
+          50
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)6, (int)128, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 210,
+        "total_ms": 3.1085380000000002,
+        "registers": [
+          80
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)8, (int)64, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 21,
+        "total_ms": 2.999828,
+        "registers": [
+          163
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          46976
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_s884gemm_fp16_128x64_ldg8_tn",
+        "count": 42,
+        "total_ms": 2.9588699999999992,
+        "registers": [
+          186
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          32768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 274,
+        "total_ms": 2.738458999999998,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_ext_f16<(int)256, (int)256, (int)4, (int)8, (bool)0, (bool)0, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 7,
+        "total_ms": 2.5755120000000002,
+        "registers": [
+          253
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          34816
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_set_rows_quant<long, block_q8_0, (int)32, &quantize_f32_q8_0_block>(const float *, const T1 *, T2 *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, uint3, uint3, uint3)",
+        "count": 188,
+        "total_ms": 2.418199999999998,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 132,
+        "total_ms": 2.4121840000000003,
+        "registers": [
+          128
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 454,
+        "total_ms": 2.3273230000000025,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 111,
+        "total_ms": 2.195929000000001,
+        "registers": [
+          68
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)96, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 180,
+        "total_ms": 2.1326639999999983,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          384
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_gated_op_kernel<&op_sigmoid, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 140,
+        "total_ms": 2.070842,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void soft_max_f32<(bool)1, (int)256, (int)256, float>(const float *, const T4 *, const float *, float *, soft_max_params)",
+        "count": 532,
+        "total_ms": 2.0029069999999978,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1152
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)8, (int)48, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 21,
+        "total_ms": 1.9243480000000002,
+        "registers": [
+          151
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          44864
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)13, (int)2, (bool)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 28,
+        "total_ms": 1.7922870000000006,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 308,
+        "total_ms": 1.727451000000003,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rope_multi<(bool)1, (bool)0, float>(const T3 *, T3 *, int, int, int, int, int, int, int, int, int, int, int, const int *, float, float, float, rope_corr_dims, float, const float *, mrope_sections, bool, bool)",
+        "count": 280,
+        "total_ms": 1.6905210000000017,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_sgemm_64x32_sliced1x4_tn",
+        "count": 112,
+        "total_ms": 1.6387459999999998,
+        "registers": [
+          82
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          26624
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_op_kernel<&op_sigmoid, float>(const T2 *, T2 *, int)",
+        "count": 980,
+        "total_ms": 1.6140410000000032,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_f<float, float, (int)1, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 260,
+        "total_ms": 1.5594190000000003,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_sgemm_128x32_tn",
+        "count": 56,
+        "total_ms": 1.5571799999999998,
+        "registers": [
+          57
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          16384
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 2,
+        "total_ms": 1.535611,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          384
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void fwht_cuda<(int)64>(const float *, float *, long, float)",
+        "count": 280,
+        "total_ms": 1.5182999999999978,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void reduce_rows_f32<(bool)0>(const float *, float *, int)",
+        "count": 532,
+        "total_ms": 1.464057,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          32,
+          512
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_mul, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 454,
+        "total_ms": 1.4627789999999987,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)1>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 84,
+        "total_ms": 1.4402220000000001,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_gated_op_kernel<&op_sigmoid, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 94,
+        "total_ms": 1.3730829999999998,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void fwht_cuda<(int)256>(const float *, float *, long, float)",
+        "count": 280,
+        "total_ms": 1.3338829999999986,
+        "registers": [
+          23
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 261,
+        "total_ms": 1.2773420000000002,
+        "registers": [
+          44
+        ],
+        "blocks": [
+          512
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)14, (int)2, (bool)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 28,
+        "total_ms": 1.212248,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rope_multi<(bool)1, (bool)0, float>(const T3 *, T3 *, int, int, int, int, int, int, int, int, int, int, int, const int *, float, float, float, rope_corr_dims, float, const float *, mrope_sections, bool, bool)",
+        "count": 188,
+        "total_ms": 1.1495010000000012,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_div, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 532,
+        "total_ms": 1.1233590000000035,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          48,
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)6, (int)112, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 11,
+        "total_ms": 1.074462,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          55744
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)13, (int)2, (bool)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 12,
+        "total_ms": 0.9614060000000001,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void fwht_cuda<(int)64>(const float *, float *, long, float)",
+        "count": 188,
+        "total_ms": 0.9352259999999998,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)1>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 84,
+        "total_ms": 0.8964459999999999,
+        "registers": [
+          168
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          40640
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void op_clamp_kernel<float>(const T1 *, T1 *, T1, T1, int)",
+        "count": 532,
+        "total_ms": 0.8421100000000001,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void fwht_cuda<(int)256>(const float *, float *, long, float)",
+        "count": 188,
+        "total_ms": 0.8267479999999999,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void soft_max_f32<(bool)1, (int)256, (int)256, float>(const float *, const T4 *, const float *, float *, soft_max_params)",
+        "count": 260,
+        "total_ms": 0.7526030000000004,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1152
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_op_kernel<&op_softplus, float>(const T2 *, T2 *, int)",
+        "count": 420,
+        "total_ms": 0.6894709999999983,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_stream_k_fixup_general<(int)256, (int)8, (int)8>(float *, const float2 *, int, int, int, int, uint3, uint3, uint3, uint3)",
+        "count": 28,
+        "total_ms": 0.688127,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)6, (int)48, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 11,
+        "total_ms": 0.656286,
+        "registers": [
+          255
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          46272
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)2, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 1,
+        "total_ms": 0.655774,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          1536
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "quantize_q8_1(const float *, void *, long, long, long, long, long, unsigned int, uint3)",
+        "count": 318,
+        "total_ms": 0.624575,
+        "registers": [
+          18
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)14, (int)2, (bool)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 12,
+        "total_ms": 0.584735,
+        "registers": [
+          58
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_op_kernel<&op_sigmoid, float>(const T2 *, T2 *, int)",
+        "count": 454,
+        "total_ms": 0.5636470000000002,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)48, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 9,
+        "total_ms": 0.544127,
+        "registers": [
+          246
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          46272
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "k_compute_batched_ptrs(const void *, const void *, char *, const void **, void **, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, long, long)",
+        "count": 210,
+        "total_ms": 0.5303310000000004,
+        "registers": [
+          26
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 108,
+        "total_ms": 0.4734990000000002,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_stream_k_fixup_uniform<(int)256, (int)4, (int)8>(float *, const float2 *, int, int, int, int, int, int, uint3, uint3, uint3)",
+        "count": 44,
+        "total_ms": 0.463262,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void reduce_rows_f32<(bool)0>(const float *, float *, int)",
+        "count": 260,
+        "total_ms": 0.4143999999999996,
+        "registers": [
+          37
+        ],
+        "blocks": [
+          32,
+          512
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)1>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 36,
+        "total_ms": 0.39254399999999995,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_div, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 260,
+        "total_ms": 0.3705899999999998,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          48,
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void op_clamp_kernel<float>(const T1 *, T1 *, T1, T1, int)",
+        "count": 260,
+        "total_ms": 0.29884799999999984,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void ssm_conv_f32<(bool)1, (unsigned long)128, (unsigned long)4>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+        "count": 63,
+        "total_ms": 0.297054,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void concat_cont<unsigned int, (int)0>(const T1 *, const T1 *, T1 *, long, long, long, long, long, long)",
+        "count": 34,
+        "total_ms": 0.295616,
+        "registers": [
+          38
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0, (bool)1>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 64,
+        "total_ms": 0.2861439999999999,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "volta_sgemm_64x32_sliced1x4_tn",
+        "count": 25,
+        "total_ms": 0.27456,
+        "registers": [
+          82
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          26624
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)64, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 21,
+        "total_ms": 0.262272,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          256
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "quantize_q8_1(const float *, void *, long, long, long, long, long, unsigned int, uint3)",
+        "count": 155,
+        "total_ms": 0.23500700000000022,
+        "registers": [
+          18
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_op_kernel<&op_softplus, float>(const T2 *, T2 *, int)",
+        "count": 180,
+        "total_ms": 0.21782399999999993,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)6, (int)2, (bool)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 2,
+        "total_ms": 0.21596700000000002,
+        "registers": [
+          55
+        ],
+        "blocks": [
+          128,
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)1>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 36,
+        "total_ms": 0.20860700000000001,
+        "registers": [
+          184
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)48, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 21,
+        "total_ms": 0.20531100000000002,
+        "registers": [
+          47
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          192
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_stream_k_fixup_general<(int)256, (int)4, (int)8>(float *, const float2 *, int, int, int, int, uint3, uint3, uint3, uint3)",
+        "count": 8,
+        "total_ms": 0.198976,
+        "registers": [
+          30
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void topk_moe_cuda<(int)256, (bool)0>(const float *, float *, int *, float *, int, int, float, float, topk_moe_config)",
+        "count": 28,
+        "total_ms": 0.14761600000000002,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_f<float, float, (int)4, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 26,
+        "total_ms": 0.12307199999999999,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_stream_k_fixup_uniform<(int)256, (int)8, (int)8>(float *, const float2 *, int, int, int, int, int, int, uint3, uint3, uint3)",
+        "count": 14,
+        "total_ms": 0.120286,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)8, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 8,
+        "total_ms": 0.116959,
+        "registers": [
+          113
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          2048
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_stream_k_fixup_uniform<(int)256, (int)4, (int)8>(float *, const float2 *, int, int, int, int, int, int, uint3, uint3, uint3)",
+        "count": 7,
+        "total_ms": 0.11212799999999999,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)6, (int)2, (bool)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 2,
+        "total_ms": 0.10524800000000001,
+        "registers": [
+          49
+        ],
+        "blocks": [
+          128,
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void ssm_conv_f32<(bool)1, (unsigned long)128, (unsigned long)4>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+        "count": 27,
+        "total_ms": 0.104063,
+        "registers": [
+          45
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)64, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 9,
+        "total_ms": 0.091296,
+        "registers": [
+          61
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          256
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)6, (int)112, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 7,
+        "total_ms": 0.08879899999999999,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          448
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 8,
+        "total_ms": 0.082271,
+        "registers": [
+          88
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)",
+        "count": 28,
+        "total_ms": 0.07875199999999997,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)48, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 9,
+        "total_ms": 0.067776,
+        "registers": [
+          57
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          192
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)",
+        "count": 28,
+        "total_ms": 0.06668799999999998,
+        "registers": [
+          26
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void topk_moe_cuda<(int)256, (bool)0>(const float *, float *, int *, float *, int, int, float, float, topk_moe_config)",
+        "count": 14,
+        "total_ms": 0.05267199999999999,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)6, (int)48, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 7,
+        "total_ms": 0.049856,
+        "registers": [
+          57
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          192
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)",
+        "count": 1,
+        "total_ms": 0.001792,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)",
+        "count": 1,
+        "total_ms": 0.00144,
+        "registers": [
+          26
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      }
+    ],
+    "cuda_apis": [
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "calls": 1741,
+        "summed_cpu_api_ms": 3185.7087410000145
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "calls": 55514,
+        "summed_cpu_api_ms": 1712.5874300001046
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "calls": 1222,
+        "summed_cpu_api_ms": 39.71302100000001
+      },
+      {
+        "name": "cudaMallocHost_v3020",
+        "calls": 5,
+        "summed_cpu_api_ms": 27.902835999999997
+      },
+      {
+        "name": "cuLaunchKernel",
+        "calls": 1365,
+        "summed_cpu_api_ms": 21.91937799999999
+      },
+      {
+        "name": "cudaFreeHost_v3020",
+        "calls": 5,
+        "summed_cpu_api_ms": 18.118846
+      },
+      {
+        "name": "cudaMemsetAsync_v3020",
+        "calls": 553,
+        "summed_cpu_api_ms": 11.563599000000002
+      },
+      {
+        "name": "cudaGraphLaunch_v10000",
+        "calls": 14,
+        "summed_cpu_api_ms": 2.4261600000000003
+      },
+      {
+        "name": "cudaMemcpyPeerAsync_v4000",
+        "calls": 20,
+        "summed_cpu_api_ms": 0.764071
+      },
+      {
+        "name": "cuKernelGetFunction",
+        "calls": 1365,
+        "summed_cpu_api_ms": 0.734921999999999
+      },
+      {
+        "name": "cudaGraphDestroy_v10000",
+        "calls": 14,
+        "summed_cpu_api_ms": 0.509319
+      },
+      {
+        "name": "cudaGraphExecUpdate_v10020",
+        "calls": 14,
+        "summed_cpu_api_ms": 0.458325
+      },
+      {
+        "name": "cudaGraphInstantiate_v12000",
+        "calls": 1,
+        "summed_cpu_api_ms": 0.247678
+      },
+      {
+        "name": "cudaStreamWaitEvent_v3020",
+        "calls": 20,
+        "summed_cpu_api_ms": 0.129907
+      },
+      {
+        "name": "cudaGraphExecDestroy_v10000",
+        "calls": 1,
+        "summed_cpu_api_ms": 0.105195
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "calls": 20,
+        "summed_cpu_api_ms": 0.087862
+      },
+      {
+        "name": "cudaStreamBeginCapture_v10000",
+        "calls": 14,
+        "summed_cpu_api_ms": 0.074067
+      },
+      {
+        "name": "cudaStreamEndCapture_v10000",
+        "calls": 14,
+        "summed_cpu_api_ms": 0.05468299999999999
+      }
+    ],
+    "copies": [
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "kind": 1,
+        "calls": 434,
+        "summed_ms": 141.27999399999968,
+        "bytes": 1844644556
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "kind": 2,
+        "calls": 92,
+        "summed_ms": 7.386089999999996,
+        "bytes": 111804416
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "kind": 1,
+        "calls": 165,
+        "summed_ms": 68.06902300000002,
+        "bytes": 904240860
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "kind": 2,
+        "calls": 211,
+        "summed_ms": 19.962828000000012,
+        "bytes": 253927424
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "kind": 8,
+        "calls": 108,
+        "summed_ms": 0.4372469999999999,
+        "bytes": 118554624
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "kind": 8,
+        "calls": 252,
+        "summed_ms": 1.00262,
+        "bytes": 276627456
+      }
+    ]
+  },
+  {
+    "phase": "attributed-mtp3/TG",
+    "wall_ms": 4234.595446,
+    "kernel_ms": 2674.937477000001,
+    "kernel_count": 126187,
+    "gpu_busy_pct": {
+      "NVIDIA GeForce RTX 2080 Ti": 27.336876066720258,
+      "Tesla V100-SXM2-32GB": 38.71063080059809
+    },
+    "both_gpu_active_pct": 0.30218704863737295,
+    "neither_gpu_active_pct": 34.254680181319024,
+    "top_kernels": [
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)13, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 2072,
+        "total_ms": 306.0896579999998,
+        "registers": [
+          125
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          39056
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_ext_f16<(int)256, (int)256, (int)8, (int)8, (bool)0, (bool)0, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 259,
+        "total_ms": 236.31318,
+        "registers": [
+          254
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          67584
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void dequantize_block_q8_0_f16<(bool)0>(const void *, __half *, long)",
+        "count": 566,
+        "total_ms": 201.17046200000013,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          2176
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)14, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 1036,
+        "total_ms": 191.36027500000017,
+        "registers": [
+          158
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          39056
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_ext_f16<(int)256, (int)256, (int)4, (int)8, (bool)0, (bool)0, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 283,
+        "total_ms": 179.39321900000013,
+        "registers": [
+          250
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          17408
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 5735,
+        "total_ms": 176.36857200000063,
+        "registers": [
+          128
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          40640
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void dequantize_block_q8_0_f16<(bool)0>(const void *, __half *, long)",
+        "count": 630,
+        "total_ms": 144.7455280000001,
+        "registers": [
+          31
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          2176
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)14, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 111,
+        "total_ms": 123.31504799999999,
+        "registers": [
+          80
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)13, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 888,
+        "total_ms": 118.95160500000004,
+        "registers": [
+          140
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)14, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 444,
+        "total_ms": 75.70710000000003,
+        "registers": [
+          149
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 1649,
+        "total_ms": 54.21800599999982,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void gated_delta_net_cuda_128x4_volta<(bool)1>(const float *, const float *, const float *, const float *, const float *, const float *, float *, float *, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, float, long, int)",
+        "count": 861,
+        "total_ms": 50.282171000000076,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 2442,
+        "total_ms": 49.399332000000165,
+        "registers": [
+          128
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cub::CUB_200802_SM_700_750::DeviceRadixSortOnesweepKernel<cub::CUB_200802_SM_700_750::detail::radix::policy_hub<float, int, unsigned int>::Policy1000, (bool)1, float, int, unsigned int, int, int, cub::CUB_200802_SM_700_750::detail::identity_decomposer_t>(T7 *, T7 *, T5 *, const T5 *, T3 *, const T3 *, T4 *, const T4 *, T6, int, int, T8)",
+        "count": 1824,
+        "total_ms": 45.45728200000002,
+        "registers": [
+          198
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          48128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void concat_non_cont<unsigned int, (int)0>(const char *, const char *, char *, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 861,
+        "total_ms": 39.73717300000004,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 5698,
+        "total_ms": 35.89757399999979,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void gated_delta_net_cuda_128x4_volta<(bool)1>(const float *, const float *, const float *, const float *, const float *, const float *, float *, float *, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, float, long, int)",
+        "count": 369,
+        "total_ms": 33.52661299999997,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 705,
+        "total_ms": 30.768931000000002,
+        "registers": [
+          68
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void concat_non_cont<unsigned int, (int)0>(const char *, const char *, char *, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 369,
+        "total_ms": 27.538608000000004,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)1>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 1554,
+        "total_ms": 26.81131400000017,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0, (bool)0>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 8325,
+        "total_ms": 22.264067999999952,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void cpy_scalar<&cpy_1_scalar<float, float>>(const char *, char *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+        "count": 4095,
+        "total_ms": 21.408928000000376,
+        "registers": [
+          34
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_get_rows_float_vec<float>(const T1 *, const int *, T1 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 966,
+        "total_ms": 20.82157300000001,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)6, (int)16, (bool)0>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 418,
+        "total_ms": 20.322755999999995,
+        "registers": [
+          130
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)1>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 1554,
+        "total_ms": 18.08890899999997,
+        "registers": [
+          168
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          40640
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_ext_f16<(int)256, (int)256, (int)4, (int)8, (bool)0, (bool)0, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 42,
+        "total_ms": 15.518103000000002,
+        "registers": [
+          253
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          34816
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "volta_sgemm_64x32_sliced1x4_tn",
+        "count": 1148,
+        "total_ms": 15.43151999999998,
+        "registers": [
+          82
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          26624
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_argsort_f32_i32<(ggml_sort_order)1>(const float *, int *, int, int)",
+        "count": 1036,
+        "total_ms": 13.107461999999975,
+        "registers": [
+          18
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1024
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mm_ids_helper<(int)8>(const int *, int *, int *, int *, int, int, int, int, int, bool)",
+        "count": 3108,
+        "total_ms": 12.438882999999946,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_ext_vec<(int)256, (int)1, (ggml_type)8, (ggml_type)8, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 10,
+        "total_ms": 11.96214,
+        "registers": [
+          254
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          4352
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)4, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 888,
+        "total_ms": 11.647748,
+        "registers": [
+          88
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          3072
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_get_rows_float_vec<float>(const T1 *, const int *, T1 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 414,
+        "total_ms": 11.561118000000004,
+        "registers": [
+          58
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rms_norm_f32<(int)1024, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 2565,
+        "total_ms": 11.318185000000112,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          1024
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 1998,
+        "total_ms": 11.20208699999999,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)13, (int)2, (bool)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 168,
+        "total_ms": 9.534223,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          96,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0, (bool)0>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 3894,
+        "total_ms": 9.170469999999979,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_gated_op_kernel<&op_silu, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 3185,
+        "total_ms": 9.136586999999892,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cpy_scalar<&cpy_1_scalar<float, float>>(const char *, char *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+        "count": 1913,
+        "total_ms": 8.876034999999986,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)8, (int)16, (bool)1>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 666,
+        "total_ms": 8.840964999999951,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_set_rows_quant<long, block_q8_0, (int)32, &quantize_f32_q8_0_block>(const float *, const T1 *, T2 *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, uint3, uint3, uint3)",
+        "count": 630,
+        "total_ms": 8.730151000000015,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_get_rows_float<float, float>(const T1 *, const int *, T2 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 2047,
+        "total_ms": 8.33053099999988,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rms_norm_f32<(int)1024, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 1870,
+        "total_ms": 7.700192999999977,
+        "registers": [
+          59
+        ],
+        "blocks": [
+          1024
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "moe_weighted_reduction_f32(const float *, const float *, const float *, float *, long, int)",
+        "count": 1260,
+        "total_ms": 7.025487999999967,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)6, (int)2, (bool)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 116,
+        "total_ms": 6.982896000000002,
+        "registers": [
+          55
+        ],
+        "blocks": [
+          96,
+          128,
+          224
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 2191,
+        "total_ms": 6.786157000000061,
+        "registers": [
+          19
+        ],
+        "blocks": [
+          16,
+          48,
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)1, (bool)1>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 2072,
+        "total_ms": 6.605205999999981,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)14, (int)2, (bool)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 168,
+        "total_ms": 6.577016,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          96,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 296,
+        "total_ms": 6.407916999999998,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          384
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rms_norm_f32<(int)256, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 1575,
+        "total_ms": 6.402445000000033,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "quantize_q8_1(const float *, void *, long, long, long, long, long, unsigned int, uint3)",
+        "count": 2913,
+        "total_ms": 6.2396379999998866,
+        "registers": [
+          18
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "volta_sgemm_64x32_sliced1x4_tn",
+        "count": 482,
+        "total_ms": 6.178485999999974,
+        "registers": [
+          82
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          26624
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_set_rows_quant<long, block_q8_0, (int)32, &quantize_f32_q8_0_block>(const float *, const T1 *, T2 *, long, long, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, uint3, uint3, uint3)",
+        "count": 586,
+        "total_ms": 6.038920999999993,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_argsort_f32_i32<(ggml_sort_order)1>(const float *, int *, int, int)",
+        "count": 482,
+        "total_ms": 5.899460000000022,
+        "registers": [
+          17
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1024
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_mul, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 2163,
+        "total_ms": 5.7830560000001,
+        "registers": [
+          19
+        ],
+        "blocks": [
+          48,
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rms_norm_scale_f32<(int)256>(const float *, float *, int, long, long, long, float, float, float)",
+        "count": 1890,
+        "total_ms": 5.362740999999964,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void ssm_conv_f32<(bool)1, (unsigned long)128, (unsigned long)4>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+        "count": 945,
+        "total_ms": 5.140054000000001,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "quantize_q8_1(const float *, void *, long, long, long, long, long, unsigned int, uint3)",
+        "count": 2558,
+        "total_ms": 5.085871000000045,
+        "registers": [
+          18
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)3, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 394,
+        "total_ms": 5.017047999999999,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          2304
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)13, (int)2, (bool)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 72,
+        "total_ms": 4.891509999999999,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          96,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q<(ggml_type)8, (int)16, (bool)1>(const char *, const int *, const int *, const int *, float *, float *, const float *, uint3, int, int, int, int, int, uint3, uint3, int, int, int, uint3, uint3, int, int, int, uint3)",
+        "count": 666,
+        "total_ms": 4.757040999999998,
+        "registers": [
+          184
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          42048
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_f<float, float, (int)1, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 1148,
+        "total_ms": 4.74712499999997,
+        "registers": [
+          33
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 1148,
+        "total_ms": 4.591886999999989,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          512
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_get_rows_float<float, float>(const T1 *, const int *, T2 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "count": 1469,
+        "total_ms": 4.539989000000002,
+        "registers": [
+          50
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)6, (int)2, (bool)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 116,
+        "total_ms": 4.519948,
+        "registers": [
+          49
+        ],
+        "blocks": [
+          96,
+          128,
+          224
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_op_kernel<&op_sigmoid, float>(const T2 *, T2 *, int)",
+        "count": 2205,
+        "total_ms": 4.229979000000024,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_tile<(int)256, (int)256, (int)1, (int)8, (bool)0>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+        "count": 14,
+        "total_ms": 4.128212,
+        "registers": [
+          104
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          14336
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 1260,
+        "total_ms": 3.9958880000000083,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mm_ids_helper<(int)8>(const int *, int *, int *, int *, int, int, int, int, int, bool)",
+        "count": 1446,
+        "total_ms": 3.9594460000000233,
+        "registers": [
+          38
+        ],
+        "blocks": [
+          32
+        ],
+        "shared_bytes": [
+          52,
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_gated_op_kernel<&op_silu, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 1557,
+        "total_ms": 3.870871000000003,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rms_norm_f32<(int)256, (bool)1, (bool)0>(const float *, float *, int, long, long, long, float, const float *, long, long, long, uint3, uint3, uint3, uint3, const float *, long, long, long, uint3, uint3, uint3, uint3)",
+        "count": 991,
+        "total_ms": 3.701913000000021,
+        "registers": [
+          59
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void soft_max_f32<(bool)1, (int)256, (int)256, float>(const float *, const T4 *, const float *, float *, soft_max_params)",
+        "count": 1036,
+        "total_ms": 3.675439999999988,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1152
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q_moe<(ggml_type)14, (int)2, (bool)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 72,
+        "total_ms": 3.350868,
+        "registers": [
+          58
+        ],
+        "blocks": [
+          96,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cub::CUB_200802_SM_700_750::DeviceRadixSortHistogramKernel<cub::CUB_200802_SM_700_750::detail::radix::policy_hub<float, int, unsigned int>::Policy1000, (bool)1, float, unsigned int, cub::CUB_200802_SM_700_750::detail::identity_decomposer_t>(T4 *, const T3 *, T4, int, int, T5)",
+        "count": 456,
+        "total_ms": 3.3109090000000103,
+        "registers": [
+          71
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          32768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)14, (int)3, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 3,
+        "total_ms": 3.114935,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          2304
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "moe_weighted_reduction_f32(const float *, const float *, const float *, float *, long, int)",
+        "count": 698,
+        "total_ms": 2.9532999999999983,
+        "registers": [
+          62
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 1093,
+        "total_ms": 2.8481869999999927,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          16,
+          48,
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_stream_k_fixup_uniform<(int)256, (int)4, (int)8>(float *, const float2 *, int, int, int, int, int, int, uint3, uint3, uint3)",
+        "count": 283,
+        "total_ms": 2.7459789999999984,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void reduce_rows_f32<(bool)0>(const float *, float *, int)",
+        "count": 1036,
+        "total_ms": 2.7310949999999887,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          512
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)14, (int)1, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 27,
+        "total_ms": 2.7077050000000003,
+        "registers": [
+          44
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void k_bin_bcast<&op_div, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 1036,
+        "total_ms": 2.619096999999986,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 126,
+        "total_ms": 2.6009210000000014,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          384
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_mul, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 1085,
+        "total_ms": 2.4775310000000017,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          48,
+          64,
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)1, (bool)1>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 888,
+        "total_ms": 2.3442180000000064,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_stream_k_fixup_uniform<(int)256, (int)8, (int)8>(float *, const float2 *, int, int, int, int, int, int, uint3, uint3, uint3)",
+        "count": 259,
+        "total_ms": 2.2139129999999994,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "pad_f32(const float *, unsigned long, unsigned long, unsigned long, unsigned long, float *, int, int, int, int, int, int, int, int, int, int, int, int, bool)",
+        "count": 117,
+        "total_ms": 2.093981,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void op_clamp_kernel<float>(const T1 *, T1 *, T1, T1, int)",
+        "count": 1036,
+        "total_ms": 2.0577579999999873,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rms_norm_scale_f32<(int)256>(const float *, float *, int, long, long, long, float, float, float)",
+        "count": 810,
+        "total_ms": 2.049623999999998,
+        "registers": [
+          59
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void ssm_conv_f32<(bool)1, (unsigned long)128, (unsigned long)4>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+        "count": 405,
+        "total_ms": 2.014266999999999,
+        "registers": [
+          45
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_f<float, float, (int)4, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 318,
+        "total_ms": 1.9955169999999995,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)3, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 168,
+        "total_ms": 1.970935,
+        "registers": [
+          57
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          2304
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void rope_multi<(bool)1, (bool)0, float>(const T3 *, T3 *, int, int, int, int, int, int, int, int, int, int, int, const int *, float, float, float, rope_corr_dims, float, const float *, mrope_sections, bool, bool)",
+        "count": 630,
+        "total_ms": 1.9180120000000003,
+        "registers": [
+          21
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void fwht_cuda<(int)256>(const float *, float *, long, float)",
+        "count": 630,
+        "total_ms": 1.7899799999999941,
+        "registers": [
+          23
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_add, float, float, float, const float *, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 698,
+        "total_ms": 1.771803999999998,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_op_kernel<&op_sigmoid, float>(const T2 *, T2 *, int)",
+        "count": 1103,
+        "total_ms": 1.7451450000000053,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_op_kernel<&op_softplus, float>(const T2 *, T2 *, int)",
+        "count": 903,
+        "total_ms": 1.725374999999977,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_f<float, float, (int)1, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 538,
+        "total_ms": 1.6523789999999992,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void fwht_cuda<(int)64>(const float *, float *, long, float)",
+        "count": 630,
+        "total_ms": 1.4469059999999958,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_q_stream_k_fixup<(ggml_type)6, (int)16, (bool)0>(const int *, const int *, float *, float *, uint3, int, int, int, uint3, int, uint3, int, uint3)",
+        "count": 266,
+        "total_ms": 1.4398350000000002,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          64
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 482,
+        "total_ms": 1.4314179999999959,
+        "registers": [
+          44
+        ],
+        "blocks": [
+          512
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void rope_multi<(bool)1, (bool)0, float>(const T3 *, T3 *, int, int, int, int, int, int, int, int, int, int, int, const int *, float, float, float, rope_corr_dims, float, const float *, mrope_sections, bool, bool)",
+        "count": 586,
+        "total_ms": 1.3514539999999984,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void soft_max_f32<(bool)1, (int)256, (int)256, float>(const float *, const T4 *, const float *, float *, soft_max_params)",
+        "count": 482,
+        "total_ms": 1.286653000000001,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1152
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "init_indices(int *, int, int)",
+        "count": 456,
+        "total_ms": 1.2751949999999999,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)13, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 56,
+        "total_ms": 1.1794170000000002,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void fwht_cuda<(int)256>(const float *, float *, long, float)",
+        "count": 586,
+        "total_ms": 1.150845000000004,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void topk_moe_cuda<(int)256, (bool)0>(const float *, float *, int *, float *, int, int, float, float, topk_moe_config)",
+        "count": 224,
+        "total_ms": 1.1414339999999998,
+        "registers": [
+          32
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void fwht_cuda<(int)64>(const float *, float *, long, float)",
+        "count": 586,
+        "total_ms": 1.0845390000000013,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void topk_moe_cuda<(int)256, (bool)0>(const float *, float *, int *, float *, int, int, float, float, topk_moe_config)",
+        "count": 216,
+        "total_ms": 1.0288940000000004,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void reduce_rows_f32<(bool)0>(const float *, float *, int)",
+        "count": 482,
+        "total_ms": 0.9955159999999998,
+        "registers": [
+          37
+        ],
+        "blocks": [
+          512
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void gated_delta_net_cuda<(int)128, (bool)0, (bool)1>(const float *, const float *, const float *, const float *, const float *, const float *, float *, float *, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, float, long, int)",
+        "count": 84,
+        "total_ms": 0.986271,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void k_bin_bcast<&op_div, float, float, float, const float *>(const T2 *, const T3 *, T4 *, unsigned int, unsigned int, unsigned int, uint3, uint3, uint3, uint3, uint3, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, T5...)",
+        "count": 482,
+        "total_ms": 0.945982000000001,
+        "registers": [
+          22
+        ],
+        "blocks": [
+          52,
+          64
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)14, (int)1, (bool)0, (bool)1, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 56,
+        "total_ms": 0.9106869999999996,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          1536
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_gated_op_kernel<&op_sigmoid, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 315,
+        "total_ms": 0.8580470000000007,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void cub::CUB_200802_SM_700_750::DeviceRadixSortExclusiveSumKernel<cub::CUB_200802_SM_700_750::detail::radix::policy_hub<float, int, unsigned int>::Policy1000, unsigned int>(T2 *)",
+        "count": 456,
+        "total_ms": 0.8269749999999986,
+        "registers": [
+          24
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          1184
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void op_clamp_kernel<float>(const T1 *, T1 *, T1, T1, int)",
+        "count": 482,
+        "total_ms": 0.7619830000000005,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_stream_k_fixup_uniform<(int)256, (int)4, (int)8>(float *, const float2 *, int, int, int, int, int, int, uint3, uint3, uint3)",
+        "count": 42,
+        "total_ms": 0.6904310000000001,
+        "registers": [
+          39
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_op_kernel<&op_softplus, float>(const T2 *, T2 *, int)",
+        "count": 387,
+        "total_ms": 0.6319009999999997,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "init_offsets(int *, int, int)",
+        "count": 456,
+        "total_ms": 0.6198390000000007,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_gated_op_kernel<&op_sigmoid, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 293,
+        "total_ms": 0.6179820000000001,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_f<float, float, (int)3, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 112,
+        "total_ms": 0.6058540000000002,
+        "registers": [
+          48
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 70,
+        "total_ms": 0.5826870000000002,
+        "registers": [
+          54
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)13, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 24,
+        "total_ms": 0.5655340000000001,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          256
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void gated_delta_net_cuda<(int)128, (bool)0, (bool)1>(const float *, const float *, const float *, const float *, const float *, const float *, float *, float *, long, long, long, long, long, long, long, long, long, long, long, long, uint3, uint3, float, long, int)",
+        "count": 36,
+        "total_ms": 0.536542,
+        "registers": [
+          46
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void concat_cont<unsigned int, (int)0>(const T1 *, const T1 *, T1 *, long, long, long, long, long, long)",
+        "count": 194,
+        "total_ms": 0.4750390000000005,
+        "registers": [
+          38
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)3, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 32,
+        "total_ms": 0.39206099999999994,
+        "registers": [
+          78
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          2304
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)",
+        "count": 112,
+        "total_ms": 0.30307100000000015,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void concat_cont<unsigned int, (int)0>(const T1 *, const T1 *, T1 *, long, long, long, long, long, long)",
+        "count": 84,
+        "total_ms": 0.28915099999999977,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_f<float, float, (int)3, (int)256, (bool)0, (bool)0>(const T1 *, const float *, const int *, ggml_cuda_mm_fusion_args_device, float *, int, uint3, int, int, int, uint3, int, int, int, uint3, int, int, int, int)",
+        "count": 56,
+        "total_ms": 0.286719,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          128
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)",
+        "count": 112,
+        "total_ms": 0.2864960000000002,
+        "registers": [
+          26
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 30,
+        "total_ms": 0.268223,
+        "registers": [
+          56
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)0, (bool)1, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 56,
+        "total_ms": 0.2270389999999999,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          1536
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)1, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 16,
+        "total_ms": 0.17728,
+        "registers": [
+          41
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          384
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void quantize_mmq_q8_1<(mmq_q8_1_ds_layout)0, (bool)1>(const float *, const int *, void *, long, long, long, long, long, int, int, int)",
+        "count": 76,
+        "total_ms": 0.173472,
+        "registers": [
+          40
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 12,
+        "total_ms": 0.163423,
+        "registers": [
+          43
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)7, (bool)0, (bool)0, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 8,
+        "total_ms": 0.106432,
+        "registers": [
+          108
+        ],
+        "blocks": [
+          64
+        ],
+        "shared_bytes": [
+          1792
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)8, (int)1, (bool)0, (bool)1, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 24,
+        "total_ms": 0.10336000000000001,
+        "registers": [
+          62
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          1536
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void flash_attn_combine_results<(int)256>(const float *, const float2 *, float *, int)",
+        "count": 14,
+        "total_ms": 0.08816,
+        "registers": [
+          65
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          640
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void mul_mat_vec_q<(ggml_type)6, (int)1, (bool)0, (bool)1, (bool)0, (bool)0, (int)0>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+        "count": 8,
+        "total_ms": 0.079392,
+        "registers": [
+          80
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          1536
+        ]
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "gpu_id": 0,
+        "name": "void unary_gated_op_kernel<&op_softplus, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 42,
+        "total_ms": 0.073376,
+        "registers": [
+          20
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void flash_attn_combine_results<(int)256>(const float *, const float2 *, float *, int)",
+        "count": 10,
+        "total_ms": 0.031904,
+        "registers": [
+          64
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          136
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void unary_gated_op_kernel<&op_softplus, float>(const T2 *, const T2 *, T2 *, long, long, long, long)",
+        "count": 18,
+        "total_ms": 0.026624,
+        "registers": [
+          16
+        ],
+        "blocks": [
+          256
+        ],
+        "shared_bytes": [
+          0
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void gemmSN_TN_kernel<float, (int)128, (int)16, (int)2, (int)4, (int)8, (int)9, (bool)0, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(cublasGemmSmallNParams<T9, T10, T11, T1>)",
+        "count": 1,
+        "total_ms": 0.020864,
+        "registers": [
+          72
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          13824
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)",
+        "count": 1,
+        "total_ms": 0.00176,
+        "registers": [
+          28
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          512
+        ]
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "gpu_id": 1,
+        "name": "void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)",
+        "count": 1,
+        "total_ms": 0.00144,
+        "registers": [
+          26
+        ],
+        "blocks": [
+          128
+        ],
+        "shared_bytes": [
+          768
+        ]
+      }
+    ],
+    "cuda_apis": [
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "calls": 16649,
+        "summed_cpu_api_ms": 2364.2952550000427
+      },
+      {
+        "name": "cudaGraphLaunch_v10000",
+        "calls": 145,
+        "summed_cpu_api_ms": 197.13750099999987
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "calls": 40869,
+        "summed_cpu_api_ms": 175.53747999999567
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "calls": 3831,
+        "summed_cpu_api_ms": 51.42595700000007
+      },
+      {
+        "name": "cudaGraphExecUpdate_v10020",
+        "calls": 45,
+        "summed_cpu_api_ms": 6.376885999999998
+      },
+      {
+        "name": "cudaMemsetAsync_v3020",
+        "calls": 1848,
+        "summed_cpu_api_ms": 6.164857999999994
+      },
+      {
+        "name": "cudaGraphDestroy_v10000",
+        "calls": 45,
+        "summed_cpu_api_ms": 5.577230999999999
+      },
+      {
+        "name": "cudaMallocHost_v3020",
+        "calls": 1,
+        "summed_cpu_api_ms": 2.087946
+      },
+      {
+        "name": "cudaMemcpy2DAsync_v3020",
+        "calls": 308,
+        "summed_cpu_api_ms": 1.5520380000000007
+      },
+      {
+        "name": "cudaMemcpyPeerAsync_v4000",
+        "calls": 45,
+        "summed_cpu_api_ms": 1.3582489999999996
+      },
+      {
+        "name": "cudaFreeHost_v3020",
+        "calls": 1,
+        "summed_cpu_api_ms": 1.230022
+      },
+      {
+        "name": "cudaGraphInstantiate_v12000",
+        "calls": 3,
+        "summed_cpu_api_ms": 1.067242
+      },
+      {
+        "name": "cudaGraphExecDestroy_v10000",
+        "calls": 3,
+        "summed_cpu_api_ms": 0.422701
+      },
+      {
+        "name": "cudaStreamEndCapture_v10000",
+        "calls": 45,
+        "summed_cpu_api_ms": 0.3536849999999999
+      },
+      {
+        "name": "cudaStreamWaitEvent_v3020",
+        "calls": 45,
+        "summed_cpu_api_ms": 0.30619700000000005
+      },
+      {
+        "name": "cudaStreamIsCapturing_v10000",
+        "calls": 308,
+        "summed_cpu_api_ms": 0.23888500000000032
+      },
+      {
+        "name": "cudaStreamBeginCapture_v10000",
+        "calls": 45,
+        "summed_cpu_api_ms": 0.19661299999999998
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "calls": 45,
+        "summed_cpu_api_ms": 0.190923
+      }
+    ],
+    "copies": [
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "kind": 2,
+        "calls": 1146,
+        "summed_ms": 8.425480999999905,
+        "bytes": 87854720
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "kind": 2,
+        "calls": 259,
+        "summed_ms": 61.522704,
+        "bytes": 801333248
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "kind": 1,
+        "calls": 1742,
+        "summed_ms": 36.48162099999985,
+        "bytes": 451883172
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "kind": 1,
+        "calls": 406,
+        "summed_ms": 12.21635299999998,
+        "bytes": 153606436
+      },
+      {
+        "gpu": "NVIDIA GeForce RTX 2080 Ti",
+        "kind": 8,
+        "calls": 930,
+        "summed_ms": 3.1536579999999934,
+        "bytes": 472713024
+      },
+      {
+        "gpu": "Tesla V100-SXM2-32GB",
+        "kind": 8,
+        "calls": 42,
+        "summed_ms": 0.10742399999999999,
+        "bytes": 46104576
+      }
+    ]
+  }
+]
