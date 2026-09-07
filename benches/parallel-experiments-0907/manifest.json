@@ -1,0 +1,25 @@
+{
+  "source_base": "2dcf14c92",
+  "stable_baseline": "7571e2e17",
+  "target_model": "Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+  "target_kv": "q8_0/q8_0",
+  "draft_kv": "q8_0/q8_0",
+  "draft_model": "mtp-shisa-ornith15-all-Q5_0.gguf",
+  "target_batch": 2048,
+  "target_ubatch": 256,
+  "draft_ubatch": 128,
+  "logical_slots": 4,
+  "logical_cap": 400000,
+  "physical_pool": 1400000,
+  "actual_history_per_agent": 100000,
+  "shared_prefix": 98000,
+  "source_sha256": {
+    "common/speculative.cpp": "77408460a09735ae6e46d9f9cb177a4db71f51df821b4acc81048e5d93c32dcd",
+    "tools/server/server-context.cpp": "b55f33c1999aa2e9213c8e2dc2d89054da20ad2d2d9132695b04346f7953e57c",
+    "tools/server/server-serving-experiment.h": "9cbb54887a9580767043be4044a021efdc945c5162316287d63cc63dab5a277d",
+    "ggml/src/ggml-cuda/fattn.cu": "ee983e3b521e318d9b7fc1757fb30f65cc5cf00acce9a4cbb60c3c47824491a2",
+    "ggml/src/ggml-cuda/fattn-q8-multi.cuh": "d68cff527677318b6fdf0041c43d525cc0c64d151a0363c02820ace92b9318c0",
+    "src/llama-kv-cache.cpp": "eb78eb71f1333a7909ccc09363dcc5e530f0dbee8b2ca3447800ef0c050d0bc6",
+    "src/llama-context.cpp": "5698370af6278d7c610b83a5712261484de609b49909a9728817af84ef8cf134"
+  }
+}

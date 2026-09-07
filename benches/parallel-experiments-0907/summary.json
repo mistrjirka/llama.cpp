@@ -1,0 +1,109 @@
+{
+  "scope": "Ornith AD-Q6_K-Q5_K, Q8 target/draft KV, Shisa Q5_0 MTP3; V100+2080Ti; synthetic performance tests at 100k actual history per slot, not full 400k.",
+  "production_changed": false,
+  "direct_q8": {
+    "off": {
+      "runs": 2,
+      "wall_s": 9.32748018647544,
+      "mean_request_pp": 204.80033262830636,
+      "mean_request_tg": 34.85227515321601,
+      "synthetic_hashes_match": true
+    },
+    "on": {
+      "runs": 2,
+      "wall_s": 10.062138311506715,
+      "mean_request_pp": 206.381935803754,
+      "mean_request_tg": 29.088229787021394,
+      "synthetic_hashes_match": true
+    }
+  },
+  "packed_q8": {
+    "off": {
+      "runs": 2,
+      "wall_s": 9.39447976302472,
+      "mean_request_pp": 205.35465054019787,
+      "mean_request_tg": 34.15556538613273,
+      "synthetic_hashes_match": true
+    },
+    "p16s160": {
+      "runs": 1,
+      "wall_s": 13.39100378000876,
+      "mean_request_pp": 204.3204799871602,
+      "mean_request_tg": 16.720083891938764,
+      "synthetic_hashes_match": true
+    },
+    "p16s40": {
+      "runs": 1,
+      "wall_s": 12.308539932011627,
+      "mean_request_pp": 232.2351974108999,
+      "mean_request_tg": 17.470021360030835,
+      "synthetic_hashes_match": true
+    },
+    "p16s80": {
+      "runs": 1,
+      "wall_s": 13.362595516024157,
+      "mean_request_pp": 200.3909385804646,
+      "mean_request_tg": 16.99616650067631,
+      "synthetic_hashes_match": true
+    },
+    "p8s80": {
+      "runs": 1,
+      "wall_s": 9.898038460989483,
+      "mean_request_pp": 204.1318259320162,
+      "mean_request_tg": 30.448544272585714,
+      "synthetic_hashes_match": true
+    }
+  },
+  "prefill_budget": {
+    "baseline_wall_s": 14.414265894010896,
+    "baseline_max_visible_gap_s": 2.332886498508742,
+    "arms": [
+      {
+        "name": "loose250",
+        "wall_s": 19.996128716040403,
+        "max_visible_gap_s": 0.26753787900088355,
+        "wall_increase_pct": 38.72457233044911,
+        "gap_reduction_pct": 88.53189475047746
+      },
+      {
+        "name": "loose500",
+        "wall_s": 16.769257684994955,
+        "max_visible_gap_s": 0.5404976750141941,
+        "wall_increase_pct": 16.337923889433405,
+        "gap_reduction_pct": 76.83137712187464
+      },
+      {
+        "name": "loose1000",
+        "wall_s": 15.856329298985656,
+        "max_visible_gap_s": 0.8630545579944737,
+        "wall_increase_pct": 10.004417953563172,
+        "gap_reduction_pct": 63.004862922128154
+      }
+    ]
+  },
+  "prefix_first": {
+    "state_byte_equality": true,
+    "forced_greedy_differences": 3,
+    "forced_tokens_tested": 96,
+    "production_gate_passed": false
+  },
+  "adaptive_mtp": {
+    "conclusion": "No clear improvement in this screen. Retain fixed MTP3 in production."
+  },
+  "aligned_prefill": {
+    "screen_only": true,
+    "baseline_wall_range_s": [
+      14.592733936035074,
+      16.74640642601298
+    ],
+    "aligned256_wall_s": 15.86786795698572,
+    "aligned256_max_visible_gap_s": 0.7306409319862723,
+    "conclusion": "Clear smoother output; total latency falls between bracket controls. No established throughput win."
+  },
+  "final_default_regression": {
+    "n_forced_steps": 24,
+    "sequences": 4,
+    "A_B_greedy_mismatches": 0,
+    "A_A_greedy_mismatches": 0
+  }
+}

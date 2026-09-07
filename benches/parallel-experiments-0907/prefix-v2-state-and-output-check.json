@@ -1,0 +1,28 @@
+{
+  "candidate_states_match_baseline": true,
+  "baseline_states_repeat": true,
+  "0": {
+    "A_B_same": false,
+    "A_A_same": true,
+    "AB_first_diff": 8,
+    "AA_first_diff": null
+  },
+  "1": {
+    "A_B_same": false,
+    "A_A_same": true,
+    "AB_first_diff": 12,
+    "AA_first_diff": null
+  },
+  "2": {
+    "A_B_same": true,
+    "A_A_same": true,
+    "AB_first_diff": null,
+    "AA_first_diff": null
+  },
+  "3": {
+    "A_B_same": false,
+    "A_A_same": true,
+    "AB_first_diff": 25,
+    "AA_first_diff": null
+  }
+}

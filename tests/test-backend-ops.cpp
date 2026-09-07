@@ -10366,6 +10366,14 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // Ornith layer-split multi-agent verification geometry, including incomplete tiles.
+    for (int kv : {512, 4096}) {
+        for (int nb : {1, 2, 3, 4, 5, 8, 12, 16}) {
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {8, 1}, kv, nb, true, false,
+                    0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+        }
+    }
+
     // Qwen3.8-27B target-verification geometry for the q8_0 tiled Volta path.
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
     // Qwen3.8-27B Volta cached-prompt route derived from NInfer's sm70 FA configuration.

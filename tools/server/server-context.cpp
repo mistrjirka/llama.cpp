@@ -6,6 +6,7 @@
 #include "server-queue.h"
 #include "server-schema.h"
 #include "server-stream.h"
+#include "server-serving-experiment.h"
 
 #include "build-info.h"
 #include "common.h"
@@ -899,6 +900,12 @@ private:
     // use server_context methods instead
 
     common_params params_base;
+    server_serving_experiment serving_experiment;
+    int experiment_active = 0;
+    int experiment_depth = -1;
+    bool experiment_reused_draft = false;
+    bool experiment_prefix_first = false;
+
 
     // note: keep these alive - they determine the lifetime of the model, context, etc.
     common_init_result_ptr llama_init;
@@ -1026,6 +1033,16 @@ private:
     // load the model and initialize llama_context
     // this may also be called to resume from sleeping state
     bool load_model(common_params & params) {
+        serving_experiment = {};
+        experiment_prefix_first = std::getenv("LLAMA_EXPERIMENT_PREFIX_FIRST") != nullptr;
+        serving_experiment.adaptive_mtp = std::getenv("LLAMA_EXPERIMENT_ADAPTIVE_MTP") != nullptr;
+        if (const char * value = std::getenv("LLAMA_EXPERIMENT_PREFILL_MS")) {
+            serving_experiment.prefill_budget_ms = std::clamp(std::atof(value), 0.0, 10000.0);
+        }
+        if (const char * value = std::getenv("LLAMA_EXPERIMENT_PREFILL_QUANTUM")) {
+            serving_experiment.prefill_quantum = std::clamp(std::atoi(value), 0, 4096);
+        }
+
         load_progress_data load_progress_text  (this, "text_model");
         load_progress_data load_progress_mmproj(this, "mmproj_model");
         load_progress_data load_progress_spec  (this, "spec_model");
@@ -2916,7 +2933,14 @@ private:
                             }
                         }
                         packed.resize(std::max<size_t>(1, n_packed));
-                        if (restore_donor != nullptr && restore_lcp > 0) {
+                        // Keep the established physical layout unless explicitly testing
+                        // compact-first restore. Exact state equality alone does not establish
+                        // numerical equivalence of every backend attention layout.
+                        if (!experiment_prefix_first) {
+                            nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id,
+                                    packed.data(), packed.size(), &n_packed);
+                        }
+                        if (nread == 0 && restore_donor != nullptr && restore_lcp > 0) {
                             nread = llama_state_seq_load_file_prefix(ctx_tgt, filepath.c_str(), slot->id,
                                     restore_donor->id, restore_lcp, packed.data(), packed.size(), &n_packed);
                             if (nread != 0) {
@@ -2925,7 +2949,7 @@ private:
                             }
                         }
                         // Unsupported memory implementations retain their ordinary restore path.
-                        if (nread == 0) {
+                        if (nread == 0 && experiment_prefix_first) {
                             nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id,
                                     packed.data(), packed.size(), &n_packed);
                         }
@@ -2945,7 +2969,11 @@ private:
                             }
                             llama_tokens dft_packed(std::max<size_t>(1, n_dft_packed));
                             size_t nread_dft = 0;
-                            if (restore_donor != nullptr && restore_lcp > 0) {
+                            if (!experiment_prefix_first) {
+                                nread_dft = llama_state_seq_load_file(ctx_dft, filepath_dft.c_str(), slot->id,
+                                        dft_packed.data(), dft_packed.size(), &n_dft_packed);
+                            }
+                            if (nread_dft == 0 && restore_donor != nullptr && restore_lcp > 0) {
                                 nread_dft = llama_state_seq_load_file_prefix(
                                         ctx_dft, filepath_dft.c_str(), slot->id, restore_donor->id, restore_lcp,
                                         dft_packed.data(), dft_packed.size(), &n_dft_packed);
@@ -2954,7 +2982,7 @@ private:
                                             restore_donor->id, restore_lcp);
                                 }
                             }
-                            if (nread_dft == 0) {
+                            if (nread_dft == 0 && experiment_prefix_first) {
                                 nread_dft = llama_state_seq_load_file(ctx_dft, filepath_dft.c_str(), slot->id,
                                         dft_packed.data(), dft_packed.size(), &n_dft_packed);
                             }
@@ -3181,6 +3209,13 @@ private:
             }
         }
 
+        const bool measure_serving = serving_experiment.adaptive_mtp || serving_experiment.prefill_budget_ms > 0;
+        uint64_t generated_before = 0;
+        if (measure_serving) {
+            for (const auto & slot : slots) generated_before += slot.stats.n_gen;
+        }
+        const int64_t serving_start = measure_serving ? ggml_time_us() : 0;
+
         try {
             scoped_timer t(t_pre_decode, n_pre_decode);
             pre_decode();
@@ -3252,6 +3287,18 @@ private:
                 SRV_ERR("post_decode() failed: %s\n", e.what());
                 abort_all_slots("post_decode() failed: " + std::string(e.what()));
                 break; // stop any further processing
+            }
+        }
+        if (measure_serving) {
+            const double elapsed = ggml_time_us() - serving_start;
+            uint64_t generated_after = 0;
+            for (const auto & slot : slots) generated_after += slot.stats.n_gen;
+            const int prompts = (int) std::count_if(batch.tokens.begin(), batch.tokens.end(),
+                    [](const server_batch::token & t) { return t.is_prompt; });
+            if (prompts > 0 && experiment_active > 0) {
+                serving_experiment.observe_prefill(prompts, elapsed);
+            } else if (prompts == 0 && experiment_depth >= 0 && !experiment_reused_draft && generated_after >= generated_before) {
+                serving_experiment.observe_depth(experiment_active, experiment_depth, generated_after-generated_before, elapsed);
             }
         }
     }
@@ -3329,6 +3376,14 @@ private:
 
         std::vector<server_slot *> generating;
         std::vector<server_slot *> drafting;
+        experiment_active = (int) std::count_if(slots.begin(), slots.end(),
+                [](const server_slot & s) { return s.state == SLOT_STATE_GENERATING; });
+        experiment_depth = -1;
+        experiment_reused_draft = false;
+        if (serving_experiment.adaptive_mtp && spec && common_speculative_can_defer_prompt(spec.get()) && experiment_active > 0) {
+            experiment_depth = serving_experiment.choose_depth(experiment_active, common_speculative_n_max(spec.get()));
+            SRV_DBG("adaptive MTP: active=%d depth=%d\n", experiment_active, experiment_depth);
+        }
 
         // determine which slots are generating and drafting
         iterate(slots, [&](server_slot & slot) {
@@ -3351,7 +3406,9 @@ private:
                 const bool use_ckpt_tgt = ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
                 const bool use_ckpt_dft = ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
 
-                const int n_draft_max = slot.get_n_draft_max();
+                const int n_draft_max = experiment_depth >= 0
+                    ? std::min(slot.get_n_draft_max(), experiment_depth) : slot.get_n_draft_max();
+                experiment_reused_draft |= !slot.spec_draft.empty();
 
                 if (n_draft_max > 0) {
                     GGML_ASSERT(slot.can_speculate());
@@ -3453,6 +3510,8 @@ private:
         // process in chunks of params.n_batch
         int32_t n_batch  = llama_n_batch(ctx_tgt);
         int32_t n_ubatch = llama_n_ubatch(ctx_tgt);
+        n_batch = serving_experiment.prompt_limit(n_batch, batch.size());
+
 
         auto & alora_scale       = batch.alora_scale;
         auto & alora_disabled_id = batch.alora_disabled_id;

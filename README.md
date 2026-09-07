@@ -1,5 +1,8 @@
 # llama.cpp optimized for V100 & RTX 2080 Ti
 
+> [!WARNING]
+> This is the experimental `perf/parallel-all-0907` branch. The [parallel-serving experiment report](benches/parallel-experiments-0907/README.md) records both improvements and regressions. The experimental controls are disabled by default; no new throughput/quality claim is made for production. The existing stable-branch benchmark tables below are retained as historical context.
+
 [![GitHub stars](https://img.shields.io/github/stars/mistrjirka/llama.cpp?style=flat-square&logo=github)](https://github.com/mistrjirka/llama.cpp/stargazers)
 
 A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) for NVIDIA Volta (SM70) and Turing (SM75), tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main target is long-context Qwen3.8-27B serving; Ornith-1.5-35B-A3B has additional routed-MoE tuning.
