@@ -1001,6 +1001,49 @@ float * llama_context::get_embeddings_layer_inp(uint32_t lid) {
     return embd_layer_inp[lid].data;
 }
 
+bool llama_context::get_sampling_output_ith(int32_t idx, llama_sampling_output & out) {
+    out = {};
+    out.token = LLAMA_TOKEN_NULL;
+    output_reorder();
+    try {
+        // Validate once before exposing pointers; all fields use the same
+        // resolved row after the pending output permutation has been applied.
+        const size_t row = (size_t) output_resolve_row(idx);
+        const size_t stride = model.vocab.n_tokens();
+        if (sampling.sampled.has_data()) {
+            if (row >= sampling.sampled.size) {
+                return false;
+            }
+            out.token = sampling.sampled.data[row];
+        }
+        if (sampling.probs.has_data() && row < sampling.probs_count.size() && sampling.probs_count[row] > 0) {
+            out.probs = sampling.probs.data + row*stride;
+            out.n_probs = (uint32_t) sampling.probs_count[row];
+        }
+        if (sampling.logits.has_data() && row < sampling.logits_count.size() && sampling.logits_count[row] > 0) {
+            out.logits = sampling.logits.data + row*stride;
+            out.n_logits = (uint32_t) sampling.logits_count[row];
+        }
+        out.candidates = sampling.candidates.has_data() && row < sampling.candidates_count.size() &&
+                sampling.candidates_count[row] > 0
+            ? sampling.candidates.data + row*stride : sampling.token_ids_full_vocab.data();
+        if (!out.probs && !out.logits) {
+            if (!logits.data) {
+                out = {};
+                out.token = LLAMA_TOKEN_NULL;
+                return false;
+            }
+            out.raw_logits = logits.data + row*stride;
+        }
+        return true;
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: invalid sampling row %d: %s\n", __func__, idx, err.what());
+        out = {};
+        out.token = LLAMA_TOKEN_NULL;
+        return false;
+    }
+}
+
 llama_token llama_context::get_sampled_token_ith(int32_t idx) {
     output_reorder();
 
@@ -4040,6 +4083,19 @@ llama_token llama_get_sampled_token_ith(llama_context * ctx, int32_t i) {
     ctx->synchronize();
 
     return ctx->get_sampled_token_ith(i);
+}
+
+bool llama_get_sampling_output_ith(llama_context * ctx, int32_t i, llama_sampling_output * out) {
+    if (!out) {
+        return false;
+    }
+    *out = {};
+    out->token = LLAMA_TOKEN_NULL;
+    if (!ctx) {
+        return false;
+    }
+    ctx->synchronize();
+    return ctx->get_sampling_output_ith(i, *out);
 }
 
 float * llama_get_sampled_probs_ith(llama_context * ctx, int32_t i) {

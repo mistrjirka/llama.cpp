@@ -1502,6 +1502,17 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return true;
         }
 
+        // MTP targets explicitly export dense, unmasked nextn rows. Read the whole
+        // completed target output once; draft-context decodes below cannot invalidate it.
+        // The saved deferred buffer is already owned and requires no synchronization.
+        if (!saved_h_nextn && std::getenv("LLAMA_EXPERIMENT_MTP_BULK_HIDDEN") != nullptr) {
+            saved_h_nextn = llama_get_embeddings_nextn(this->params.ctx_tgt);
+            if (!saved_h_nextn) {
+                SPC_ERR("%s", "missing dense target nextn output\n");
+                return false;
+            }
+        }
+
         const int32_t n_tokens = batch_in.n_tokens;
 
         // remember the frist and last batch index for each sequence

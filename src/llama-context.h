@@ -92,6 +92,7 @@ struct llama_context {
 
     llama_token * get_sampled_tokens() const;
     llama_token   get_sampled_token_ith(int32_t idx);
+    bool get_sampling_output_ith(int32_t idx, llama_sampling_output & out);
 
     float * get_sampled_logits_ith(int32_t idx);
     size_t  get_sampled_logits_count(int32_t idx);
