@@ -3400,7 +3400,16 @@ private:
                             slot.spec_ckpt.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                         }
 
-                        slot.spec_prompt = slot.prompt.tokens.get_text_tokens();
+                        const char * skip_copy = std::getenv("LLAMA_EXPERIMENT_MTP_SKIP_PROMPT_COPY");
+                        if (skip_copy && std::strcmp(skip_copy, "1") == 0 &&
+                                common_speculative_can_defer_prompt(spec.get())) {
+                            // A sole MTP implementation consumes the next token,
+                            // target-hidden carry and existing KV, not this vector.
+                            // Keep a valid empty object for generic diagnostic code.
+                            slot.spec_prompt.clear();
+                        } else {
+                            slot.spec_prompt = slot.prompt.tokens.get_text_tokens();
+                        }
 
                         common_speculative_get_draft_params(spec.get(), slot.id) = {
                             /* .drafting = */ true,

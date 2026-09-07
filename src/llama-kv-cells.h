@@ -263,6 +263,24 @@ public:
         return false;
     }
 
+    // Remove only indexed cells belonging to this sequence in [p0, p1).
+    // Return the smallest newly freed physical index, or size() if none.
+    // Duplicate positions are valid (e.g. vision) and must all be removed.
+    uint32_t seq_rm_range(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+        assert(seq_id >= 0 && seq_id < LLAMA_MAX_SEQ);
+        uint32_t first_free = size();
+        auto & positions = seq_pos[seq_id];
+        auto it = positions.lower_bound({p0, 0});
+        while (it != positions.end() && it->first < p1) {
+            // seq_rm erases the current tree node; the next iterator stays valid.
+            const uint32_t idx = (it++)->second;
+            if (seq_rm(idx, seq_id) && idx < first_free) {
+                first_free = idx;
+            }
+        }
+        return first_free;
+    }
+
     // return true if the cell becomes empty (i.e. it did not contain seq_id before the call)
     bool seq_keep(uint32_t i, llama_seq_id seq_id) {
         assert(i < pos.size());

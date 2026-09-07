@@ -401,8 +401,13 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
         auto & head  = v_heads[seq_to_stream[seq_id]];
 
         uint32_t new_head = cells.size();
-
-        for (uint32_t i = 0; i < cells.size(); ++i) {
+        static const bool indexed = [] {
+            const char * value = std::getenv("LLAMA_EXPERIMENT_KV_INDEXED_RM");
+            return value && std::strcmp(value, "1") == 0;
+        }();
+        if (indexed) {
+            new_head = cells.seq_rm_range(seq_id, p0, p1);
+        } else for (uint32_t i = 0; i < cells.size(); ++i) {
             if (!cells.pos_in(i, p0, p1)) {
                 continue;
             }
