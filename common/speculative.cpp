@@ -1754,7 +1754,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             auto & dp = dparams[seq_id];
 
-            if (!dp.drafting || std::min(params.n_max, dp.n_max) <= 0) {
+            if (!dp.drafting || dp.max_draft_tokens(params.n_max) <= 0) {
                 continue;
             }
 
@@ -1838,7 +1838,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 result.push_back(id);
 
-                if (std::min(params.n_max, dp.n_max) <= (int) result.size()) {
+                if (dp.max_draft_tokens(params.n_max) <= (int) result.size()) {
                     drafting[seq_id] = false;
                     n_drafting--;
                     continue;

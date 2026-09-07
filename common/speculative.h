@@ -3,6 +3,8 @@
 #include "llama.h"
 #include "common.h"
 
+#include <algorithm>
+
 struct common_speculative;
 
 // comma separated list the provided types
@@ -60,6 +62,13 @@ struct common_speculative_draft_params {
     // overrides individual configurations (-1 disabled)
     // can be used to constraint the max draft based on the remaining context size
     int32_t n_max = -1;
+
+    // A negative override leaves the implementation limit unchanged; zero is
+    // an explicit no-proposal budget. Keep both the entry and loop guards equal.
+    int32_t max_draft_tokens(int32_t configured_limit) const {
+        return std::max<int32_t>(0, n_max < 0 ? configured_limit : std::min(configured_limit, n_max));
+    }
+
 
     llama_pos   n_past;
     llama_token id_last;
