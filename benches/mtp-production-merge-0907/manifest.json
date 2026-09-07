@@ -1,0 +1,144 @@
+{
+  "base_commit": "7571e2e1743f59224371991c5d76a65644f582f8",
+  "candidate_code_commit": "105d661832ca8e6c79d7f99fbbc2f05f45f4ebef",
+  "final_code_commit": "f9d1c3a2b04d929768a9b031d9fd6625f80cc628",
+  "scope": "Production integration; no new attention/grouping/controller experiments",
+  "hardware": "NVIDIA GeForce RTX 2080 Ti, 22528 MiB, 250.00 W\nTesla V100-SXM2-32GB, 32768 MiB, 200.00 W\n",
+  "binaries": {
+    "baseline-bin": {
+      "libggml-cuda.so.0.23.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/baseline-bin/libggml-cuda.so.0.23.0",
+        "bytes": 133649536,
+        "sha256": "58988a7798295756176e57ee01cd881ece2498c64f0a2b2f9211cddc09d1d44a"
+      },
+      "libllama.so.0.4.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/baseline-bin/libllama.so.0.4.0",
+        "bytes": 4802936,
+        "sha256": "7fe6c3a5fae30dd4d8a459aa9c7e50520d0b8bd5a9473c358215a5d515b2da9d"
+      },
+      "libllama-common.so.0.4.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/baseline-bin/libllama-common.so.0.4.0",
+        "bytes": 5970000,
+        "sha256": "7f96e144dc492ecb351b5a4d2ae58b48ab97f472f62c52a2cbd6bbf114655781"
+      },
+      "libllama-server-impl.so": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/baseline-bin/libllama-server-impl.so",
+        "bytes": 7041000,
+        "sha256": "6a486e09d36e28121aaf835bc386cad5d390c961ce8eeb0200e068cb83e6c5f0"
+      },
+      "llama-server": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/baseline-bin/llama-server",
+        "bytes": 17888,
+        "sha256": "3e72f7e2ccbcd39356783d42bbbb4ae7b17d2552b0653f97729ad52d7ea325df"
+      }
+    },
+    "candidate-bin": {
+      "libggml-cuda.so.0.23.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/candidate-bin/libggml-cuda.so.0.23.0",
+        "bytes": 133649536,
+        "sha256": "58988a7798295756176e57ee01cd881ece2498c64f0a2b2f9211cddc09d1d44a"
+      },
+      "libllama.so.0.4.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/candidate-bin/libllama.so.0.4.0",
+        "bytes": 4803376,
+        "sha256": "0e214f9bb0a395d3b7021017723b33bcb859fae314bf835fdde96d8abaefeb40"
+      },
+      "libllama-common.so.0.4.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/candidate-bin/libllama-common.so.0.4.0",
+        "bytes": 5978504,
+        "sha256": "3a5753dc25db91c8e48e756060940ebb74a937c8e478e47f84d9ed485d48dc59"
+      },
+      "libllama-server-impl.so": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/candidate-bin/libllama-server-impl.so",
+        "bytes": 7041000,
+        "sha256": "e2894a57988fe46b8828b24318267859edfef1958e942e151bc5187bd26588d4"
+      },
+      "llama-server": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/candidate-bin/llama-server",
+        "bytes": 17888,
+        "sha256": "14d673b1558d0207f60b3fe6af1179f3d3c41ad66d9e02fd1e3a1e7d4daced8f"
+      }
+    },
+    "final-bin": {
+      "libggml-cuda.so.0.23.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libggml-cuda.so.0.23.0",
+        "bytes": 133649536,
+        "sha256": "58988a7798295756176e57ee01cd881ece2498c64f0a2b2f9211cddc09d1d44a"
+      },
+      "libllama.so.0.4.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libllama.so.0.4.0",
+        "bytes": 4803376,
+        "sha256": "0e214f9bb0a395d3b7021017723b33bcb859fae314bf835fdde96d8abaefeb40"
+      },
+      "libllama-common.so.0.4.0": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libllama-common.so.0.4.0",
+        "bytes": 5978504,
+        "sha256": "bf0c30c66622dbac3a7803c90fba4e7b01c6098a9c7d2b538c9ffd639e904bac"
+      },
+      "libllama-server-impl.so": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libllama-server-impl.so",
+        "bytes": 7041000,
+        "sha256": "e2894a57988fe46b8828b24318267859edfef1958e942e151bc5187bd26588d4"
+      },
+      "llama-server": {
+        "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/llama-server",
+        "bytes": 17888,
+        "sha256": "07edb94e4f0b94d84f1dee39f8b8b67a47ba05447f93c8455d7630ebe6049387"
+      }
+    }
+  },
+  "fixtures": {
+    "real_source_tokens": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json",
+      "bytes": 4999750,
+      "sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce"
+    }
+  },
+  "raw_artifacts": {
+    "final-parity-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-parity-summary.json",
+      "bytes": 297,
+      "sha256": "396c9e89de94eb2130c5e1237adea6b25e038cfa74c7ecf9cca28e04f29d37cc"
+    },
+    "final-parity-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-parity-raw.json",
+      "bytes": 93178,
+      "sha256": "f292071ac5c8158b564868c93233afc46cc2aef8048e2856c204c902da9e58a9"
+    },
+    "final-performance-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-performance-summary.json",
+      "bytes": 1999,
+      "sha256": "cdd0191959ee73f87bc46adc45c0f0ab25209508ecb8f163c8d1d881b5fa2277"
+    },
+    "final-performance-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-performance-raw.json",
+      "bytes": 384593,
+      "sha256": "edec523d90a9476183584acc6013a518ed87f0a8a0210de9d9255732556d8042"
+    },
+    "validator-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/validator-summary.json",
+      "bytes": 194,
+      "sha256": "f0a1286b0ba666047b8255bd32394f51a8e9af23020531a8ec767900cca5331b"
+    },
+    "qwen-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/qwen-summary.json",
+      "bytes": 88,
+      "sha256": "281187cb80ab77a48f1a451d871d860c0d4dabbf4f16c39ed830c99812bd1ddc"
+    },
+    "final-zero-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-zero-summary.json",
+      "bytes": 63,
+      "sha256": "86e8291ab107ab0c76d8348b2acbc76fbe0c89cdfc054c07e6db4635ddcaa1ef"
+    },
+    "final-bank-result.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bank-result.json",
+      "bytes": 39987,
+      "sha256": "241a0deef74a7e10aa79688531678db74ba44487e77eca48b3f3efb4ece330fc"
+    },
+    "qwen-production-profile.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/qwen-production-profile.json",
+      "bytes": 6173,
+      "sha256": "cd86491d796cb54771dcdce9270ca212b68993bd17dea37a7ec92c23b0b89cb5"
+    }
+  }
+}

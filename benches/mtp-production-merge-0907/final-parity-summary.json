@@ -1,0 +1,8 @@
+{
+  "target_probability_records_equal_old": true,
+  "default_vs_disabled_tokens_equal": true,
+  "default_vs_disabled_counters_equal": true,
+  "default_vs_disabled_snapshot_bytes_equal": true,
+  "default_vs_disabled_restore_continuation_equal": true,
+  "old_production_output_tokens_equal": true
+}

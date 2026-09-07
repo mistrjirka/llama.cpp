@@ -239,6 +239,15 @@ For a mixed V100 + RTX 2080 Ti system, compile with `-DCMAKE_CUDA_ARCHITECTURES=
 
 ## Feature-specific measurements
 
+### Lower MTP refresh overhead
+
+Single-layer Qwen/Ornith MTP heads now refresh K/V without running unused draft attention, feed-forward layers or vocabulary projection. This is **enabled by default for supported, non-shared heads**, together with synchronized sampling/hidden-state reads and zero/per-request draft-budget fixes. Target attention, Q8 KV precision, configured draft depth, shared prefixes and parked-session persistence are unchanged.
+
+The integrated build versus the previous production revision measured **2.5% shorter four-agent MTP1 turns** (5.936 → 5.786 s) at 100k context on the V100 + 2080 Ti pair, with Q6/Q5 weights and Q8 target/draft KV unchanged. MTP-off remained effectively unchanged; four-agent MTP3's 1.2% mean reduction overlapped timing variation. These within-fork results are not additive, not a claim that MTP always beats ordinary decoding, and not the vanilla baseline used in the headline tables.
+
+See [the production integration report and regression evidence](benches/mtp-production-merge-0907/REPORT.md) for the integrated build's tests and measurements. To diagnose regressions, set `LLAMA_MTP_KV_ONLY=0`, `LLAMA_MTP_BULK_HIDDEN=0`, or `LLAMA_SAMPLING_VIEW=0` before starting the engine. Existing launch configurations pick up the defaults after rebuilding; no lower-precision KV or changed MTP depth is required. Unresolved attention, compact-layout and grouping experiments remain excluded.
+
+
 The tables below isolate individual fork options. They are useful for choosing settings, but they are **not** the vanilla-vs-fork headline comparison above.
 
 ### Post-upstream integration validation
@@ -562,6 +571,8 @@ The fork is best understood as **upstream llama.cpp plus the patches below**. Do
 
 | patch | commit | main scope | what it changes | measured impact / expectation |
 |---|---|---|---|---|
+| Validated MTP refresh and readbacks | `3ec3c0ff5`, `98babb266`, `105d66183` | Single-layer Qwen/Ornith MTP | K/V-only maintenance graph and consolidated sampling/hidden reads; automatic for validated heads with rollback switches. | Integrated four-agent MTP1 turn **-2.5%** at 100k; MTP3 effect within noise. See the [integration report](benches/mtp-production-merge-0907/REPORT.md). |
+| Correct draft budgets | `f238050da`, `acda209a4`, `f9d1c3a2b` | MTP and server | Skip zero-budget preparation; stop at the per-request cap; preserve negative=no-override semantics. | Prevents extra drafts/zero-budget failures; tested separately and in the integration bundle. |
 | Volta runtime foundation | `0471a9885` | V100, Qwen/Ornith | Integrated the first V100-specific FA/GDN/speculative/cache/scheduler stack used by the later patches. | Bundled foundation; **do not assign one percentage** to this commit. Use the isolated rows below. |
 | Qwen MTP3 decode stack | `4cb009882` | Qwen3.8-27B, V100 | q8_0 tiled target-verification attention, exact 131072-row MTP proposal shortlist, Q5_K T=4 weight reuse and Q6_K T=4 `w4r4` scheduling. | **+32.19% TG** in the within-fork 100k + 1k + 256 MTP3 A/B, PP +0.65%; generated-token SHA matched. |
 | Volta Qwen prompt-attention dispatch | `d3c14522d` | Qwen3.8, V100 | Adds the sm70 D256 32-column prompt configuration and a measured small/medium-suffix dispatch gate. | Part of the D256 FA stack. The isolated D256 stack measured **+27.84% Qwen PP at 100k KV**; that whole number should not be attributed to this commit alone. |

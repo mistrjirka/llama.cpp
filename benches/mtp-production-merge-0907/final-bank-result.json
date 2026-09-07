@@ -1,0 +1,248 @@
+{
+  "reference": {
+    "index": 0,
+    "content": "The user wants me to audit \"sequence-state restoration\" in this repository source. Let me look carefully at the code provided.\n\nThe task says: \"Audit sequence-state restoration. Find two concrete correctness risks and propose regression tests. Do not repeat the source. Give a precise analysis.\"\n\nWait, but the source code",
+    "id_slot": 0,
+    "stop": true,
+    "model": "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+    "tokens_predicted": 64,
+    "tokens_evaluated": 4038,
+    "generation_settings": {
+      "seed": 1234,
+      "temperature": 0.0,
+      "dynatemp_range": 0.0,
+      "dynatemp_exponent": 1.0,
+      "top_k": 20,
+      "top_p": 0.949999988079071,
+      "min_p": 0.05000000074505806,
+      "top_n_sigma": -1.0,
+      "xtc_probability": 0.0,
+      "xtc_threshold": 0.10000000149011612,
+      "typical_p": 1.0,
+      "repeat_last_n": 64,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0,
+      "frequency_penalty": 0.0,
+      "dry_multiplier": 0.0,
+      "dry_base": 1.75,
+      "dry_allowed_length": 2,
+      "dry_penalty_last_n": 64,
+      "dry_sequence_breakers": [
+        "\n",
+        ":",
+        "\"",
+        "*"
+      ],
+      "mirostat": 0,
+      "mirostat_tau": 5.0,
+      "mirostat_eta": 0.10000000149011612,
+      "adaptive_target": -1.0,
+      "adaptive_decay": 0.8999999761581421,
+      "stop": [],
+      "max_tokens": 64,
+      "n_predict": 64,
+      "n_keep": 0,
+      "n_discard": 0,
+      "ignore_eos": true,
+      "stream": false,
+      "logit_bias": [
+        {
+          "bias": null,
+          "token": 248044
+        },
+        {
+          "bias": null,
+          "token": 248046
+        },
+        {
+          "bias": null,
+          "token": 248063
+        },
+        {
+          "bias": null,
+          "token": 248064
+        },
+        {
+          "bias": null,
+          "token": 248065
+        }
+      ],
+      "n_probs": 0,
+      "min_keep": 0,
+      "grammar": "",
+      "grammar_lazy": false,
+      "grammar_triggers": [],
+      "preserved_tokens": [],
+      "chat_format": "Content-only",
+      "reasoning_format": "deepseek",
+      "reasoning_in_content": false,
+      "generation_prompt": "",
+      "samplers": [
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature"
+      ],
+      "speculative.types": "none,draft-mtp",
+      "timings_per_token": false,
+      "post_sampling_probs": false,
+      "backend_sampling": false,
+      "lora": []
+    },
+    "prompt": "<|im_start|>system\nYou are a C++ code reviewer. Use the supplied repository source. Identify concrete issues, cite identifiers, and propose executable tests.\n<|im_end|>\n<|im_start|>user\nRepository source follows:\n\nFILE common/arg.cpp\n#include \"arg.h\"\n\n#include \"build-info.h\"\n#include \"chat.h\"\n#include \"common.h\"\n#include \"download.h\"\n#include \"json-schema-to-grammar.h\"\n#include \"json.h\"\n#include \"llama.h\"\n#include \"log.h\"\n#include \"sampling.h\"\n#include \"speculative.h\"\n#include \"preset.h\"\n\n// fix problem with std::min and std::max\n#if defined(_WIN32)\n#define WIN32_LEAN_AND_MEAN\n#ifndef NOMINMAX\n#   define NOMINMAX\n#endif\n#include <windows.h>\n#include <shellapi.h>\n#endif\n\n#include <algorithm>\n#include <cinttypes>\n#include <climits>\n#include <cmath>\n#include <cstdarg>\n#include <filesystem>\n#include <fstream>\n#include <list>\n#include <numeric>\n#include <regex>\n#include <set>\n#include <string>\n#include <system_error>\n#include <thread> // for hardware_concurrency\n#include <vector>\n\n#ifndef __EMSCRIPTEN__\n#ifdef __linux__\n#include <linux/limits.h>\n#elif defined(_WIN32)\n#   if !defined(PATH_MAX)\n#   define PATH_MAX MAX_PATH\n#   endif\n#elif defined(_AIX)\n#include <sys/limits.h>\n#else\n#include <sys/syslimits.h>\n#endif\n#endif\n\n#define LLAMA_MAX_URL_LENGTH 2084 // Maximum URL Length in Chrome: 2083\n\nusing json = common_json;\nusing namespace common_arg_utils;\n\nstatic std::initializer_list<enum llama_example> mmproj_examples = {\n    LLAMA_EXAMPLE_MTMD,\n    LLAMA_EXAMPLE_SERVER,\n    LLAMA_EXAMPLE_CLI,\n    LLAMA_EXAMPLE_TTS,\n};\n\nstatic std::string read_file(const std::string & fname) {\n    std::ifstream file(fname);\n    if (!file) {\n        throw std::runtime_error(string_format(\"error: failed to open file '%s'\\n\", fname.c_str()));\n    }\n    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());\n    file.close();\n    return content;\n}\n\nstatic const std::vector<common_arg> & get_common_arg_defs() {\n    static const std::vector<common_arg> options = [] {\n        common_params params;\n        auto ctx = common_params_parser_init(params, LLAMA_EXAMPLE_SERVER, nullptr);\n        return ctx.options;\n    }();\n    return options;\n}\n\ncommon_arg & common_arg::set_examples(std::initializer_list<enum llama_example> examples) {\n    this->examples = examples;\n    return *this;\n}\n\ncommon_arg & common_arg::set_excludes(std::initializer_list<enum llama_example> excludes) {\n    this->excludes = excludes;\n    return *this;\n}\n\ncommon_arg & common_arg::set_env(const char * env) {\n    help = help + \"\\n(env: \" + env + \")\";\n    this->env = env;\n    return *this;\n}\n\ncommon_arg & common_arg::set_sampling() {\n    is_sampling = true;\n    return *this;\n}\n\ncommon_arg & common_arg::set_spec() {\n    is_spec = true;\n    return *this;\n}\n\ncommon_arg & common_arg::set_preset_only() {\n    is_preset_only = true;\n    return *this;\n}\n\nbool common_arg::in_example(enum llama_example ex) {\n    return examples.find(ex) != examples.end();\n}\n\nbool common_arg::is_exclude(enum llama_example ex) {\n    return excludes.find(ex) != excludes.end();\n}\n\nbool common_arg::get_value_from_env(std::string & output) const {\n    if (env == nullptr) return false;\n    if (!args_neg.empty()) {\n        // for compatibility, we need to check LLAMA_ARG_NO_ env as well\n        std::string neg_env = env;\n        string_replace_all(neg_env, \"LLAMA_ARG_\", \"LLAMA_ARG_NO_\");\n        char * neg_value = std::getenv(neg_env.c_str());\n        if (neg_value) {\n            output = \"0\"; // falsey\n            return true;\n        }\n    }\n    char * value = std::getenv(env);\n    if (value) {\n        output = value;\n        return true;\n    }\n    return false;\n}\n\nbool common_arg::has_value_from_env() const {\n    if (env != nullptr && !args_neg.empty()) {\n        // for compatibility, we need to check LLAMA_ARG_NO_ env as well\n        std::string neg_env = env;\n        string_replace_all(neg_env, \"LLAMA_ARG_\", \"LLAMA_ARG_NO_\");\n        if (std::getenv(neg_env.c_str())) {\n            return true;\n        }\n    }\n    return env != nullptr && std::getenv(env);\n}\n\nstatic std::vector<std::string> break_str_into_lines(std::string input, size_t max_char_per_line) {\n    std::vector<std::string> result;\n    std::istringstream iss(input);\n    std::string line;\n    auto add_line = [&](const std::string& l) {\n        if (l.length() <= max_char_per_line) {\n            result.push_back(l);\n        } else {\n            std::istringstream line_stream(l);\n            std::string word, current_line;\n            while (line_stream >> word) {\n                if (current_line.length() + !current_line.empty() + word.length() > max_char_per_line) {\n                    if (!current_line.empty()) result.push_back(current_line);\n                    current_line = word;\n                } else {\n                    current_line += (!current_line.empty() ? \" \" : \"\") + word;\n                }\n            }\n            if (!current_line.empty()) result.push_back(current_line);\n        }\n    };\n    while (std::getline(iss, line)) {\n        add_line(line);\n    }\n    return result;\n}\n\nstd::string common_arg::to_string() const {\n    // params for printing to console\n    const static int n_leading_spaces = 40;\n    const static int n_char_per_line_help = 70; // TODO: detect this based on current console\n    std::string leading_spaces(n_leading_spaces, ' ');\n\n    std::ostringstream ss;\n    auto all_args = get_args(); // also contains args_neg\n    for (const auto & arg : all_args) {\n        if (arg == all_args.front()) {\n            if (all_args.size() == 1) {\n                ss << arg;\n            } else {\n                // first arg is usually abbreviation, we need padding to make it more beautiful\n                auto tmp = std::string(arg) + \", \";\n                auto spaces = std::string(std::max(0, 7 - (int)tmp.size()), ' ');\n                ss << tmp << spaces;\n            }\n        } else {\n            ss << arg << (arg != all_args.back() ? \", \" : \"\");\n        }\n    }\n    if (value_hint) ss << \" \" << value_hint;\n    if (value_hint_2) ss << \" \" << value_hint_2;\n    if (ss.tellp() > n_leading_spaces - 3) {\n        // current line is too long, add new line\n        ss << \"\\n\" << leading_spaces;\n    } else {\n        // padding between arg and help, same line\n        ss << std::string(leading_spaces.size() - ss.tellp(), ' ');\n    }\n    const auto help_lines = break_str_into_lines(help, n_char_per_line_help);\n    for (const auto & line : help_lines) {\n        ss << (&line == &help_lines.front() ? \"\" : leading_spaces) << line << \"\\n\";\n    }\n    return ss.str();\n}\n\nstd::vector<std::string> common_arg::get_args() const {\n    std::vector<std::string> result;\n    for (const auto & arg : args) {\n        result.push_back(std::string(arg));\n    }\n    for (const auto & arg : args_neg) {\n        result.push_back(std::string(arg));\n    }\n    return result;\n}\n\nstd::vector<std::string> common_arg::get_env() const {\n    std::vector<std::string> result;\n    if (env) {\n        result.push_back(std::string(env));\n    }\n    if (!args_neg.empty() && env) {\n        // for compatibility, we need to add LLAMA_ARG_NO_ variant\n        std::string neg_env = env;\n        string_replace_all(neg_env, \"LLAMA_ARG_\", \"LLAMA_ARG_NO_\");\n        result.push_back(neg_env);\n    }\n    return result;\n}\n\n//\n// utils\n//\n\n// Helper function to parse tensor buffer override strings\nstatic void parse_tensor_buffer_overrides(const std::string & value, std::vector<llama_model_tensor_buft_override> & overrides) {\n    ggml_backend_load_all();\n\n    std::map<std::string, ggml_backend_buffer_type_t> buft_list;\n    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {\n        auto * dev = ggml_backend_dev_get(i);\n        auto * buft = ggml_backend_dev_buffer_type(dev);\n        if (buft) {\n            buft_list[ggml_backend_buft_name(buft)] = buft;\n        }\n    }\n\n    for (const auto & override : string_split<std::string>(value, ',')) {\n        std::string::size_type pos = override.find('=');\n        if (pos == std::string::npos) {\n            throw std::invalid_argument(\"invalid value\");\n        }\n        std::string tensor_name = override.substr(0, pos);\n        std::string buffer_type = override.substr(pos + 1);\n\n        if (buft_list.find(buffer_type) == buft_list.end()) {\n            printf(\"Available buffer types:\\n\");\n            for (const auto & it : buft_list) {\n                printf(\"  %s\\n\", ggml_backend_buft_name(it.second));\n            }\n            throw std::invalid_argument(\"unknown buffer type\");\n        }\n        // keep strings alive and avoid leaking memory by storing them in a static vector\n        static std::list<std::string> buft_overrides;\n        buft_overrides.push_back(tensor_name);\n        overrides.push_back({buft_overrides.back().c_str(), buft_list.at(buffer_type)});\n    }\n}\n\nstatic std::string clean_file_name(const std::string & fname) {\n    std::string clean_fname = fname;\n    string_replace_all(clean_fname, \"\\\\\", \"_\");\n    string_replace_all(clean_fname, \"/\", \"_\");\n    return clean_fname;\n}\n\nstruct handle_model_result {\n    bool found_mmproj = false;\n    common_params_model mmproj;\n\n    bool found_mtp = false;\n    common_params_model mtp;\n\n    bool found_preset = false;\n    std::string preset_path;\n};\n\nconst std::vector<ggml_type> kv_cache_types = {\n    GGML_TYPE_F32,\n    GGML_TYPE_F16,\n    GGML_TYPE_BF16,\n    GGML_TYPE_Q8_0,\n    GGML_TYPE_Q4_0,\n    GGML_TYPE_Q4_1,\n    GGML_TYPE_IQ4_NL,\n    GGML_TYPE_Q5_0,\n    GGML_TYPE_Q5_1,\n};\n\nstatic ggml_type kv_cache_type_from_str(const std::string & s) {\n    for (const auto & type : kv_cache_types) {\n        if (ggml_type_name(type) == s) {\n            return type;\n        }\n    }\n    throw std::runtime_error(\"Unsupported cache type: \" + s);\n}\n\nstatic std::string get_all_kv_cache_types() {\n    std::ostringstream msg;\n    for (const auto & type : kv_cache_types) {\n        msg << ggml_type_name(type) << (&type == &kv_cache_types.back() ? \"\" : \", \");\n    }\n    return msg.str();\n}\n\nstatic bool parse_bool_value(const std::string & value) {\n    if (is_truthy(value)) {\n        return true;\n    } else if (is_falsey(value)) {\n        return false;\n    } else {\n        throw std::invalid_argument(\"invalid boolean value\");\n    }\n}\n\n[[noreturn]] static void arg_removed(const std::string & msg) {\n    throw std::invalid_argument(\"the argument has been removed. \" + msg);\n}\n\n//\n// common_models_handler\n//\n\nstatic std::string get_default_local_path(const std::string & url) {\n    auto f = string_split<std::string>(url, '#').front();\n    f = string_split<std::string>(f, '?').front();\n    return fs_get_cache_file(string_split<std::string>(f, '/').back());\n}\n\nstatic bool spec_types_is_default(const common_params & params) {\n    return params.speculative.types == std::vector<enum common_speculative_type>{COMMON_SPECULATIVE_TYPE_NONE};\n}\n\ncommon_models_handler common_models_handler_init(const common_params & params, llama_example curr_ex) {\n    common_download_hf_plan plan;\n    common_download_hf_plan plan_spec;\n    common_download_opts opts;\n\n    const bool spec_type_draft_mtp = std::find(params.speculative.types.begin(),\n                                        params.speculative.types.end(),\n                                        COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();\n\n    const bool spec_type_draft_dflash = std::find(params.speculative.types.begin(),\n                                           params.speculative.types.end(),\n                                           COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH) != params.speculative.types.end();\n\n    const bool spec_type_draft_eagle3 = std::find(params.speculative.types.begin(),\n                                           params.speculative.types.end(),\n                                           COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3) != params.speculative.types.end();\n\n    const bool spec_type_draft_dspark = std::find(params.speculative.types.begin(),\n                                           params.speculative.types.end(),\n                                           COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK) != params.speculative.types.end();\n\n    // only download mmproj if the current example is using it\n    bool use_mmproj = false;\n    for (const auto & ex : mmproj_examples) {\n        if (curr_ex == ex) {\n            use_mmproj = true;\n            break;\n        }\n    }\n\n    opts.bearer_token    = params.hf_token;\n    opts.offline         = params.offline;\n    opts.download_mtp    = spec_type_draft_mtp;\n    opts.download_eagle3 = spec_type_draft_eagle3;\n    opts.download_dflash = spec_type_draft_dflash;\n    opts.download_dspark = spec_type_draft_dspark;\n    opts.download_mmproj = use_mmproj && !params.no_mmproj\n                        && params.mmproj.path.empty() && params.mmproj.url.empty();\n\n    if (!params.model.hf_repo.empty()) {\n        plan = common_download_get_hf_plan(params.model, opts);\n    }\n\n    if (!params.speculative.draft.mparams.hf_repo.empty()) {\n        // without a requested type, discover every sidecar the draft repo ships to infer the type later\n        auto opts_spec = opts;\n        if (spec_types_is_default(params)) {\n            opts_spec.download_mtp    = true;\n            opts_spec.download_dflash = true;\n            opts_spec.download_eagle3 = true;\n            opts_spec.download_dspark = true;\n        }\n        plan_spec = common_download_get_hf_plan(params.speculative.draft.mparams, opts_spec);\n    }\n\n    return common_models_handler{plan, plan_spec, opts};\n}\n\nbool common_models_handler_is_preset_repo(const common_models_handler & handler) {\n    return !handler.plan.preset.url.empty();\n}\n\nstatic std::vector<common_download_task> build_url_tasks(const common_params_model & model, common_download_opts opts) {\n    auto parts = common_download_get_all_parts(model.url);\n    std::vector<common_download_task> tasks;\n\n    // single-part: download straight to model.path if the user gave one (-m), else the cache default\n    if (parts.size() == 1) {\n        common_download_task task;\n        task.url        = parts[0];\n        task.local_path = model.path.empty() ? get_default_local_path(parts[0]) : model.path;\n        task.opts       = opts;\n        tasks.push_back(std::move(task));\n        return tasks;\n    }\n\n    // multi-part: place each part under the user's -m directory (if given), else the cache default\n    std::string base_dir;\n    if (!model.path.empty()) {\n        auto pos = model.path.rfind('/');\n        base_dir = pos == std::string::npos ? std::string(\".\") : model.path.substr(0, pos);\n    }\n\n    for (const auto & part : parts) {\n        common_download_task task;\n        task.url  = part;\n        task.opts = opts;\n\n        std::string local = get_default_local_path(part);\n        if (!base_dir.empty()) {\n            auto pos = local.rfind('/');\n            std::string name = pos == std::string::npos ? local : local.substr(pos + 1);\n            local = base_dir + \"/\" + name;\n        }\n        task.local_path = local;\n        tasks.push_back(std::move(task));\n    }\n    return tasks;\n}\n\nvoid common_models_handler_apply(common_models_handler & handler\nTask: Audit sequence-state restoration. Find two concrete correctness risks and propose regression tests.\nDo not repeat the source. Give a precise analysis.\n<|im_end|>\n<|im_start|>assistant\n<think>\n",
+    "has_new_line": true,
+    "truncated": false,
+    "stop_type": "limit",
+    "stopping_word": "",
+    "tokens_cached": 4101,
+    "timings": {
+      "cache_n": 4000,
+      "prompt_n": 38,
+      "prompt_ms": 111.107,
+      "prompt_per_token_ms": 2.9238684210526316,
+      "prompt_per_second": 342.0126544682153,
+      "predicted_n": 64,
+      "predicted_ms": 525.775,
+      "predicted_per_token_ms": 8.34563492063492,
+      "predicted_per_second": 119.823118254006,
+      "draft_n": 62,
+      "draft_n_accepted": 41
+    }
+  },
+  "saved": {
+    "filename": "parked-bank.bin",
+    "n_saved": 2,
+    "n_written": 227905962,
+    "timings": {
+      "save_ms": 232.535
+    }
+  },
+  "loaded": {
+    "filename": "parked-bank.bin",
+    "n_restored": 2,
+    "n_read": 227905962,
+    "timings": {
+      "restore_ms": 53.978
+    }
+  },
+  "resumed": {
+    "index": 0,
+    "content": "The user wants me to audit \"sequence-state restoration\" in this repository source. Let me look carefully at the code provided.\n\nThe task says: \"Audit sequence-state restoration. Find two concrete correctness risks and propose regression tests. Do not repeat the source. Give a precise analysis.\"\n\nWait, but the source code",
+    "id_slot": 0,
+    "stop": true,
+    "model": "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+    "tokens_predicted": 64,
+    "tokens_evaluated": 4038,
+    "generation_settings": {
+      "seed": 1234,
+      "temperature": 0.0,
+      "dynatemp_range": 0.0,
+      "dynatemp_exponent": 1.0,
+      "top_k": 20,
+      "top_p": 0.949999988079071,
+      "min_p": 0.05000000074505806,
+      "top_n_sigma": -1.0,
+      "xtc_probability": 0.0,
+      "xtc_threshold": 0.10000000149011612,
+      "typical_p": 1.0,
+      "repeat_last_n": 64,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0,
+      "frequency_penalty": 0.0,
+      "dry_multiplier": 0.0,
+      "dry_base": 1.75,
+      "dry_allowed_length": 2,
+      "dry_penalty_last_n": 64,
+      "dry_sequence_breakers": [
+        "\n",
+        ":",
+        "\"",
+        "*"
+      ],
+      "mirostat": 0,
+      "mirostat_tau": 5.0,
+      "mirostat_eta": 0.10000000149011612,
+      "adaptive_target": -1.0,
+      "adaptive_decay": 0.8999999761581421,
+      "stop": [],
+      "max_tokens": 64,
+      "n_predict": 64,
+      "n_keep": 0,
+      "n_discard": 0,
+      "ignore_eos": true,
+      "stream": false,
+      "logit_bias": [
+        {
+          "bias": null,
+          "token": 248044
+        },
+        {
+          "bias": null,
+          "token": 248046
+        },
+        {
+          "bias": null,
+          "token": 248063
+        },
+        {
+          "bias": null,
+          "token": 248064
+        },
+        {
+          "bias": null,
+          "token": 248065
+        }
+      ],
+      "n_probs": 0,
+      "min_keep": 0,
+      "grammar": "",
+      "grammar_lazy": false,
+      "grammar_triggers": [],
+      "preserved_tokens": [],
+      "chat_format": "Content-only",
+      "reasoning_format": "deepseek",
+      "reasoning_in_content": false,
+      "generation_prompt": "",
+      "samplers": [
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature"
+      ],
+      "speculative.types": "none,draft-mtp",
+      "timings_per_token": false,
+      "post_sampling_probs": false,
+      "backend_sampling": false,
+      "lora": []
+    },
+    "prompt": "<|im_start|>system\nYou are a C++ code reviewer. Use the supplied repository source. Identify concrete issues, cite identifiers, and propose executable tests.\n<|im_end|>\n<|im_start|>user\nRepository source follows:\n\nFILE common/arg.cpp\n#include \"arg.h\"\n\n#include \"build-info.h\"\n#include \"chat.h\"\n#include \"common.h\"\n#include \"download.h\"\n#include \"json-schema-to-grammar.h\"\n#include \"json.h\"\n#include \"llama.h\"\n#include \"log.h\"\n#include \"sampling.h\"\n#include \"speculative.h\"\n#include \"preset.h\"\n\n// fix problem with std::min and std::max\n#if defined(_WIN32)\n#define WIN32_LEAN_AND_MEAN\n#ifndef NOMINMAX\n#   define NOMINMAX\n#endif\n#include <windows.h>\n#include <shellapi.h>\n#endif\n\n#include <algorithm>\n#include <cinttypes>\n#include <climits>\n#include <cmath>\n#include <cstdarg>\n#include <filesystem>\n#include <fstream>\n#include <list>\n#include <numeric>\n#include <regex>\n#include <set>\n#include <string>\n#include <system_error>\n#include <thread> // for hardware_concurrency\n#include <vector>\n\n#ifndef __EMSCRIPTEN__\n#ifdef __linux__\n#include <linux/limits.h>\n#elif defined(_WIN32)\n#   if !defined(PATH_MAX)\n#   define PATH_MAX MAX_PATH\n#   endif\n#elif defined(_AIX)\n#include <sys/limits.h>\n#else\n#include <sys/syslimits.h>\n#endif\n#endif\n\n#define LLAMA_MAX_URL_LENGTH 2084 // Maximum URL Length in Chrome: 2083\n\nusing json = common_json;\nusing namespace common_arg_utils;\n\nstatic std::initializer_list<enum llama_example> mmproj_examples = {\n    LLAMA_EXAMPLE_MTMD,\n    LLAMA_EXAMPLE_SERVER,\n    LLAMA_EXAMPLE_CLI,\n    LLAMA_EXAMPLE_TTS,\n};\n\nstatic std::string read_file(const std::string & fname) {\n    std::ifstream file(fname);\n    if (!file) {\n        throw std::runtime_error(string_format(\"error: failed to open file '%s'\\n\", fname.c_str()));\n    }\n    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());\n    file.close();\n    return content;\n}\n\nstatic const std::vector<common_arg> & get_common_arg_defs() {\n    static const std::vector<common_arg> options = [] {\n        common_params params;\n        auto ctx = common_params_parser_init(params, LLAMA_EXAMPLE_SERVER, nullptr);\n        return ctx.options;\n    }();\n    return options;\n}\n\ncommon_arg & common_arg::set_examples(std::initializer_list<enum llama_example> examples) {\n    this->examples = examples;\n    return *this;\n}\n\ncommon_arg & common_arg::set_excludes(std::initializer_list<enum llama_example> excludes) {\n    this->excludes = excludes;\n    return *this;\n}\n\ncommon_arg & common_arg::set_env(const char * env) {\n    help = help + \"\\n(env: \" + env + \")\";\n    this->env = env;\n    return *this;\n}\n\ncommon_arg & common_arg::set_sampling() {\n    is_sampling = true;\n    return *this;\n}\n\ncommon_arg & common_arg::set_spec() {\n    is_spec = true;\n    return *this;\n}\n\ncommon_arg & common_arg::set_preset_only() {\n    is_preset_only = true;\n    return *this;\n}\n\nbool common_arg::in_example(enum llama_example ex) {\n    return examples.find(ex) != examples.end();\n}\n\nbool common_arg::is_exclude(enum llama_example ex) {\n    return excludes.find(ex) != excludes.end();\n}\n\nbool common_arg::get_value_from_env(std::string & output) const {\n    if (env == nullptr) return false;\n    if (!args_neg.empty()) {\n        // for compatibility, we need to check LLAMA_ARG_NO_ env as well\n        std::string neg_env = env;\n        string_replace_all(neg_env, \"LLAMA_ARG_\", \"LLAMA_ARG_NO_\");\n        char * neg_value = std::getenv(neg_env.c_str());\n        if (neg_value) {\n            output = \"0\"; // falsey\n            return true;\n        }\n    }\n    char * value = std::getenv(env);\n    if (value) {\n        output = value;\n        return true;\n    }\n    return false;\n}\n\nbool common_arg::has_value_from_env() const {\n    if (env != nullptr && !args_neg.empty()) {\n        // for compatibility, we need to check LLAMA_ARG_NO_ env as well\n        std::string neg_env = env;\n        string_replace_all(neg_env, \"LLAMA_ARG_\", \"LLAMA_ARG_NO_\");\n        if (std::getenv(neg_env.c_str())) {\n            return true;\n        }\n    }\n    return env != nullptr && std::getenv(env);\n}\n\nstatic std::vector<std::string> break_str_into_lines(std::string input, size_t max_char_per_line) {\n    std::vector<std::string> result;\n    std::istringstream iss(input);\n    std::string line;\n    auto add_line = [&](const std::string& l) {\n        if (l.length() <= max_char_per_line) {\n            result.push_back(l);\n        } else {\n            std::istringstream line_stream(l);\n            std::string word, current_line;\n            while (line_stream >> word) {\n                if (current_line.length() + !current_line.empty() + word.length() > max_char_per_line) {\n                    if (!current_line.empty()) result.push_back(current_line);\n                    current_line = word;\n                } else {\n                    current_line += (!current_line.empty() ? \" \" : \"\") + word;\n                }\n            }\n            if (!current_line.empty()) result.push_back(current_line);\n        }\n    };\n    while (std::getline(iss, line)) {\n        add_line(line);\n    }\n    return result;\n}\n\nstd::string common_arg::to_string() const {\n    // params for printing to console\n    const static int n_leading_spaces = 40;\n    const static int n_char_per_line_help = 70; // TODO: detect this based on current console\n    std::string leading_spaces(n_leading_spaces, ' ');\n\n    std::ostringstream ss;\n    auto all_args = get_args(); // also contains args_neg\n    for (const auto & arg : all_args) {\n        if (arg == all_args.front()) {\n            if (all_args.size() == 1) {\n                ss << arg;\n            } else {\n                // first arg is usually abbreviation, we need padding to make it more beautiful\n                auto tmp = std::string(arg) + \", \";\n                auto spaces = std::string(std::max(0, 7 - (int)tmp.size()), ' ');\n                ss << tmp << spaces;\n            }\n        } else {\n            ss << arg << (arg != all_args.back() ? \", \" : \"\");\n        }\n    }\n    if (value_hint) ss << \" \" << value_hint;\n    if (value_hint_2) ss << \" \" << value_hint_2;\n    if (ss.tellp() > n_leading_spaces - 3) {\n        // current line is too long, add new line\n        ss << \"\\n\" << leading_spaces;\n    } else {\n        // padding between arg and help, same line\n        ss << std::string(leading_spaces.size() - ss.tellp(), ' ');\n    }\n    const auto help_lines = break_str_into_lines(help, n_char_per_line_help);\n    for (const auto & line : help_lines) {\n        ss << (&line == &help_lines.front() ? \"\" : leading_spaces) << line << \"\\n\";\n    }\n    return ss.str();\n}\n\nstd::vector<std::string> common_arg::get_args() const {\n    std::vector<std::string> result;\n    for (const auto & arg : args) {\n        result.push_back(std::string(arg));\n    }\n    for (const auto & arg : args_neg) {\n        result.push_back(std::string(arg));\n    }\n    return result;\n}\n\nstd::vector<std::string> common_arg::get_env() const {\n    std::vector<std::string> result;\n    if (env) {\n        result.push_back(std::string(env));\n    }\n    if (!args_neg.empty() && env) {\n        // for compatibility, we need to add LLAMA_ARG_NO_ variant\n        std::string neg_env = env;\n        string_replace_all(neg_env, \"LLAMA_ARG_\", \"LLAMA_ARG_NO_\");\n        result.push_back(neg_env);\n    }\n    return result;\n}\n\n//\n// utils\n//\n\n// Helper function to parse tensor buffer override strings\nstatic void parse_tensor_buffer_overrides(const std::string & value, std::vector<llama_model_tensor_buft_override> & overrides) {\n    ggml_backend_load_all();\n\n    std::map<std::string, ggml_backend_buffer_type_t> buft_list;\n    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {\n        auto * dev = ggml_backend_dev_get(i);\n        auto * buft = ggml_backend_dev_buffer_type(dev);\n        if (buft) {\n            buft_list[ggml_backend_buft_name(buft)] = buft;\n        }\n    }\n\n    for (const auto & override : string_split<std::string>(value, ',')) {\n        std::string::size_type pos = override.find('=');\n        if (pos == std::string::npos) {\n            throw std::invalid_argument(\"invalid value\");\n        }\n        std::string tensor_name = override.substr(0, pos);\n        std::string buffer_type = override.substr(pos + 1);\n\n        if (buft_list.find(buffer_type) == buft_list.end()) {\n            printf(\"Available buffer types:\\n\");\n            for (const auto & it : buft_list) {\n                printf(\"  %s\\n\", ggml_backend_buft_name(it.second));\n            }\n            throw std::invalid_argument(\"unknown buffer type\");\n        }\n        // keep strings alive and avoid leaking memory by storing them in a static vector\n        static std::list<std::string> buft_overrides;\n        buft_overrides.push_back(tensor_name);\n        overrides.push_back({buft_overrides.back().c_str(), buft_list.at(buffer_type)});\n    }\n}\n\nstatic std::string clean_file_name(const std::string & fname) {\n    std::string clean_fname = fname;\n    string_replace_all(clean_fname, \"\\\\\", \"_\");\n    string_replace_all(clean_fname, \"/\", \"_\");\n    return clean_fname;\n}\n\nstruct handle_model_result {\n    bool found_mmproj = false;\n    common_params_model mmproj;\n\n    bool found_mtp = false;\n    common_params_model mtp;\n\n    bool found_preset = false;\n    std::string preset_path;\n};\n\nconst std::vector<ggml_type> kv_cache_types = {\n    GGML_TYPE_F32,\n    GGML_TYPE_F16,\n    GGML_TYPE_BF16,\n    GGML_TYPE_Q8_0,\n    GGML_TYPE_Q4_0,\n    GGML_TYPE_Q4_1,\n    GGML_TYPE_IQ4_NL,\n    GGML_TYPE_Q5_0,\n    GGML_TYPE_Q5_1,\n};\n\nstatic ggml_type kv_cache_type_from_str(const std::string & s) {\n    for (const auto & type : kv_cache_types) {\n        if (ggml_type_name(type) == s) {\n            return type;\n        }\n    }\n    throw std::runtime_error(\"Unsupported cache type: \" + s);\n}\n\nstatic std::string get_all_kv_cache_types() {\n    std::ostringstream msg;\n    for (const auto & type : kv_cache_types) {\n        msg << ggml_type_name(type) << (&type == &kv_cache_types.back() ? \"\" : \", \");\n    }\n    return msg.str();\n}\n\nstatic bool parse_bool_value(const std::string & value) {\n    if (is_truthy(value)) {\n        return true;\n    } else if (is_falsey(value)) {\n        return false;\n    } else {\n        throw std::invalid_argument(\"invalid boolean value\");\n    }\n}\n\n[[noreturn]] static void arg_removed(const std::string & msg) {\n    throw std::invalid_argument(\"the argument has been removed. \" + msg);\n}\n\n//\n// common_models_handler\n//\n\nstatic std::string get_default_local_path(const std::string & url) {\n    auto f = string_split<std::string>(url, '#').front();\n    f = string_split<std::string>(f, '?').front();\n    return fs_get_cache_file(string_split<std::string>(f, '/').back());\n}\n\nstatic bool spec_types_is_default(const common_params & params) {\n    return params.speculative.types == std::vector<enum common_speculative_type>{COMMON_SPECULATIVE_TYPE_NONE};\n}\n\ncommon_models_handler common_models_handler_init(const common_params & params, llama_example curr_ex) {\n    common_download_hf_plan plan;\n    common_download_hf_plan plan_spec;\n    common_download_opts opts;\n\n    const bool spec_type_draft_mtp = std::find(params.speculative.types.begin(),\n                                        params.speculative.types.end(),\n                                        COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();\n\n    const bool spec_type_draft_dflash = std::find(params.speculative.types.begin(),\n                                           params.speculative.types.end(),\n                                           COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH) != params.speculative.types.end();\n\n    const bool spec_type_draft_eagle3 = std::find(params.speculative.types.begin(),\n                                           params.speculative.types.end(),\n                                           COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3) != params.speculative.types.end();\n\n    const bool spec_type_draft_dspark = std::find(params.speculative.types.begin(),\n                                           params.speculative.types.end(),\n                                           COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK) != params.speculative.types.end();\n\n    // only download mmproj if the current example is using it\n    bool use_mmproj = false;\n    for (const auto & ex : mmproj_examples) {\n        if (curr_ex == ex) {\n            use_mmproj = true;\n            break;\n        }\n    }\n\n    opts.bearer_token    = params.hf_token;\n    opts.offline         = params.offline;\n    opts.download_mtp    = spec_type_draft_mtp;\n    opts.download_eagle3 = spec_type_draft_eagle3;\n    opts.download_dflash = spec_type_draft_dflash;\n    opts.download_dspark = spec_type_draft_dspark;\n    opts.download_mmproj = use_mmproj && !params.no_mmproj\n                        && params.mmproj.path.empty() && params.mmproj.url.empty();\n\n    if (!params.model.hf_repo.empty()) {\n        plan = common_download_get_hf_plan(params.model, opts);\n    }\n\n    if (!params.speculative.draft.mparams.hf_repo.empty()) {\n        // without a requested type, discover every sidecar the draft repo ships to infer the type later\n        auto opts_spec = opts;\n        if (spec_types_is_default(params)) {\n            opts_spec.download_mtp    = true;\n            opts_spec.download_dflash = true;\n            opts_spec.download_eagle3 = true;\n            opts_spec.download_dspark = true;\n        }\n        plan_spec = common_download_get_hf_plan(params.speculative.draft.mparams, opts_spec);\n    }\n\n    return common_models_handler{plan, plan_spec, opts};\n}\n\nbool common_models_handler_is_preset_repo(const common_models_handler & handler) {\n    return !handler.plan.preset.url.empty();\n}\n\nstatic std::vector<common_download_task> build_url_tasks(const common_params_model & model, common_download_opts opts) {\n    auto parts = common_download_get_all_parts(model.url);\n    std::vector<common_download_task> tasks;\n\n    // single-part: download straight to model.path if the user gave one (-m), else the cache default\n    if (parts.size() == 1) {\n        common_download_task task;\n        task.url        = parts[0];\n        task.local_path = model.path.empty() ? get_default_local_path(parts[0]) : model.path;\n        task.opts       = opts;\n        tasks.push_back(std::move(task));\n        return tasks;\n    }\n\n    // multi-part: place each part under the user's -m directory (if given), else the cache default\n    std::string base_dir;\n    if (!model.path.empty()) {\n        auto pos = model.path.rfind('/');\n        base_dir = pos == std::string::npos ? std::string(\".\") : model.path.substr(0, pos);\n    }\n\n    for (const auto & part : parts) {\n        common_download_task task;\n        task.url  = part;\n        task.opts = opts;\n\n        std::string local = get_default_local_path(part);\n        if (!base_dir.empty()) {\n            auto pos = local.rfind('/');\n            std::string name = pos == std::string::npos ? local : local.substr(pos + 1);\n            local = base_dir + \"/\" + name;\n        }\n        task.local_path = local;\n        tasks.push_back(std::move(task));\n    }\n    return tasks;\n}\n\nvoid common_models_handler_apply(common_models_handler & handler\nTask: Audit sequence-state restoration. Find two concrete correctness risks and propose regression tests.\nDo not repeat the source. Give a precise analysis.\n<|im_end|>\n<|im_start|>assistant\n<think>\n",
+    "has_new_line": true,
+    "truncated": false,
+    "stop_type": "limit",
+    "stopping_word": "",
+    "tokens_cached": 4101,
+    "timings": {
+      "cache_n": 4000,
+      "prompt_n": 38,
+      "prompt_ms": 224.291,
+      "prompt_per_token_ms": 5.902394736842105,
+      "prompt_per_second": 169.4227588267028,
+      "predicted_n": 64,
+      "predicted_ms": 564.911,
+      "predicted_per_token_ms": 8.96684126984127,
+      "predicted_per_second": 111.52199195979546,
+      "draft_n": 62,
+      "draft_n_accepted": 41
+    }
+  }
+}
