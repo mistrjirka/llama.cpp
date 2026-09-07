@@ -4060,6 +4060,28 @@ llama_token llama_get_sampled_token_ith(llama_context * ctx, int32_t i) {
     return ctx->get_sampled_token_ith(i);
 }
 
+bool llama_get_sampling_output_ith(llama_context * ctx, int32_t i, llama_sampling_output * out) {
+    if (!ctx || !out) {
+        return false;
+    }
+    ctx->synchronize();
+    // These accessors retain their existing row-resolution and range checks.
+    // No new device work is submitted between the synchronization and these reads.
+    *out = {};
+    out->token      = ctx->get_sampled_token_ith(i);
+    out->probs      = ctx->get_sampled_probs_ith(i);
+    out->logits     = ctx->get_sampled_logits_ith(i);
+    out->candidates = ctx->get_sampled_candidates_ith(i);
+    if (out->probs) {
+        out->n_probs = static_cast<uint32_t>(ctx->get_sampled_probs_count(i));
+    } else if (out->logits) {
+        out->n_logits = static_cast<uint32_t>(ctx->get_sampled_logits_count(i));
+    } else {
+        out->raw_logits = ctx->get_logits_ith(i);
+    }
+    return true;
+}
+
 float * llama_get_sampled_probs_ith(llama_context * ctx, int32_t i) {
     ctx->synchronize();
 

@@ -1126,6 +1126,21 @@ extern "C" {
     // Returns LLAMA_TOKEN_NULL if no token was sampled.
     LLAMA_API llama_token llama_get_sampled_token_ith(struct llama_context * ctx, int32_t i);
 
+    // A synchronized view of one output row. Pointers are borrowed and valid only
+    // until the next decode/encode, output reallocation, or context destruction.
+    // This performs one synchronization for all fields; it does not change sampling.
+    struct llama_sampling_output {
+        llama_token token;
+        const float * probs;
+        const float * logits;
+        const llama_token * candidates;
+        const float * raw_logits;
+        uint32_t n_probs;
+        uint32_t n_logits;
+    };
+    LLAMA_API bool llama_get_sampling_output_ith(
+            struct llama_context * ctx, int32_t i, struct llama_sampling_output * out);
+
     // Get the backend sampled probabilities for the ith token
     // The index matches llama_get_sampled_token_ith().
     // Returns NULL if no probabilities were generated.
