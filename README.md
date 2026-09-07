@@ -66,11 +66,13 @@ Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. If you s
 
 ## Multi-agent KV sharing and parked sessions
 
+For the measured parallel PP/TG investigation, the projector/text-prefix guard correction, and remaining optimization work, see [parallel serving research](benches/parallel-serving-0907/RESEARCH.md). Its layout and MTP results are screening measurements, not new vanilla-vs-fork claims.
+
 This fork also reduces the memory cost of parallel long-context agents. The server's exact-prefix fork is **enabled by default for unified-KV serving**: when a new text-only slot is an exact extension of an idle slot, the shared attention prefix is referenced by both sequence IDs instead of allocating a second K/V copy. The path is implemented through llama.cpp's generic sequence-memory interface rather than an Ornith-specific model hook.
 
 For server mode, **multiple slots now default to unified KV even when `--parallel N` is supplied explicitly**, so this optimization is not tied to Ornith or to the auto-slot path. `--no-kv-unified` remains an explicit compatibility opt-out. Single-slot behavior is unchanged.
 
-The automatic path remains conservative. It requires unified KV, an empty destination, an idle exact-prefix donor and compatible adapter state; multimodal prompts and LoRA requests fall back to normal slot scheduling. Use `--no-slot-fork-prefix` to disable it. It has been runtime-validated on both **Qwen3.8-27B** (dense attention, built-in MTP) and **Ornith-1.5-35B-A3B** (hybrid recurrent/attention, external Shisa MTP). Qwen's 8k-parent + 2k-child test reused all 8,000 parent tokens and produced the same deterministic output SHA and 42/61 MTP acceptance as a clean full-prefill control.
+The automatic path remains conservative. It requires unified KV, an empty destination, an idle exact-prefix donor and compatible adapter state; multimodal prompts and LoRA requests fall back to normal slot scheduling. Use `--no-slot-fork-prefix` to disable it. It has been runtime-validated on both **Qwen3.8-27B** (dense FFN with hybrid attention, built-in MTP) and **Ornith-1.5-35B-A3B** (hybrid recurrent/attention, external Shisa MTP). Qwen's 8k-parent + 2k-child test reused all 8,000 parent tokens and produced the same deterministic output SHA and 42/61 MTP acceptance as a clean full-prefill control.
 
 For `N` histories of lengths `L_i` with one common prefix of length `P`, the attention-KV occupancy is approximately:
 

@@ -1,0 +1,81 @@
+{
+  "sweep": [
+    {
+      "mtp_depth": 0,
+      "1": {
+        "runs": 1,
+        "wall_s": 9.233758203976322,
+        "mean_reported_pp_tps": 491.1526222392925,
+        "mean_reported_tg_tps": 35.765624914530676,
+        "e2e_output_tps": 27.724356036284235
+      },
+      "4": {
+        "runs": 1,
+        "wall_s": 17.33715003100224,
+        "mean_reported_pp_tps": 153.41608861567326,
+        "mean_reported_tg_tps": 26.22758679642566,
+        "e2e_output_tps": 59.063917550975006
+      }
+    },
+    {
+      "mtp_depth": 1,
+      "1": {
+        "runs": 1,
+        "wall_s": 7.313564507989213,
+        "mean_reported_pp_tps": 483.03415003137314,
+        "mean_reported_tg_tps": 49.36818404459011,
+        "e2e_output_tps": 35.00345142513613
+      },
+      "4": {
+        "runs": 1,
+        "wall_s": 17.66051142301876,
+        "mean_reported_pp_tps": 145.1930950835673,
+        "mean_reported_tg_tps": 26.480328645220705,
+        "e2e_output_tps": 57.98246582289318
+      }
+    },
+    {
+      "mtp_depth": 2,
+      "1": {
+        "runs": 1,
+        "wall_s": 6.793249883048702,
+        "mean_reported_pp_tps": 486.16897872427313,
+        "mean_reported_tg_tps": 54.81175172554917,
+        "e2e_output_tps": 37.684466846832855
+      },
+      "4": {
+        "runs": 1,
+        "wall_s": 18.579058127012104,
+        "mean_reported_pp_tps": 143.34523533119017,
+        "mean_reported_tg_tps": 25.120122994508304,
+        "e2e_output_tps": 55.1158187352461
+      }
+    },
+    {
+      "mtp_depth": 3,
+      "1": {
+        "runs": 2,
+        "wall_s": 6.209334193001268,
+        "mean_reported_pp_tps": 507.43573953906207,
+        "mean_reported_tg_tps": 61.232076158140586,
+        "e2e_output_tps": 41.23217255805032
+      },
+      "4": {
+        "runs": 2,
+        "wall_s": 17.296088732487988,
+        "mean_reported_pp_tps": 144.23291051371692,
+        "mean_reported_tg_tps": 27.66394542556791,
+        "e2e_output_tps": 59.204238757194034
+      }
+    }
+  ],
+  "layout_speedup": 1.3692868195248964,
+  "layout_latency_reduction": 0.26969281691693225,
+  "layout_matching_sha": [
+    true,
+    true,
+    true,
+    true
+  ],
+  "caveat": "Repetitive synthetic corpus; 100k actual cache per agent, not 400k. Screening measurements, no long-run confidence intervals."
+}

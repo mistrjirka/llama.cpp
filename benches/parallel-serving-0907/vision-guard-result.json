@@ -1,0 +1,7 @@
+{
+  "text_fork_cache_n": 3000,
+  "text_fork_prompt_n": 200,
+  "text_matches_full_prefill": true,
+  "image_requests_succeeded": true,
+  "image_fork_count": 0
+}
