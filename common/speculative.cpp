@@ -1580,7 +1580,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                         std::memcpy(batch.embd + (size_t) j * n_embd, h_row, row_bytes);
                     }
 
-                    const int32_t rc = llama_decode(ctx_dft, batch);
+                    const char * kv_env = std::getenv("LLAMA_EXPERIMENT_MTP_KV_ONLY");
+                    const bool kv_only = kv_env && std::strcmp(kv_env, "1") == 0 &&
+                            n_mtp_layers == 1 && !is_mem_shared;
+                    const int32_t rc = kv_only ? llama_decode_mtp_kv(ctx_dft, batch) : llama_decode(ctx_dft, batch);
                     if (rc != 0) {
                         SPC_ERR("llama_decode(ctx_dft) head=%d failed rc=%d (pos=%d, off=%d/%d)\n",
                                 head, (int) rc, (int) batch_in.pos[off], (int) off, (int) n_tokens);

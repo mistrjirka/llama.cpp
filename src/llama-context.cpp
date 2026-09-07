@@ -1702,7 +1702,24 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
     return false; // all sequences use backend sampling
 }
 
-int llama_context::decode(const llama_batch & batch_inp) {
+int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
+    if (mtp_cache_only) {
+        // This explicit API must never suppress outputs requested by a caller.
+        if (batch_inp.n_tokens <= 0 || !batch_inp.token || !batch_inp.embd || !batch_inp.logits ||
+                cparams.embeddings || (cparams.embeddings_nextn && !cparams.embeddings_nextn_masked)) {
+            return -1;
+        }
+        for (int i = 0; i < batch_inp.n_tokens; ++i) {
+            if (batch_inp.logits[i]) {
+                return -1;
+            }
+        }
+        // Other model families and multilayer/shared-memory drafts retain full
+        // decode semantics. Only the proven single-layer path omits computation.
+        mtp_cache_only = cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
+            (model.arch == LLM_ARCH_QWEN35 || model.arch == LLM_ARCH_QWEN35MOE) &&
+            model.hparams.n_layer_nextn == 1;
+    }
     // MTP hook batches carry both token (next-token id) and embd (h_nextn row),
     // so accept either present rather than requiring exactly one.
     GGML_ASSERT(batch_inp.token || batch_inp.embd);
@@ -1885,7 +1902,8 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
         ggml_status status;
 
-        const auto * res = process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
+        const auto * res = process_ubatch(ubatch, mtp_cache_only ? LLM_GRAPH_TYPE_DECODER_MTP_KV :
+                ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
 
         if (!res) {
             // the last ubatch failed or was aborted -> remove all positions of that ubatch from the memory module
@@ -4445,6 +4463,17 @@ int32_t llama_decode(
         LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
     }
 
+    return ret;
+}
+
+int32_t llama_decode_mtp_kv(llama_context * ctx, llama_batch batch) {
+    if (!ctx) {
+        return -1;
+    }
+    const int ret = ctx->decode(batch, true);
+    if (ret != 0 && ret != 1) {
+        LLAMA_LOG_ERROR("%s: failed cache refresh, ret = %d\n", __func__, ret);
+    }
     return ret;
 }
 

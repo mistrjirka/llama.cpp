@@ -1034,6 +1034,14 @@ extern "C" {
             struct llama_context * ctx,
               struct llama_batch   batch);
 
+    // Refresh an MTP draft cache without requesting logits or hidden outputs.
+    // Requires nonempty token + target-hidden inputs and explicit zero logits flags.
+    // Invalid requests return -1 before changing state. Single-layer Qwen35/MoE
+    // MTP contexts use a K/V-only graph; other architectures retain ordinary decode.
+    // No sampled/logit/embedding output is produced; normal decode return codes apply.
+    LLAMA_API int32_t llama_decode_mtp_kv(struct llama_context * ctx, struct llama_batch batch);
+
+
     // Set the number of threads used for decoding
     // n_threads is the number of threads used for generation (single token)
     // n_threads_batch is the number of threads used for prompt and batch processing (multiple tokens)

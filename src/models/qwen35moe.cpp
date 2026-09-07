@@ -147,7 +147,7 @@ void llama_model_qwen35moe::load_arch_tensors(llama_model_loader & ml) {
 }
 
 std::unique_ptr<llm_graph_context> llama_model_qwen35moe::build_arch_graph(const llm_graph_params & params) const {
-    if (params.gtype == LLM_GRAPH_TYPE_DECODER_MTP) {
+    if (params.gtype == LLM_GRAPH_TYPE_DECODER_MTP || params.gtype == LLM_GRAPH_TYPE_DECODER_MTP_KV) {
         return std::make_unique<graph_mtp>(*this, params);
     }
     return std::make_unique<graph>(*this, params);
@@ -596,10 +596,13 @@ llama_model_qwen35moe::graph_mtp::graph_mtp(const llama_model & model, const llm
 
     res->add_input(std::move(inp));
 
-    ggml_tensor * inp_pos     = build_inp_pos();
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    const bool cache_only = params.gtype == LLM_GRAPH_TYPE_DECODER_MTP_KV;
+    GGML_ASSERT(!cache_only || n_outputs == 0);
 
-    auto * inp_attn = build_attn_inp_kv();
+    ggml_tensor * inp_pos     = build_inp_pos();
+    ggml_tensor * inp_out_ids = cache_only ? nullptr : build_inp_out_ids();
+
+    auto * inp_attn = build_attn_inp_kv(cache_only);
 
     ggml_tensor * h_norm = build_norm(h_embd, layer.nextn.hnorm, nullptr, LLM_NORM_RMS, il);
     cb(h_norm, "mtp_hnorm", il);
@@ -654,6 +657,14 @@ llama_model_qwen35moe::graph_mtp::graph_mtp(const llama_model & model, const llm
     Kcur = ggml_rope_multi(ctx0, Kcur, inp_pos, nullptr,
             n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
             ext_factor, attn_factor, beta_fast, beta_slow);
+
+    if (cache_only) {
+        // For this one-layer MTP head, historical state depends only on the
+        // verified target-hidden/token pair and K/V projections above. Query,
+        // attention, output projection and FFN are not cache dependencies.
+        build_attn_kv_store(inp_attn, Kcur, Vcur, il);
+        return;
+    }
 
     const float kq_scale = hparams.f_attention_scale == 0.0f
             ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;

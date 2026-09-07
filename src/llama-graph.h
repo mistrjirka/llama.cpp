@@ -38,6 +38,7 @@ enum llm_graph_type {
     LLM_GRAPH_TYPE_ENCODER,
     LLM_GRAPH_TYPE_DECODER,
     LLM_GRAPH_TYPE_DECODER_MTP,
+    LLM_GRAPH_TYPE_DECODER_MTP_KV, // single-layer draft cache refresh; no model outputs
 };
 
 enum llm_fused_op {
@@ -1204,7 +1205,12 @@ struct llm_graph_context {
                   float   kq_scale,
                     int   il) const;
 
-    llm_graph_input_attn_kv * build_attn_inp_kv() const;
+    llm_graph_input_attn_kv * build_attn_inp_kv(bool store_only = false) const;
+
+    // Uses the same rotation and cache-write operators as normal attention,
+    // without constructing a query/mask or reading historical K/V.
+    void build_attn_kv_store(llm_graph_input_attn_kv * inp,
+                            ggml_tensor * k_cur, ggml_tensor * v_cur, int il) const;
 
     ggml_tensor * build_attn(
             llm_graph_input_attn_kv * inp,
