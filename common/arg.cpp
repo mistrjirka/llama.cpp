@@ -1753,6 +1753,7 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         "use single unified KV buffer shared across all sequences (default: enabled if number of slots is auto)",
         [](common_params & params, bool value) {
             params.kv_unified = value;
+            params.kv_unified_set = true;
         }
     ).set_env("LLAMA_ARG_KV_UNIFIED").set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_PERPLEXITY, LLAMA_EXAMPLE_BATCHED, LLAMA_EXAMPLE_BENCH, LLAMA_EXAMPLE_PARALLEL}));
     add_opt(common_arg(

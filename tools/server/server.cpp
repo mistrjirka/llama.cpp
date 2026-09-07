@@ -154,6 +154,12 @@ int llama_server(common_params & params, int argc, char ** argv) {
 
             params.n_parallel = 4;
             params.kv_unified = true;
+        } else if (params.n_parallel > 1 && !params.kv_unified_set) {
+            // Multi-slot serving benefits from one shared stream: exact-prefix forks become
+            // metadata-only and the physical KV pool can be smaller than the sum of logical
+            // slot maxima. Preserve --no-kv-unified as an explicit compatibility opt-out.
+            SRV_TRC("n_parallel = %d, enabling unified KV by default for multi-slot serving\n", params.n_parallel);
+            params.kv_unified = true;
         }
     }
 
