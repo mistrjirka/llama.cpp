@@ -1,0 +1,187 @@
+{
+  "hardware": [
+    "Tesla V100-SXM2-32GB",
+    "NVIDIA GeForce RTX 2080 Ti 22GB"
+  ],
+  "workload": {
+    "model": "Ornith-1.5-35B-A3B AD-Q6_K-Q5_K",
+    "draft": "Shisa Ornith MTP Q5_0",
+    "target_kv": "q8_0",
+    "draft_kv": "q8_0",
+    "mtp_depth": 3,
+    "agents": 4,
+    "cached_tokens_each": 100000,
+    "append_tokens_each": [
+      38,
+      42,
+      44,
+      41
+    ],
+    "generated_tokens_each": 128,
+    "aggregate_pp_plus_tg_numerator_tokens": 677,
+    "aggregate_generated_numerator_tokens": 512
+  },
+  "commits": {
+    "fork_published": "2ab68dda39f70c8f4efdbd9e3c8e264df9b62cb9",
+    "fork_measured_runtime": "c30407d9856a52646e48bfe131798827fa1267e8",
+    "same_base_upstream": "465e49b9cea78a68b9c244ffb48d0ee24a82873d",
+    "latest_upstream": "f114f91f9ed6792cf402437e3874adad98902744"
+  },
+  "strict_common_denominator": {
+    "same_base_upstream_mirrored": {
+      "n": 12,
+      "wall_s": {
+        "mean": 10.796589994583238,
+        "min": 10.514953014999719,
+        "max": 11.343268272999921
+      },
+      "aggregate_generated_tps_whole_turn": {
+        "mean": 47.447016977246165,
+        "min": 45.13690302279987,
+        "max": 48.69256184688845
+      },
+      "aggregate_pp_plus_tg_tps": {
+        "mean": 62.73755955780401,
+        "min": 59.68297528600686,
+        "max": 64.38450072332711
+      },
+      "mean_agent_tg": {
+        "mean": 14.585226458819795,
+        "min": 13.939542569219357,
+        "max": 14.920435155688754
+      },
+      "mean_agent_pp": {
+        "mean": 31.506904914006892,
+        "min": 29.205337993149286,
+        "max": 36.18713074665397
+      }
+    },
+    "fork_mirrored": {
+      "n": 12,
+      "wall_s": {
+        "mean": 7.735009340416657,
+        "min": 7.466399582000122,
+        "max": 7.912431423000271
+      },
+      "aggregate_generated_tps_whole_turn": {
+        "mean": 66.2140284103073,
+        "min": 64.7083017379072,
+        "max": 68.5738814775359
+      },
+      "aggregate_pp_plus_tg_tps": {
+        "mean": 87.55253365972273,
+        "min": 85.56156304016245,
+        "max": 90.67288625056995
+      },
+      "mean_agent_tg": {
+        "mean": 19.913678169505122,
+        "min": 19.376611377589633,
+        "max": 20.7373670753705
+      },
+      "mean_agent_pp": {
+        "mean": 49.28644186153796,
+        "min": 47.28438234320294,
+        "max": 54.84170500344801
+      }
+    }
+  },
+  "latest_upstream": {
+    "wall_s": {
+      "mean": 10.646594438333523,
+      "min": 10.251956404000339,
+      "max": 11.16126151500066
+    },
+    "aggregate_generated_tps_whole_turn": {
+      "mean": 48.13422607604738,
+      "min": 45.87295076921865,
+      "max": 49.94168720813291
+    },
+    "aggregate_pp_plus_tg_tps": {
+      "mean": 63.64623252633609,
+      "min": 60.656225919455125,
+      "max": 66.03617624981636
+    },
+    "mean_agent_tg": {
+      "mean": 14.835273625760125,
+      "min": 14.329651088668284,
+      "max": 15.33455916752876
+    },
+    "mean_agent_pp": {
+      "mean": 31.726063462430517,
+      "min": 29.463418166672763,
+      "max": 33.412361059045615
+    }
+  },
+  "latest_upstream_global_force_mmq": {
+    "wall_s": {
+      "mean": 10.720270178833289,
+      "min": 10.555386721000104,
+      "max": 11.068855134999467
+    },
+    "aggregate_generated_tps_whole_turn": {
+      "mean": 47.77496137380848,
+      "min": 46.25591298788144,
+      "max": 48.506039004839884
+    },
+    "aggregate_pp_plus_tg_tps": {
+      "mean": 63.17118916028973,
+      "min": 61.16260369686667,
+      "max": 64.13786798100898
+    },
+    "mean_agent_tg": {
+      "mean": 14.683616457228432,
+      "min": 13.93887921772993,
+      "max": 14.987931689219158
+    },
+    "mean_agent_pp": {
+      "mean": 31.675920328739053,
+      "min": 30.401590777775596,
+      "max": 33.92254356196415
+    }
+  },
+  "fork_full_production": {
+    "wall_s": {
+      "mean": 5.683260641666645,
+      "min": 5.514161776999572,
+      "max": 5.987364679000166
+    },
+    "aggregate_generated_tps_whole_turn": {
+      "mean": 90.17690432399355,
+      "min": 85.5134149078588,
+      "max": 92.85182784002308
+    },
+    "aggregate_pp_plus_tg_tps": {
+      "mean": 119.23782075653054,
+      "min": 113.07144900902424,
+      "max": 122.77478017128053
+    },
+    "mean_agent_tg": {
+      "mean": 27.351768189702696,
+      "min": 25.864799568526017,
+      "max": 28.425936860256854
+    },
+    "mean_agent_pp": {
+      "mean": 66.88454725570861,
+      "min": 63.17001451292953,
+      "max": 72.76820008909367
+    }
+  },
+  "strict_vs_same_base": {
+    "aggregate_pp_plus_tg_gain_pct": 39.553617126364536,
+    "aggregate_generated_gain_pct": 39.553617126364536,
+    "whole_turn_latency_reduction_pct": 28.35692246998921,
+    "mean_agent_tg_gain_pct": 36.5332120535103
+  },
+  "strict_vs_latest": {
+    "aggregate_pp_plus_tg_gain_pct": 37.56121954821832,
+    "aggregate_generated_gain_pct": 37.56121954821832,
+    "whole_turn_latency_reduction_pct": 27.34757217231435,
+    "mean_agent_tg_gain_pct": 34.23195737304636
+  },
+  "full_production_vs_latest": {
+    "aggregate_pp_plus_tg_gain_pct": 87.34466444214317,
+    "aggregate_generated_gain_pct": 87.34466444214317,
+    "whole_turn_latency_reduction_pct": 46.61898060844866,
+    "mean_agent_tg_gain_pct": 84.36982612985848
+  }
+}

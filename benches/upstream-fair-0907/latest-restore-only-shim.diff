@@ -1,0 +1,36 @@
+--- stock/tools/server/server-context.cpp
++++ benchmark-setup-shim/tools/server/server-context.cpp
+@@ -2622,6 +2622,33 @@
+
+                         slot->prompt.clear();
+                         slot->prompt.tokens = std::move(restored);
++
++                        // BENCHMARK SETUP SHIM ONLY: restore the draft/spec companions written by
++                        // v100-optimized so both engines enter the timed region from identical warm state.
++                        // This branch is never executed by the timed completion requests.
++                        const std::string benchmark_dft = filepath + ".draft";
++                        if (ctx_dft != nullptr && std::filesystem::exists(benchmark_dft)) {
++                            size_t n_dft_packed = 0;
++                            size_t nread_dft = llama_state_seq_load_file(ctx_dft, benchmark_dft.c_str(), slot->id, nullptr, 0, &n_dft_packed);
++                            llama_tokens dft_packed;
++                            if (nread_dft != 0) {
++                                dft_packed.resize(std::max<size_t>(1, n_dft_packed));
++                                nread_dft = llama_state_seq_load_file(ctx_dft, benchmark_dft.c_str(), slot->id, dft_packed.data(), dft_packed.size(), &n_dft_packed);
++                            }
++                            if (nread_dft == 0) throw std::runtime_error("benchmark draft-state restore failed");
++                        }
++                        const std::string benchmark_spec = filepath + ".spec";
++                        if (spec && std::filesystem::exists(benchmark_spec)) {
++                            std::ifstream in(benchmark_spec, std::ios::binary);
++                            uint32_t magic = 0; uint64_t size = 0;
++                            in.read(reinterpret_cast<char *>(&magic), sizeof(magic));
++                            in.read(reinterpret_cast<char *>(&size), sizeof(size));
++                            if (!in.good() || magic != 0x31504353u || size > 64 * 1024 * 1024) throw std::runtime_error("benchmark speculative-state header invalid");
++                            std::vector<uint8_t> state((size_t) size);
++                            if (size) in.read(reinterpret_cast<char *>(state.data()), (std::streamsize) size);
++                            if (!in.good()) throw std::runtime_error("benchmark speculative-state read failed");
++                            common_speculative_set_state(spec.get(), slot->id, state);
++                        }
+                     } catch (const std::exception & err) {
+                         slot->prompt_clear();
+                         send_error(task, std::string("Unable to restore slot: ") + err.what(), ERROR_TYPE_INVALID_REQUEST);

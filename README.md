@@ -82,6 +82,23 @@ These are **within-fork comparisons**, separate from the vanilla-versus-fork tab
 
 The tests do not establish a universal MTP speedup, a new 350k–400k rate, or a quality improvement. The target model, context limits and cache precision are unchanged. See the [final integration tests and benchmark details](benches/mtp-final-integration-0907/REPORT.md), and the [before/after GPU timelines](benches/mtp-gantt-0907/REPORT.md#what-nsight-found).
 
+### Fair comparison with upstream
+
+A separate four-agent test compares the current fork with **latest upstream `f114f91f9`** on exactly the same 100k cached histories. For this table, **aggregate PP+TG** means all newly processed prompt tokens plus all generated tokens divided by whole-turn wall time: `38+42+44+41` appended tokens plus `4×128` generated tokens = **677 tokens per turn**.
+
+| Engine / mode | Whole turn | Aggregate PP+TG | Aggregate generated | Mean TG per agent |
+|---|---:|---:|---:|---:|
+| Latest upstream | 10.647 s | **63.65 tok/s** | 48.13 tok/s | 14.84 tok/s |
+| Latest upstream + global `GGML_CUDA_FORCE_MMQ=ON` | 10.720 s | 63.17 tok/s | 47.77 tok/s | 14.68 tok/s |
+| `v100-optimized`, **common-denominator settings** | **7.735 s** | **87.55 tok/s** | **66.21 tok/s** | **19.91 tok/s** |
+| `v100-optimized`, **normal optimized serving** | **5.683 s** | **119.24 tok/s** | **90.18 tok/s** | **27.35 tok/s** |
+
+The strict common-denominator comparison is the fair fork-vs-upstream claim: **+37.6% aggregate PP+TG throughput** and a **27.3% shorter turn** versus latest upstream. It disables fork-only prefix sharing, deferred-MTP prompt handling, the separate draft ubatch and the custom pipeline-copy setting; the fork’s kernel/runtime optimizations remain enabled, because those are what this A/B is measuring. Against the exact upstream base currently merged into this branch (`465e49b9c`), the same strict test is **+39.6%**.
+
+The **119.24 tok/s** row is the practical deployment result with the fork's normal serving features re-enabled. Do not interpret its **+87.3%** difference from latest upstream as a pure kernel-speed claim: it also benefits from fork-only serving behavior. Upstream was given a global FORCE_MMQ build as an additional best-effort Ornith control; it did not improve this workload.
+
+Upstream does not natively restore this fork's MTP-aware `.draft`/`.spec` snapshot companions. To avoid charging upstream for rebuilding four 100k histories, the benchmark uses a **restore-only setup shim** that loads identical warm target/draft/spec states before the timer starts. The timed completion path remains upstream code. Full methodology, exact shim diffs, argv, acceptance counts and per-run results are in [the fair upstream benchmark report](benches/upstream-fair-0907/REPORT.md).
+
 ### Pause drafting for an individual agent
 
 On a server started with `--spec-type draft-mtp`, a request can limit drafting without unloading the model or losing its cached history. For the native `/completion` endpoint:
