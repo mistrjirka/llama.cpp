@@ -1,0 +1,74 @@
+[
+  {
+    "slot": 0,
+    "wall_s": 8.494304126012139,
+    "timings": {
+      "cache_n": 2000,
+      "prompt_n": 26,
+      "prompt_ms": 1801.5,
+      "prompt_per_token_ms": 69.28846153846153,
+      "prompt_per_second": 14.432417429919512,
+      "predicted_n": 48,
+      "predicted_ms": 6664.401,
+      "predicted_per_token_ms": 141.7957659574468,
+      "predicted_per_second": 7.052396757037879,
+      "draft_n": 38,
+      "draft_n_accepted": 34
+    },
+    "sha": "4e8447df9d27a3e7d23823ec103c328aee3cdceb1031b7e169ace229eefa2e2c"
+  },
+  {
+    "slot": 1,
+    "wall_s": 8.491817647998687,
+    "timings": {
+      "cache_n": 2000,
+      "prompt_n": 26,
+      "prompt_ms": 1840.245,
+      "prompt_per_token_ms": 70.77865384615384,
+      "prompt_per_second": 14.128553534991266,
+      "predicted_n": 48,
+      "predicted_ms": 6590.976,
+      "predicted_per_token_ms": 140.2335319148936,
+      "predicted_per_second": 7.130962091198634,
+      "draft_n": 36,
+      "draft_n_accepted": 34
+    },
+    "sha": "f16aa4a40ada41f248a1c34d50f7f37d39b46435459d55f4c0f71fc4d4c73672"
+  },
+  {
+    "slot": 2,
+    "wall_s": 9.396412848029286,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 2026,
+      "prompt_ms": 5527.998,
+      "prompt_per_token_ms": 2.728528134254689,
+      "prompt_per_second": 366.4979618299428,
+      "predicted_n": 48,
+      "predicted_ms": 3776.094,
+      "predicted_per_token_ms": 80.3424255319149,
+      "predicted_per_second": 12.44672404871277,
+      "draft_n": 51,
+      "draft_n_accepted": 30
+    },
+    "sha": "e06367cae8d0eca90e5ef46cfbfa350ad8aa548559190038a878d54f8ecc3309"
+  },
+  {
+    "slot": 3,
+    "wall_s": 9.552767992019653,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 2026,
+      "prompt_ms": 5072.077,
+      "prompt_per_token_ms": 2.503493089832182,
+      "prompt_per_second": 399.44188544456244,
+      "predicted_n": 48,
+      "predicted_ms": 1734.077,
+      "predicted_per_token_ms": 36.89525531914894,
+      "predicted_per_second": 27.10375606158204,
+      "draft_n": 45,
+      "draft_n_accepted": 32
+    },
+    "sha": "66d244c07fb5ed70ff2958a456b8ce11398318cee90eaa49384dae536af57437"
+  }
+]

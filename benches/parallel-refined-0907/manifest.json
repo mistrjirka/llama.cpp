@@ -1,0 +1,221 @@
+{
+  "source_base": "221ddc9f4f10dbff76cb17714d2dc15521bb11e0",
+  "result_root": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907",
+  "fixture_sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce",
+  "fixture": {
+    "corpus": "actual repository C++ source; distinct review instructions; raw ChatML",
+    "parent_tokens": 98000,
+    "history_tokens": [
+      100000,
+      100000,
+      100000,
+      100000
+    ],
+    "append_tokens": [
+      38,
+      42,
+      44,
+      41
+    ],
+    "source_files": {
+      "common/arg.cpp": "06e047f9acc3f5affaa3010df03d3e5efe1e0b84c4ab525ab7994488bc73dc8c",
+      "common/chat-auto-parser-generator.cpp": "c553745088e435cae071029aad4de40b5e85384f9f1080ad897f046394f29645",
+      "common/chat-auto-parser-helpers.cpp": "6cd3a7719a87964f54372c20ab1a98350d4b6dfbe65f09fc6cffe6ac3a6be93a",
+      "common/chat-diff-analyzer.cpp": "5acb9907c78a66685e4f43327e9f700db3325fefb8991c1212d713a412469297",
+      "common/chat-peg-parser.cpp": "b78fed28850795107494c6d3ecefed76c1e7824d94cb1a3dc7bb6e6b9e137dba",
+      "common/chat.cpp": "abab0d03a111bd198693a518c7cdd07a33326a6a6685cc182a88d4fdae5f61dc",
+      "common/common.cpp": "d8467abe22c7ba86e10883628a8c85f60e2f65aa62c1f1362362b827ed60b8c0",
+      "common/console.cpp": "2036d837458426b3d7c456cdfdb5ace53232fd84e0e11ec3395ee7ab04f901bf",
+      "common/debug.cpp": "95c3d817b30793a12cfb10ab7821a80357b7f69674156710d29fb28e417e4a6f",
+      "common/download.cpp": "6d148e9d01d37d5b3a7b1788e29bd023ee440aef9ec981052e59f208e4549d7d",
+      "common/fit.cpp": "de4993970c03e5a8f3e7bd0f6feebfdd5affe9fc7d75bbe75d9036c1b7c8ce14",
+      "common/hf-cache.cpp": "66211292a05fc48f46fffd16b6b0b6a8da6c17c89e6757f2837d7ec1c0dae74a",
+      "common/imatrix-loader.cpp": "fcd471a2c502f5d78dd26dec04b6129a755e7eaa5566db6161ba646ac046b373",
+      "common/json-schema-to-grammar.cpp": "e2a1bf7024256d5e5f8a306b40512d397e2814d48751d407b994ae108b98d9e9",
+      "common/json.cpp": "d8c556445cef8e7c93b0857f6ca7ae7ebd8295f169403ac66641b72f6b0598f2",
+      "common/llguidance.cpp": "b6a51674d5e27e505d3d015f7c0407a62dc49c8519f734d2de9c94ae284e5a8e",
+      "common/log.cpp": "645771633cf3549b4cc93877e7c61e88df2651625c1e5c64a976a52c7ac5875b",
+      "common/ngram-cache.cpp": "697c68293fb6a80e2a6d7503dee2ddc72b9155b264afbdcc60b85789bc253bb2",
+      "common/ngram-map.cpp": "e216b3a607204e75d1c9a2e9c61473b5d3abdc95c794d55c6e62ced7f7f1aed7",
+      "common/ngram-mod.cpp": "06ed2b6d42854f42b74a2fb940a5b5bf405c619fa0d40f81cf8ca18b566104f7",
+      "common/peg-parser.cpp": "0ddb6d02ff98120f14eff51a4f3bc6df574c0adbfe290597f57beaccdf8c361e",
+      "common/preset.cpp": "762ea61e54538380ee24fc97d35e86c093d5f59615e38b84bd51a2f3e43578bf",
+      "common/reasoning-budget.cpp": "55c730c85e7e2353d44542b5582a0046ffc503aa828cbd58f2bc6a7d957b48b2",
+      "common/sampling.cpp": "2c5a5ebba55450eb732a9bba2a4b319fded2d2025bb208768deb07d4a2c9537b",
+      "common/speculative.cpp": "37ee93d493d4b0135903862f18a334cd5a372afbdc0689e82e89029bb1e9e346",
+      "common/subproc.cpp": "5a9e0d0e4ca4441cac5ac57af1622ff4a6dcdd598dcecd0f28079d95dca81ffa",
+      "common/trie.cpp": "807cac6c6296ca294397360fbfdd5f19a65fb7c50a587c8b56094261eec5acb2"
+    }
+  },
+  "binaries": {
+    "baseline-bin": {
+      "llama-server": {
+        "sha256": "9f7cfcfea5a2c2e8a7f2f514e66a279e5e3990703795277900a18b6e75176ac6",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "5106fd53477f22f2f7b97d56cafbf9156150ba7b07ffa8f624203b86e1ce8b71",
+        "size": 4803336
+      },
+      "libllama-common.so": {
+        "sha256": "e62751d9da7a2d881d34cd4fa711f8bcd06cca971dc131229100489bd16f1008",
+        "size": 5970000
+      },
+      "libggml-cuda.so": {
+        "sha256": "eec6e56f78f32cdf9e43c15f32b4f7484767a6583545c809df379a81bd05a049",
+        "size": 133703736
+      },
+      "test-backend-ops": {
+        "sha256": "03b246e52a25702f971306825e7b76bd495af6eae2886b130792a57b6adcd7e7",
+        "size": 1219144
+      }
+    },
+    "host-bin": {
+      "llama-server": {
+        "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "0ecc705b9a5f748be7772371682a3c11c29661178c00363d806a48a6eedbf68c",
+        "size": 4803384
+      },
+      "libllama-common.so": {
+        "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb",
+        "size": 5974392
+      },
+      "libggml-cuda.so": {
+        "sha256": "eec6e56f78f32cdf9e43c15f32b4f7484767a6583545c809df379a81bd05a049",
+        "size": 133703736
+      },
+      "test-backend-ops": {
+        "sha256": "03b246e52a25702f971306825e7b76bd495af6eae2886b130792a57b6adcd7e7",
+        "size": 1219144
+      }
+    },
+    "candidate-bin": {
+      "llama-server": {
+        "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "0ecc705b9a5f748be7772371682a3c11c29661178c00363d806a48a6eedbf68c",
+        "size": 4803384
+      },
+      "libllama-common.so": {
+        "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb",
+        "size": 5974392
+      },
+      "libggml-cuda.so": {
+        "sha256": "7a390ae6281b4f0a964f7e9db271b547f634cff5f5d8557cd55966851f32730a",
+        "size": 133741592
+      },
+      "test-backend-ops": {
+        "sha256": "1667021808d4eaedff0d801ace4eb79191b999c671698f86632a44a580af0440",
+        "size": 1219144
+      }
+    },
+    "coop-bin": {
+      "llama-server": {
+        "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "0ecc705b9a5f748be7772371682a3c11c29661178c00363d806a48a6eedbf68c",
+        "size": 4803384
+      },
+      "libllama-common.so": {
+        "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb",
+        "size": 5974392
+      },
+      "libggml-cuda.so": {
+        "sha256": "07f8a4136f186f6008f6235af7576cec1bdc3d7cb6c32384c161b7eceb48acc7",
+        "size": 133754184
+      },
+      "test-backend-ops": {
+        "sha256": "1667021808d4eaedff0d801ace4eb79191b999c671698f86632a44a580af0440",
+        "size": 1219144
+      }
+    },
+    "pairwise-bin": {
+      "llama-server": {
+        "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "0ecc705b9a5f748be7772371682a3c11c29661178c00363d806a48a6eedbf68c",
+        "size": 4803384
+      },
+      "libllama-common.so": {
+        "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb",
+        "size": 5974392
+      },
+      "libggml-cuda.so": {
+        "sha256": "2ee666af667ab486e85b4934aab2edb53005068f7f025eb2f15fb65b2b11b6cf",
+        "size": 133775224
+      },
+      "test-backend-ops": {
+        "sha256": "1667021808d4eaedff0d801ace4eb79191b999c671698f86632a44a580af0440",
+        "size": 1219144
+      }
+    },
+    "gated-bin": {
+      "llama-server": {
+        "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "0ecc705b9a5f748be7772371682a3c11c29661178c00363d806a48a6eedbf68c",
+        "size": 4803384
+      },
+      "libllama-common.so": {
+        "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb",
+        "size": 5974392
+      },
+      "libggml-cuda.so": {
+        "sha256": "a5d1dfa1f75185ccb6d60d7ed5ab4a43968c160bb14d924fecc0d027597b1630",
+        "size": 133775224
+      },
+      "test-backend-ops": {
+        "sha256": "dd687b2a1e81d49881c6671c103240eaa3ebc8b2e07880c11a32c690443302b1",
+        "size": 1219144
+      }
+    },
+    "pv-bin": {
+      "llama-server": {
+        "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207",
+        "size": 17888
+      },
+      "libllama.so": {
+        "sha256": "0ecc705b9a5f748be7772371682a3c11c29661178c00363d806a48a6eedbf68c",
+        "size": 4803384
+      },
+      "libllama-common.so": {
+        "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb",
+        "size": 5974392
+      },
+      "libggml-cuda.so": {
+        "sha256": "298107b47eb07783fb34105e68fdc1992ce926204030bf7fdc00a64a8cb31f21",
+        "size": 133796048
+      },
+      "test-backend-ops": {
+        "sha256": "dd687b2a1e81d49881c6671c103240eaa3ebc8b2e07880c11a32c690443302b1",
+        "size": 1219144
+      }
+    }
+  },
+  "raw_traces": {
+    "ncu-old.ncu-rep": {
+      "sha256": "734474163eb877fe54356550b21b171b1b00f951ac8e812fda7794fe73017d0a",
+      "size": 1105040
+    },
+    "ncu-refined.ncu-rep": {
+      "sha256": "4f0170a1feb50d9102ab1117eee9c4b08fc73f220bc0d972790c0a7457971701",
+      "size": 1105012
+    },
+    "host-views.nsys-rep": {
+      "sha256": "77e35132a44f6bea14ab00a673f106389a12d55227d48c15f418c494d50db8f5",
+      "size": 25506445
+    }
+  },
+  "production_changed": false
+}

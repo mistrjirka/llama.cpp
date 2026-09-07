@@ -1,0 +1,352 @@
+{
+  "q8-refined": [
+    {
+      "lengths": [
+        4,
+        0,
+        0,
+        0
+      ],
+      "rows": 4,
+      "different_float_values": 993278,
+      "top1_changes": 0,
+      "max_logit_delta": 0.728754520416,
+      "rms_logit_delta": 0.123529064398,
+      "normalized_mse": 0.000553596053487,
+      "max_probability_delta": 0.0125188728915,
+      "mean_total_variation": 0.02223844904,
+      "mean_js_divergence": 0.000750857952907
+    },
+    {
+      "lengths": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "rows": 4,
+      "different_float_values": 993278,
+      "top1_changes": 0,
+      "max_logit_delta": 1.58577251434,
+      "rms_logit_delta": 0.246957668782,
+      "normalized_mse": 0.00133446445567,
+      "max_probability_delta": 0.0155560320484,
+      "mean_total_variation": 0.0154185220317,
+      "mean_js_divergence": 0.000471912130582
+    },
+    {
+      "lengths": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "rows": 16,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "rows": 10,
+      "different_float_values": 993280,
+      "top1_changes": 0,
+      "max_logit_delta": 1.72319185734,
+      "rms_logit_delta": 0.151246022756,
+      "normalized_mse": 0.000789165685885,
+      "max_probability_delta": 0.0681528655709,
+      "mean_total_variation": 0.024947756145,
+      "mean_js_divergence": 0.00171796195839
+    }
+  ],
+  "group-control": [
+    {
+      "lengths": [
+        4,
+        0,
+        0,
+        0
+      ],
+      "rows": 4,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "rows": 4,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "rows": 16,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "rows": 10,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    }
+  ],
+  "group2": [
+    {
+      "lengths": [
+        4,
+        0,
+        0,
+        0
+      ],
+      "rows": 4,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "rows": 4,
+      "different_float_values": 993280,
+      "top1_changes": 0,
+      "max_logit_delta": 3.30732917786,
+      "rms_logit_delta": 0.356559299213,
+      "normalized_mse": 0.00278179749595,
+      "max_probability_delta": 0.257542077699,
+      "mean_total_variation": 0.121453104535,
+      "mean_js_divergence": 0.0320535975231
+    },
+    {
+      "lengths": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "rows": 16,
+      "different_float_values": 3973112,
+      "top1_changes": 1,
+      "max_logit_delta": 1.87229883671,
+      "rms_logit_delta": 0.256236558093,
+      "normalized_mse": 0.00244099919935,
+      "max_probability_delta": 0.101912753326,
+      "mean_total_variation": 0.0768127526567,
+      "mean_js_divergence": 0.00666147590812
+    },
+    {
+      "lengths": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "rows": 10,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    }
+  ],
+  "group1": [
+    {
+      "lengths": [
+        4,
+        0,
+        0,
+        0
+      ],
+      "rows": 4,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "rows": 4,
+      "different_float_values": 993278,
+      "top1_changes": 0,
+      "max_logit_delta": 1.27184653282,
+      "rms_logit_delta": 0.17879871584,
+      "normalized_mse": 0.000699504910284,
+      "max_probability_delta": 0.0880394886738,
+      "mean_total_variation": 0.0424106954748,
+      "mean_js_divergence": 0.00269932607542
+    },
+    {
+      "lengths": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "rows": 16,
+      "different_float_values": 3973120,
+      "top1_changes": 1,
+      "max_logit_delta": 3.14520072937,
+      "rms_logit_delta": 0.314104144693,
+      "normalized_mse": 0.00366802922356,
+      "max_probability_delta": 0.186284778347,
+      "mean_total_variation": 0.0910113501629,
+      "mean_js_divergence": 0.00963330801626
+    },
+    {
+      "lengths": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "rows": 10,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    }
+  ],
+  "plain-repeat": [
+    {
+      "lengths": [
+        4,
+        0,
+        0,
+        0
+      ],
+      "rows": 4,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "rows": 4,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "rows": 16,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    },
+    {
+      "lengths": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "rows": 10,
+      "different_float_values": 0,
+      "top1_changes": 0,
+      "max_logit_delta": 0,
+      "rms_logit_delta": 0,
+      "normalized_mse": 0,
+      "max_probability_delta": 0,
+      "mean_total_variation": 0,
+      "mean_js_divergence": 0
+    }
+  ]
+}

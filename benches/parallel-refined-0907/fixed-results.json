@@ -1,0 +1,47 @@
+[
+  {
+    "name": "plain",
+    "returncode": 0,
+    "flags": {},
+    "copies": 1
+  },
+  {
+    "name": "q8-refined",
+    "returncode": 0,
+    "flags": {
+      "GGML_CUDA_VOLTA_Q8_MULTI": "1",
+      "GGML_CUDA_VOLTA_Q8_REFINED": "1",
+      "GGML_CUDA_VOLTA_Q8_REFINED_AUTO": "1",
+      "GGML_CUDA_VOLTA_Q8_COOP": "1"
+    },
+    "copies": 1
+  },
+  {
+    "name": "group-control",
+    "returncode": 0,
+    "flags": {},
+    "copies": 1
+  },
+  {
+    "name": "group2",
+    "returncode": 0,
+    "flags": {
+      "LLAMA_EXPERIMENT_VERIFY_GROUP_SEQS": "2"
+    },
+    "copies": 2
+  },
+  {
+    "name": "group1",
+    "returncode": 0,
+    "flags": {
+      "LLAMA_EXPERIMENT_VERIFY_GROUP_SEQS": "1"
+    },
+    "copies": 2
+  },
+  {
+    "name": "plain-repeat",
+    "returncode": 0,
+    "flags": {},
+    "copies": 1
+  }
+]

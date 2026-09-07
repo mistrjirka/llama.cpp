@@ -1,0 +1,14 @@
+{
+  "A_B_token_mismatch": 0,
+  "A_A_token_mismatch": 0,
+  "A_B_probability_records_identical": true,
+  "steps": 12,
+  "sequences": 4,
+  "ornith_same_buffer_checks": [
+    "VIEW_CHECK outputs=613 hidden_rows=396"
+  ],
+  "qwen_same_buffer_checks": [
+    "VIEW_CHECK outputs=352 hidden_rows=213"
+  ],
+  "ornith_save_restore_continued": true
+}

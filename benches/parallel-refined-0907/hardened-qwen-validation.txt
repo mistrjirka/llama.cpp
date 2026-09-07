@@ -1,0 +1,5 @@
+0.07.396.934 E get_sampling_output_ith: invalid sampling row 2147483647: out of range [0, 512)
+0.07.396.950 E get_sampling_output_ith: invalid sampling row -2147483648: corrupt output buffer (j=2147483649, n_outputs=1)
+0.09.460.828 E get_sampling_output_ith: invalid sampling row 2147483647: out of range [0, 512)
+0.09.460.840 E get_sampling_output_ith: invalid sampling row -2147483648: corrupt output buffer (j=2147483650, n_outputs=2)
+VIEW_CHECK outputs=363 hidden_rows=3308

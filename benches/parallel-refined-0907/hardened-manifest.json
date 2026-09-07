@@ -1,0 +1,47 @@
+{
+  "real-fixture.json": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json",
+    "bytes": 4999750,
+    "sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce"
+  },
+  "teacher-inputs.bin": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/teacher-inputs.bin",
+    "bytes": 1024,
+    "sha256": "dcc0d5d11913245491328e8a3c4108fecfd90cc67730af261f0b176096032c8c"
+  },
+  "logits-plain.bin": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/logits-plain.bin",
+    "bytes": 33771612,
+    "sha256": "b83a7bd0f5bf3dd992fdd8b9aec1f0ada429ed2f9812215c288b957bcef30ea7"
+  },
+  "logits-q8-refined.bin": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/logits-q8-refined.bin",
+    "bytes": 33771612,
+    "sha256": "5cf0bb65c4fa9f188faf3cd9f634d76ad6840d3d21028401e5afc2028000798c"
+  },
+  "logits-plain-repeat.bin": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/logits-plain-repeat.bin",
+    "bytes": 33771612,
+    "sha256": "b83a7bd0f5bf3dd992fdd8b9aec1f0ada429ed2f9812215c288b957bcef30ea7"
+  },
+  "final-bin/libllama.so.0.4.0": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/final-bin/libllama.so.0.4.0",
+    "bytes": 4807712,
+    "sha256": "abca3e9a8eacbaf97ae73fba74aff1f1106af81a0453bd9bb046324b17d51cf1"
+  },
+  "final-bin/libllama-common.so.0.4.0": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/final-bin/libllama-common.so.0.4.0",
+    "bytes": 5974392,
+    "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb"
+  },
+  "final-bin/libggml-cuda.so.0.23.0": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/final-bin/libggml-cuda.so.0.23.0",
+    "bytes": 133796048,
+    "sha256": "298107b47eb07783fb34105e68fdc1992ce926204030bf7fdc00a64a8cb31f21"
+  },
+  "final-bin/llama-server": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/final-bin/llama-server",
+    "bytes": 17888,
+    "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207"
+  }
+}

@@ -1,0 +1,506 @@
+[
+  {
+    "file": "cooperative-0-refined.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 168.98
+  },
+  {
+    "file": "cooperative-0-refined.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 324.07
+  },
+  {
+    "file": "cooperative-0-refined.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 645.16
+  },
+  {
+    "file": "cooperative-0-refined.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 810.49
+  },
+  {
+    "file": "cooperative-0-refined.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1618.27
+  },
+  {
+    "file": "cooperative-0-refined.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 3247.3
+  },
+  {
+    "file": "cooperative-1-coop.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 162.28
+  },
+  {
+    "file": "cooperative-1-coop.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 315.53
+  },
+  {
+    "file": "cooperative-1-coop.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 628.93
+  },
+  {
+    "file": "cooperative-1-coop.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 677.0
+  },
+  {
+    "file": "cooperative-1-coop.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1351.81
+  },
+  {
+    "file": "cooperative-1-coop.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 2714.8
+  },
+  {
+    "file": "cooperative-2-coop.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 161.55
+  },
+  {
+    "file": "cooperative-2-coop.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 315.73
+  },
+  {
+    "file": "cooperative-2-coop.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 627.61
+  },
+  {
+    "file": "cooperative-2-coop.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 677.26
+  },
+  {
+    "file": "cooperative-2-coop.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1353.09
+  },
+  {
+    "file": "cooperative-2-coop.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 2713.62
+  },
+  {
+    "file": "cooperative-3-refined.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 164.71
+  },
+  {
+    "file": "cooperative-3-refined.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 324.01
+  },
+  {
+    "file": "cooperative-3-refined.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 644.04
+  },
+  {
+    "file": "cooperative-3-refined.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 813.16
+  },
+  {
+    "file": "cooperative-3-refined.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1628.8
+  },
+  {
+    "file": "cooperative-3-refined.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 3276.54
+  },
+  {
+    "file": "micro-0-standard.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 79.34
+  },
+  {
+    "file": "micro-0-standard.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 85.77
+  },
+  {
+    "file": "micro-0-standard.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 97.34
+  },
+  {
+    "file": "micro-0-standard.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 964.36
+  },
+  {
+    "file": "micro-0-standard.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1098.55
+  },
+  {
+    "file": "micro-0-standard.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 1484.17
+  },
+  {
+    "file": "micro-1-old.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 165.68
+  },
+  {
+    "file": "micro-1-old.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 324.01
+  },
+  {
+    "file": "micro-1-old.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 645.27
+  },
+  {
+    "file": "micro-1-old.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 793.54
+  },
+  {
+    "file": "micro-1-old.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1588.27
+  },
+  {
+    "file": "micro-1-old.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 3187.22
+  },
+  {
+    "file": "micro-2-refined.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 164.77
+  },
+  {
+    "file": "micro-2-refined.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 324.09
+  },
+  {
+    "file": "micro-2-refined.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 645.24
+  },
+  {
+    "file": "micro-2-refined.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 819.15
+  },
+  {
+    "file": "micro-2-refined.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1638.92
+  },
+  {
+    "file": "micro-2-refined.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 3282.42
+  },
+  {
+    "file": "micro-3-refined.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 165.27
+  },
+  {
+    "file": "micro-3-refined.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 324.56
+  },
+  {
+    "file": "micro-3-refined.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 646.45
+  },
+  {
+    "file": "micro-3-refined.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 818.71
+  },
+  {
+    "file": "micro-3-refined.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1640.07
+  },
+  {
+    "file": "micro-3-refined.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 3289.25
+  },
+  {
+    "file": "micro-4-old.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 164.58
+  },
+  {
+    "file": "micro-4-old.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 324.24
+  },
+  {
+    "file": "micro-4-old.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 645.73
+  },
+  {
+    "file": "micro-4-old.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 794.84
+  },
+  {
+    "file": "micro-4-old.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1588.28
+  },
+  {
+    "file": "micro-4-old.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 3193.51
+  },
+  {
+    "file": "micro-5-standard.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 80.05
+  },
+  {
+    "file": "micro-5-standard.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 87.55
+  },
+  {
+    "file": "micro-5-standard.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 97.74
+  },
+  {
+    "file": "micro-5-standard.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 966.49
+  },
+  {
+    "file": "micro-5-standard.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1102.11
+  },
+  {
+    "file": "micro-5-standard.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 1494.46
+  },
+  {
+    "file": "pairwise-perf-16.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 159.89
+  },
+  {
+    "file": "pairwise-perf-16.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 290.83
+  },
+  {
+    "file": "pairwise-perf-16.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 1032.05
+  },
+  {
+    "file": "pairwise-perf-16.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 670.68
+  },
+  {
+    "file": "pairwise-perf-16.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1178.98
+  },
+  {
+    "file": "pairwise-perf-16.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 2359.75
+  },
+  {
+    "file": "pairwise-perf-4.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 164.28
+  },
+  {
+    "file": "pairwise-perf-4.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 315.2
+  },
+  {
+    "file": "pairwise-perf-4.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 627.62
+  },
+  {
+    "file": "pairwise-perf-4.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 666.87
+  },
+  {
+    "file": "pairwise-perf-4.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1329.6
+  },
+  {
+    "file": "pairwise-perf-4.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 2669.56
+  },
+  {
+    "file": "pairwise-perf-8.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 163.86
+  },
+  {
+    "file": "pairwise-perf-8.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 290.27
+  },
+  {
+    "file": "pairwise-perf-8.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 578.33
+  },
+  {
+    "file": "pairwise-perf-8.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 670.1
+  },
+  {
+    "file": "pairwise-perf-8.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1180.06
+  },
+  {
+    "file": "pairwise-perf-8.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 2356.84
+  },
+  {
+    "file": "pv-perf.txt",
+    "kv": 4096,
+    "queries": 4,
+    "us_per_operator": 161.56
+  },
+  {
+    "file": "pv-perf.txt",
+    "kv": 4096,
+    "queries": 8,
+    "us_per_operator": 318.21
+  },
+  {
+    "file": "pv-perf.txt",
+    "kv": 4096,
+    "queries": 16,
+    "us_per_operator": 633.13
+  },
+  {
+    "file": "pv-perf.txt",
+    "kv": 100096,
+    "queries": 4,
+    "us_per_operator": 714.85
+  },
+  {
+    "file": "pv-perf.txt",
+    "kv": 100096,
+    "queries": 8,
+    "us_per_operator": 1426.19
+  },
+  {
+    "file": "pv-perf.txt",
+    "kv": 100096,
+    "queries": 16,
+    "us_per_operator": 2859.87
+  }
+]
