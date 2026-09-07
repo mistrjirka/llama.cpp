@@ -79,3 +79,7 @@ Use 1/2/4 active agents; actual 12k, 100k and near-350k histories; representativ
 - FR-Spec: https://arxiv.org/abs/2502.14856
 
 The script/fixture provenance and immutable binary reference are in `manifest.json`. Raw response token arrays and diagnostic logs remain in the persistent sandbox; summaries, stripped request timings, diagnostic source and reproducer scripts are committed here. No new production performance gain is claimed.
+
+## Implemented follow-up
+
+The [K/V-only refresh implementation and measurements](../mtp-kv-refresh-0907/REPORT.md) now provide exact-cache checks on Ornith and Qwen, raw snapshot/output parity, isolated zero-budget fixes and Nsight proof of eliminated refresh kernels. The full regression and later suspend/windowing proposals remain distinct.

@@ -1,0 +1,74 @@
+[
+  {
+    "slot": 0,
+    "wall_s": 5.388276249985211,
+    "timings": {
+      "cache_n": 2000,
+      "prompt_n": 26,
+      "prompt_ms": 1633.45,
+      "prompt_per_token_ms": 62.825,
+      "prompt_per_second": 15.917230401910068,
+      "predicted_n": 48,
+      "predicted_ms": 3702.376,
+      "predicted_per_token_ms": 78.77395744680851,
+      "predicted_per_second": 12.694550742550188,
+      "draft_n": 41,
+      "draft_n_accepted": 33
+    },
+    "sha": "f16aa4a40ada41f248a1c34d50f7f37d39b46435459d55f4c0f71fc4d4c73672"
+  },
+  {
+    "slot": 1,
+    "wall_s": 5.720988393004518,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 2026,
+      "prompt_ms": 4022.697,
+      "prompt_per_token_ms": 1.9855365251727544,
+      "prompt_per_second": 503.6422082001204,
+      "predicted_n": 48,
+      "predicted_ms": 1613.85,
+      "predicted_per_token_ms": 34.33723404255319,
+      "predicted_per_second": 29.122904854850205,
+      "draft_n": 39,
+      "draft_n_accepted": 34
+    },
+    "sha": "f16aa4a40ada41f248a1c34d50f7f37d39b46435459d55f4c0f71fc4d4c73672"
+  },
+  {
+    "slot": 2,
+    "wall_s": 6.213562369986903,
+    "timings": {
+      "cache_n": 2000,
+      "prompt_n": 26,
+      "prompt_ms": 1353.172,
+      "prompt_per_token_ms": 52.04507692307693,
+      "prompt_per_second": 19.21411320955503,
+      "predicted_n": 48,
+      "predicted_ms": 2300.957,
+      "predicted_per_token_ms": 48.95653191489362,
+      "predicted_per_second": 20.426283498561688,
+      "draft_n": 51,
+      "draft_n_accepted": 29
+    },
+    "sha": "2fc8b063a2afcf92afba89da3222c2e26555e2a90f15f830bfb6f7b3137724c1"
+  },
+  {
+    "slot": 3,
+    "wall_s": 6.216087822976988,
+    "timings": {
+      "cache_n": 2000,
+      "prompt_n": 26,
+      "prompt_ms": 1320.718,
+      "prompt_per_token_ms": 50.796846153846154,
+      "prompt_per_second": 19.686261563785756,
+      "predicted_n": 48,
+      "predicted_ms": 2300.995,
+      "predicted_per_token_ms": 48.95734042553191,
+      "predicted_per_second": 20.425946166766987,
+      "draft_n": 51,
+      "draft_n_accepted": 29
+    },
+    "sha": "66d244c07fb5ed70ff2958a456b8ce11398318cee90eaa49384dae536af57437"
+  }
+]

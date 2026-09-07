@@ -1,0 +1,22 @@
+{
+  "cache-only": {
+    "output_tokens_identical": true,
+    "acceptance_counters_identical": true,
+    "snapshot_components_identical": {
+      "": true,
+      ".draft": true,
+      ".spec": true
+    },
+    "restored_continuation_identical": true
+  },
+  "disabled-control": {
+    "output_tokens_identical": true,
+    "acceptance_counters_identical": true,
+    "snapshot_components_identical": {
+      "": true,
+      ".draft": true,
+      ".spec": true
+    },
+    "restored_continuation_identical": true
+  }
+}

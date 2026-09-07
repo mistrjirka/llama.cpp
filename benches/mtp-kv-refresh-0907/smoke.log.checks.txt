@@ -1,0 +1,11 @@
+KV_CHECK PASS tokens=34 seqs=1 checked=1 bytes=111237856
+KV_CHECK PASS tokens=119 seqs=4 checked=2 bytes=556208184
+KV_CHECK PASS tokens=16 seqs=4 checked=3 bytes=1001196304
+KV_CHECK PASS tokens=12 seqs=4 checked=4 bytes=1446312304
+KV_CHECK PASS tokens=7 seqs=2 checked=5 bytes=1668874752
+KV_CHECK PASS tokens=3 seqs=1 checked=6 bytes=1780158200
+KV_CHECK PASS tokens=1 seqs=1 checked=7 bytes=1891436088
+KV_CHECK PASS tokens=7 seqs=4 checked=8 bytes=2336566544
+KV_CHECK PASS tokens=14 seqs=4 checked=9 bytes=2781757048
+KV_CHECK PASS tokens=5 seqs=2 checked=10 bytes=3004349520
+KV_CHECK TOTAL calls=23 checks=10 bytes=3004349520

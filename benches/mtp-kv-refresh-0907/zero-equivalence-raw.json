@@ -1,0 +1,182 @@
+[
+  {
+    "arm": "baseline",
+    "requests": [
+      {
+        "slot": 0,
+        "wall_s": 2.349718582991045,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 38,
+          "prompt_ms": 300.359,
+          "prompt_per_token_ms": 7.904184210526315,
+          "prompt_per_second": 126.51527006016136,
+          "predicted_n": 64,
+          "predicted_ms": 1956.81,
+          "predicted_per_token_ms": 31.06047619047619,
+          "predicted_per_second": 32.19525656553268
+        },
+        "sha": "0e241de94b0d1f28eaa2114dc969bada7d453af9f0a5152b60d541b02deba9ee"
+      },
+      {
+        "slot": 1,
+        "wall_s": 2.2682200350100175,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 42,
+          "prompt_ms": 192.97,
+          "prompt_per_token_ms": 4.5945238095238095,
+          "prompt_per_second": 217.65041198113698,
+          "predicted_n": 64,
+          "predicted_ms": 1982.818,
+          "predicted_per_token_ms": 31.473301587301588,
+          "predicted_per_second": 31.772961512352623
+        },
+        "sha": "7434a8221c14977e717ec4853f3271f7d18ac033ea6380c7f22747ab59173e8b"
+      },
+      {
+        "slot": 2,
+        "wall_s": 2.25468308996642,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 44,
+          "prompt_ms": 194.961,
+          "prompt_per_token_ms": 4.4309318181818185,
+          "prompt_per_second": 225.68616287360032,
+          "predicted_n": 64,
+          "predicted_ms": 1974.031,
+          "predicted_per_token_ms": 31.333825396825397,
+          "predicted_per_second": 31.914392428487698
+        },
+        "sha": "93f610046ae2002d33621ff3582869db9be09aa2d759200dff523aab62799d30"
+      },
+      {
+        "slot": 3,
+        "wall_s": 2.2550925770192407,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 41,
+          "prompt_ms": 188.82,
+          "prompt_per_token_ms": 4.605365853658537,
+          "prompt_per_second": 217.13801504077958,
+          "predicted_n": 64,
+          "predicted_ms": 1986.99,
+          "predicted_per_token_ms": 31.53952380952381,
+          "predicted_per_second": 31.70624915072547
+        },
+        "sha": "ebe29326d68f2b25405c3c4f18ff9c233b8a35f8dd6b314a0993e133f47593c2"
+      }
+    ],
+    "snapshot_sha256": {
+      "": "834f8a5d16ceab0e90d0f0de7a3f7005d99c45f52db7fc6924af5db49444b312",
+      ".draft": "a2a132377517a4dd9cb13fbb6fae7b3776752ef8059a6d057d6e12f6c535a904",
+      ".spec": "b6bb5aba60b3b7792d7bb33352ab76bed01edbe3bf4e88e443c03c46f11027a8"
+    },
+    "restored_continuation": {
+      "slot": 0,
+      "wall_s": 1.0953614689642563,
+      "timings": {
+        "cache_n": 100101,
+        "prompt_n": 1,
+        "prompt_ms": 69.226,
+        "prompt_per_token_ms": 69.226,
+        "prompt_per_second": 14.44543957472626,
+        "predicted_n": 32,
+        "predicted_ms": 946.993,
+        "predicted_per_token_ms": 30.548161290322582,
+        "predicted_per_second": 32.735194452334916
+      },
+      "sha": "4158cf1c6dd515155a07d3cfd0f1e5b77b901fbc65b30f0edb7f7a12571dd347"
+    }
+  },
+  {
+    "arm": "final",
+    "requests": [
+      {
+        "slot": 0,
+        "wall_s": 2.2503947649965994,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 38,
+          "prompt_ms": 299.797,
+          "prompt_per_token_ms": 7.889394736842106,
+          "prompt_per_second": 126.75243581490142,
+          "predicted_n": 64,
+          "predicted_ms": 1870.286,
+          "predicted_per_token_ms": 29.687079365079367,
+          "predicted_per_second": 33.684687796411886
+        },
+        "sha": "0e241de94b0d1f28eaa2114dc969bada7d453af9f0a5152b60d541b02deba9ee"
+      },
+      {
+        "slot": 1,
+        "wall_s": 2.1283384379930794,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 42,
+          "prompt_ms": 191.566,
+          "prompt_per_token_ms": 4.5610952380952385,
+          "prompt_per_second": 219.2455863775409,
+          "predicted_n": 64,
+          "predicted_ms": 1840.057,
+          "predicted_per_token_ms": 29.20725396825397,
+          "predicted_per_second": 34.238069798924705
+        },
+        "sha": "7434a8221c14977e717ec4853f3271f7d18ac033ea6380c7f22747ab59173e8b"
+      },
+      {
+        "slot": 2,
+        "wall_s": 2.118480945995543,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 44,
+          "prompt_ms": 194.381,
+          "prompt_per_token_ms": 4.41775,
+          "prompt_per_second": 226.35957218040858,
+          "predicted_n": 64,
+          "predicted_ms": 1842.228,
+          "predicted_per_token_ms": 29.241714285714288,
+          "predicted_per_second": 34.19772145467336
+        },
+        "sha": "93f610046ae2002d33621ff3582869db9be09aa2d759200dff523aab62799d30"
+      },
+      {
+        "slot": 3,
+        "wall_s": 2.1252300190390088,
+        "timings": {
+          "cache_n": 100000,
+          "prompt_n": 41,
+          "prompt_ms": 191.175,
+          "prompt_per_token_ms": 4.662804878048781,
+          "prompt_per_second": 214.46318817837061,
+          "predicted_n": 64,
+          "predicted_ms": 1837.255,
+          "predicted_per_token_ms": 29.16277777777778,
+          "predicted_per_second": 34.2902863238908
+        },
+        "sha": "ebe29326d68f2b25405c3c4f18ff9c233b8a35f8dd6b314a0993e133f47593c2"
+      }
+    ],
+    "snapshot_sha256": {
+      "": "834f8a5d16ceab0e90d0f0de7a3f7005d99c45f52db7fc6924af5db49444b312",
+      ".draft": "a2a132377517a4dd9cb13fbb6fae7b3776752ef8059a6d057d6e12f6c535a904",
+      ".spec": "b6bb5aba60b3b7792d7bb33352ab76bed01edbe3bf4e88e443c03c46f11027a8"
+    },
+    "restored_continuation": {
+      "slot": 0,
+      "wall_s": 1.0326455460162833,
+      "timings": {
+        "cache_n": 100101,
+        "prompt_n": 1,
+        "prompt_ms": 68.047,
+        "prompt_per_token_ms": 68.047,
+        "prompt_per_second": 14.695725013593547,
+        "predicted_n": 32,
+        "predicted_ms": 905.142,
+        "predicted_per_token_ms": 29.198129032258066,
+        "predicted_per_second": 34.24876980628454
+      },
+      "sha": "4158cf1c6dd515155a07d3cfd0f1e5b77b901fbc65b30f0edb7f7a12571dd347"
+    }
+  }
+]

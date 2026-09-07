@@ -1,0 +1,144 @@
+{
+  "base_revision": "bd8d1ce0efaaa4067eca170c81284b93f2d35762",
+  "branch": "perf/mtp-kv-refresh-0907",
+  "hardware": "NVIDIA GeForce RTX 2080 Ti, 22528 MiB, 250.00 W\nTesla V100-SXM2-32GB, 32768 MiB, 200.00 W\n",
+  "artifacts": {
+    "baseline-bin/libggml-cuda.so.0.23.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/baseline-bin/libggml-cuda.so.0.23.0",
+      "bytes": 133796048,
+      "sha256": "298107b47eb07783fb34105e68fdc1992ce926204030bf7fdc00a64a8cb31f21"
+    },
+    "baseline-bin/libllama.so.0.4.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/baseline-bin/libllama.so.0.4.0",
+      "bytes": 4807712,
+      "sha256": "abca3e9a8eacbaf97ae73fba74aff1f1106af81a0453bd9bb046324b17d51cf1"
+    },
+    "baseline-bin/libllama-common.so.0.4.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/baseline-bin/libllama-common.so.0.4.0",
+      "bytes": 5974392,
+      "sha256": "84d57380cc96d35a3be1c1ab2efbe79aae74a27836aed997a2db39ac783c08bb"
+    },
+    "baseline-bin/libllama-server-impl.so": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/baseline-bin/libllama-server-impl.so",
+      "bytes": 7049632,
+      "sha256": "0c9f9405fc5ac1c6b67ab9379be9913770896dde9d8833a5be39c542b245d3b2"
+    },
+    "baseline-bin/llama-server": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/baseline-bin/llama-server",
+      "bytes": 17888,
+      "sha256": "7c52249afdc6dde494181f4a6b84a9039569a010d3f4abbeec6d4e66f6785207"
+    },
+    "candidate-bin/libggml-cuda.so.0.23.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/candidate-bin/libggml-cuda.so.0.23.0",
+      "bytes": 133787856,
+      "sha256": "2007fb6e743a504d891528ee55ee43011bcd506ed5e31ab464c77b8d72a96c73"
+    },
+    "candidate-bin/libllama.so.0.4.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/candidate-bin/libllama.so.0.4.0",
+      "bytes": 4811968,
+      "sha256": "24e8fa6faae3692d3744e4b4e5482d8242a03356f0775ccf440aa091c2abe20f"
+    },
+    "candidate-bin/libllama-common.so.0.4.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/candidate-bin/libllama-common.so.0.4.0",
+      "bytes": 5978504,
+      "sha256": "7196d283f9b30a50b0edd714eafaeb91a6b5d7bf8e8a484e566d88adef7a335b"
+    },
+    "candidate-bin/libllama-server-impl.so": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/candidate-bin/libllama-server-impl.so",
+      "bytes": 7049632,
+      "sha256": "3a6d8e770ab765dba69f8a9fd4aa06af08d4002a3991a700809ac067ce237d1b"
+    },
+    "candidate-bin/llama-server": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/candidate-bin/llama-server",
+      "bytes": 17888,
+      "sha256": "605b6f61235356dea1fce19f69b773da4baff6a2292c5c4f4844e27b8c44aa1a"
+    },
+    "final-bin/libggml-cuda.so.0.23.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/final-bin/libggml-cuda.so.0.23.0",
+      "bytes": 133787856,
+      "sha256": "2007fb6e743a504d891528ee55ee43011bcd506ed5e31ab464c77b8d72a96c73"
+    },
+    "final-bin/libllama.so.0.4.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/final-bin/libllama.so.0.4.0",
+      "bytes": 4811968,
+      "sha256": "24e8fa6faae3692d3744e4b4e5482d8242a03356f0775ccf440aa091c2abe20f"
+    },
+    "final-bin/libllama-common.so.0.4.0": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/final-bin/libllama-common.so.0.4.0",
+      "bytes": 5978504,
+      "sha256": "7196d283f9b30a50b0edd714eafaeb91a6b5d7bf8e8a484e566d88adef7a335b"
+    },
+    "final-bin/libllama-server-impl.so": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/final-bin/libllama-server-impl.so",
+      "bytes": 7049632,
+      "sha256": "cd725a2c124da6d3fd319e98b6fcf6a13812228272a24849a4ea54463911e838"
+    },
+    "final-bin/llama-server": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/final-bin/llama-server",
+      "bytes": 17888,
+      "sha256": "605b6f61235356dea1fce19f69b773da4baff6a2292c5c4f4844e27b8c44aa1a"
+    },
+    "refresh.nsys-rep": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/refresh.nsys-rep",
+      "bytes": 12002369,
+      "sha256": "755f4aaeaca2c04ca471ce66bbcd0ac515aa8a07035da5cb277f8df81b2c4336"
+    },
+    "refresh.sqlite": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/refresh.sqlite",
+      "bytes": 31502336,
+      "sha256": "81a37cfbb6787afd74397dcea23285ab90bd537424b6aa73de198a99128375a4"
+    },
+    "candidate.patch": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/candidate.patch",
+      "bytes": 13561,
+      "sha256": "809c67dfa979b80cb719393ca8fff1b9a98c85b35fe51b9c60fb8cf1f3f3557f"
+    },
+    "final.patch": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/final.patch",
+      "bytes": 14240,
+      "sha256": "f5a2aa4738ebe0055c725ed95e696909ee3e4287679784cc074ea40d48d98330"
+    },
+    "four-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/four-raw.json",
+      "bytes": 375120,
+      "sha256": "47f0dc394d4317c09fd5fe66ed88629a730e1df6f66f48b6112ada717d6d363e"
+    },
+    "one-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/one-raw.json",
+      "bytes": 56498,
+      "sha256": "3625e3da9a376b7a64b9c978828c09feb8c24d05564782b9642f719d3d7dac5d"
+    },
+    "zero-guard-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/zero-guard-raw.json",
+      "bytes": 220543,
+      "sha256": "41bcbb17cd90e6dff5fa2493615eefe8def8f73049ea6d3a76d38ee173e0bfa7"
+    },
+    "equivalence-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/equivalence-raw.json",
+      "bytes": 23889,
+      "sha256": "20431c084f29aba8785c3ffdfe7df52063cb99f09c7a3701c61e6392c6a2e898"
+    },
+    "profile-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-kv-refresh-0907/profile-summary.json",
+      "bytes": 22547,
+      "sha256": "89e059449cab9712139b1bd55f6b7fed4505c5bb87b656f8ed78c3d44b28c401"
+    },
+    "source-fixture": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json",
+      "bytes": 4999750,
+      "sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce"
+    },
+    "original-helper": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/parallel-research-0907/sweep.py",
+      "bytes": 6674,
+      "sha256": "ceca6ceb8e4de4b386e91d059579db9d97d0f5f6575c7ad3268827e4496c6ace"
+    }
+  },
+  "stage_boundaries": {
+    "baseline-bin": "pre-change research build",
+    "candidate-bin": "K/V-only graph and draft-loop zero-limit fix; all main timings/profiling",
+    "final-bin": "adds only server zero-budget preparation guard; zero-guard and final equivalence comparisons"
+  },
+  "production_changed": false,
+  "implementation_revision": "32dabfcb497a6c8342138cb1e76c556689e437bb"
+}
