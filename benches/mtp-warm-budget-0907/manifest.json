@@ -1,0 +1,17 @@
+{
+  "base": "5e5ee04407329c41f96eb610037031977f09c7e1",
+  "fixture": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json",
+  "fixture_sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce",
+  "results_dir": "/workspace/oai-qwen38-pp-lab/results/mtp-warm-budget-0907",
+  "source_diff_sha256": "a7ee06a854ad882630f981d94970f7d99d9b8a3e34ec556f8b2c723d643d6801",
+  "validation_raw": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/mtp-warm-budget-0907/validation-raw.json",
+    "sha256": "7d7168e10f8aa67f9f5a02688713543c78d79c5d5054a9b4d828080d9ff8c6aa"
+  },
+  "bench_raw": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/mtp-warm-budget-0907/bench-raw.json",
+    "sha256": "f04c467fcfaa0a040f794cc694cf4b73c053433c4f5501bf34b104879e9194ed"
+  },
+  "source_commit": "1c48a3fbcfc28ab941395d0dfb46b2f23c505ef7",
+  "source_patch_sha256": "a7ee06a854ad882630f981d94970f7d99d9b8a3e34ec556f8b2c723d643d6801"
+}
