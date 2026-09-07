@@ -1,0 +1,1365 @@
+[
+  {
+    "label": "upstream-a",
+    "mode": "upstream",
+    "binary": "/workspace/upstream-fair-0907/build/bin/llama-server",
+    "argv": [
+      "/workspace/upstream-fair-0907/build/bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--mmproj",
+      "/models/local-llm-setup/ornith15/mmproj-Ornith-1.5-35B-BF16.gguf",
+      "--no-mmproj-offload",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "32851",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "2048",
+      "--ubatch-size",
+      "256",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/workspace/oai-qwen38-pp-lab/results/readme-current-0908",
+      "--no-warmup",
+      "--perf",
+      "--slots",
+      "--spec-type",
+      "draft-mtp",
+      "--spec-draft-model",
+      "/workspace/models/Ornith-1.5-35B-A3B/shisa-mtp/mtp-shisa-ornith15-all-Q5_0.gguf",
+      "--spec-draft-device",
+      "CUDA1",
+      "--spec-draft-ngl",
+      "all",
+      "--spec-draft-type-k",
+      "q8_0",
+      "--spec-draft-type-v",
+      "q8_0",
+      "--spec-draft-n-max",
+      "3"
+    ],
+    "rows": [
+      {
+        "wall_s": 11.087336197000695,
+        "aggregate_pp_tg": 61.06065406252762,
+        "aggregate_generated": 46.17881075334437,
+        "mean_agent_tg": 14.463736378364462,
+        "mean_agent_pp": 31.47566850745221,
+        "acceptance": [
+          [
+            82,
+            133
+          ],
+          [
+            78,
+            144
+          ],
+          [
+            76,
+            148
+          ],
+          [
+            83,
+            130
+          ]
+        ],
+        "sha": [
+          "a24abb4dc68233b13c662d1e7e3f64921fa4c7e460954d3c1ed79f44820f6f10",
+          "299eb1bf2d8bc495f13b9a032937cde85483a5ad734c1876a761e542c2640dfe",
+          "4030614451d5a60e896a764800d39bdcb286c2e422e258976432fafa61e05c99",
+          "771ea094c7590ff00d0ecde91015c8d1073d029ce13d09487b96d0bd0eb63c33"
+        ],
+        "rep": 0,
+        "warmup": true
+      },
+      {
+        "wall_s": 10.276397982001072,
+        "aggregate_pp_tg": 65.87911456774576,
+        "aggregate_generated": 49.822904961131215,
+        "mean_agent_tg": 15.398346353907373,
+        "mean_agent_pp": 31.43234464372654,
+        "acceptance": [
+          [
+            85,
+            123
+          ],
+          [
+            81,
+            138
+          ],
+          [
+            84,
+            129
+          ],
+          [
+            84,
+            126
+          ]
+        ],
+        "sha": [
+          "7ff0f614bd9a2a9ab8a504e8233e1e4e7fdf3c3f7d0090252860582ffb7edba4",
+          "ada8bad6337ac6d9d50dbc6ef45d1205fe01e70e9066231105c3875acb81a917",
+          "a91f90aed2e6b9cd04c03007e893476b732a99c5526667f4a2d2a5d8f60a731d",
+          "2eb7fd53480b43404205cf70d4cd91c7a3cbc1d88b786dfc222cfba9e32e6695"
+        ],
+        "rep": 1,
+        "warmup": false
+      },
+      {
+        "wall_s": 10.420115937000446,
+        "aggregate_pp_tg": 64.97048632597868,
+        "aggregate_generated": 49.13572968818476,
+        "mean_agent_tg": 15.031340003090156,
+        "mean_agent_pp": 30.615324165653547,
+        "acceptance": [
+          [
+            81,
+            136
+          ],
+          [
+            84,
+            126
+          ],
+          [
+            82,
+            133
+          ],
+          [
+            85,
+            125
+          ]
+        ],
+        "sha": [
+          "a24abb4dc68233b13c662d1e7e3f64921fa4c7e460954d3c1ed79f44820f6f10",
+          "62d43c8d79ad5bf983c381879141fee911f93c909172228055e69650c37cefe4",
+          "903fc1bef20380cdda543dc2e839e991dd8209a4445f97137cba43fcb6278a33",
+          "e02c79afa2364c0e3a67e0411119ce86b9bdadf6a6b9958d1c70cce01a812ae4"
+        ],
+        "rep": 2,
+        "warmup": false
+      },
+      {
+        "wall_s": 10.396836637999513,
+        "aggregate_pp_tg": 65.11596013018278,
+        "aggregate_generated": 49.24574828161535,
+        "mean_agent_tg": 15.064672596954106,
+        "mean_agent_pp": 30.329888763517502,
+        "acceptance": [
+          [
+            82,
+            133
+          ],
+          [
+            82,
+            134
+          ],
+          [
+            82,
+            133
+          ],
+          [
+            85,
+            124
+          ]
+        ],
+        "sha": [
+          "a24abb4dc68233b13c662d1e7e3f64921fa4c7e460954d3c1ed79f44820f6f10",
+          "c95ea9b4d5c4736ba4e96b70942511381d6fdab2b51aff73c3db360b08c04221",
+          "d2369938fbe6d61313765005c92484e2c820fc8bf4bdbedd2f345744014739c0",
+          "7966593c9e096b8f4622440939e5d3f37fb758c2c570b652d8c8df4f3d699321"
+        ],
+        "rep": 3,
+        "warmup": false
+      },
+      {
+        "wall_s": 10.756764290999854,
+        "aggregate_pp_tg": 62.937141847241506,
+        "aggregate_generated": 47.597956611207756,
+        "mean_agent_tg": 14.802674381849327,
+        "mean_agent_pp": 33.27282145405386,
+        "acceptance": [
+          [
+            81,
+            135
+          ],
+          [
+            78,
+            147
+          ],
+          [
+            78,
+            145
+          ],
+          [
+            87,
+            119
+          ]
+        ],
+        "sha": [
+          "115e49d89cf6ff23ecb74a94aa7541ceb97c51b35225b8e2592f3c6307237f43",
+          "97cf6845371ce2a415c3cc8655b0790ed228771c01b39348a2ffffa6ad3ec7ae",
+          "cb22695bedf779ab74377087e9673d22821bd7f244797999a4aa3d1f3167caf7",
+          "e02c79afa2364c0e3a67e0411119ce86b9bdadf6a6b9958d1c70cce01a812ae4"
+        ],
+        "rep": 4,
+        "warmup": false
+      }
+    ],
+    "n_retained": 4,
+    "wall_s": {
+      "mean": 10.462528712000221,
+      "min": 10.276397982001072,
+      "max": 10.756764290999854
+    },
+    "aggregate_pp_tg": {
+      "mean": 64.72567571778718,
+      "min": 62.937141847241506,
+      "max": 65.87911456774576
+    },
+    "aggregate_generated": {
+      "mean": 48.95058488553477,
+      "min": 47.597956611207756,
+      "max": 49.822904961131215
+    },
+    "mean_agent_tg": {
+      "mean": 15.07425833395024,
+      "min": 14.802674381849327,
+      "max": 15.398346353907373
+    },
+    "mean_agent_pp": {
+      "mean": 31.412594756737864,
+      "min": 30.329888763517502,
+      "max": 33.27282145405386
+    }
+  },
+  {
+    "label": "fork-strict-a",
+    "mode": "strict-fork",
+    "binary": "/workspace/llama-v100-sync-0907/build-sm70-75/bin/llama-server",
+    "argv": [
+      "/workspace/llama-v100-sync-0907/build-sm70-75/bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--mmproj",
+      "/models/local-llm-setup/ornith15/mmproj-Ornith-1.5-35B-BF16.gguf",
+      "--no-mmproj-offload",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "32851",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "2048",
+      "--ubatch-size",
+      "256",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/workspace/oai-qwen38-pp-lab/results/readme-current-0908",
+      "--no-warmup",
+      "--perf",
+      "--slots",
+      "--spec-type",
+      "draft-mtp",
+      "--spec-draft-model",
+      "/workspace/models/Ornith-1.5-35B-A3B/shisa-mtp/mtp-shisa-ornith15-all-Q5_0.gguf",
+      "--spec-draft-device",
+      "CUDA1",
+      "--spec-draft-ngl",
+      "all",
+      "--spec-draft-type-k",
+      "q8_0",
+      "--spec-draft-type-v",
+      "q8_0",
+      "--spec-draft-n-max",
+      "3",
+      "--no-slot-fork-prefix",
+      "--no-spec-mtp-defer-prompt",
+      "--spec-draft-ubatch",
+      "0",
+      "--pipeline-copies",
+      "0"
+    ],
+    "rows": [
+      {
+        "wall_s": 8.06703352400109,
+        "aggregate_pp_tg": 83.92180322367389,
+        "aggregate_generated": 63.468187962364894,
+        "mean_agent_tg": 19.315492864052253,
+        "mean_agent_pp": 45.79214443355389,
+        "acceptance": [
+          [
+            80,
+            136
+          ],
+          [
+            80,
+            138
+          ],
+          [
+            77,
+            147
+          ],
+          [
+            83,
+            129
+          ]
+        ],
+        "sha": [
+          "f3af82965f59928df998d51ce847237e10860c8812d41631ead85ebe395b6906",
+          "d371a09eb50df2ec2402c1faa5b0e28f978c81140494d3925156628dcb98a8a1",
+          "2fc6140c5c3f123396da4823584d47fcab67051aef05af1e74f97563d6461b08",
+          "6464abab2e973610841a8df59f779780481e0e270bb0f56c91933214d26db3d9"
+        ],
+        "rep": 0,
+        "warmup": true
+      },
+      {
+        "wall_s": 7.664482191001298,
+        "aggregate_pp_tg": 88.32951569707488,
+        "aggregate_generated": 66.80164259512901,
+        "mean_agent_tg": 20.649347287222536,
+        "mean_agent_pp": 44.59555193956926,
+        "acceptance": [
+          [
+            79,
+            143
+          ],
+          [
+            80,
+            139
+          ],
+          [
+            82,
+            135
+          ],
+          [
+            87,
+            119
+          ]
+        ],
+        "sha": [
+          "5cf1247d26bcf7fbbeb4d90793e8ff3eece036189c79daeb213d9f5d260ca86d",
+          "ac2f3d1e3ffcf934ec5bd8d515d720189f92436d040eb19838f2e338fc69ce75",
+          "13cc1e9a1dd925d7d4879a121ff50aacc7f1db3cae94bd41dc3a51c1a22258bd",
+          "d390c548b897ae3349fade4414756810f0dc740bf3f2116e8a7a38db70daf9c7"
+        ],
+        "rep": 1,
+        "warmup": false
+      },
+      {
+        "wall_s": 7.787061179999,
+        "aggregate_pp_tg": 86.93908836094272,
+        "aggregate_generated": 65.75009341329789,
+        "mean_agent_tg": 19.710028374150422,
+        "mean_agent_pp": 47.96426067965671,
+        "acceptance": [
+          [
+            80,
+            136
+          ],
+          [
+            80,
+            138
+          ],
+          [
+            77,
+            147
+          ],
+          [
+            83,
+            129
+          ]
+        ],
+        "sha": [
+          "f3af82965f59928df998d51ce847237e10860c8812d41631ead85ebe395b6906",
+          "d371a09eb50df2ec2402c1faa5b0e28f978c81140494d3925156628dcb98a8a1",
+          "2fc6140c5c3f123396da4823584d47fcab67051aef05af1e74f97563d6461b08",
+          "6464abab2e973610841a8df59f779780481e0e270bb0f56c91933214d26db3d9"
+        ],
+        "rep": 2,
+        "warmup": false
+      },
+      {
+        "wall_s": 7.8571808929991676,
+        "aggregate_pp_tg": 86.1632192537675,
+        "aggregate_generated": 65.16332091274587,
+        "mean_agent_tg": 19.569045337806482,
+        "mean_agent_pp": 48.27108714001931,
+        "acceptance": [
+          [
+            80,
+            136
+          ],
+          [
+            80,
+            138
+          ],
+          [
+            77,
+            147
+          ],
+          [
+            83,
+            129
+          ]
+        ],
+        "sha": [
+          "f3af82965f59928df998d51ce847237e10860c8812d41631ead85ebe395b6906",
+          "d371a09eb50df2ec2402c1faa5b0e28f978c81140494d3925156628dcb98a8a1",
+          "2fc6140c5c3f123396da4823584d47fcab67051aef05af1e74f97563d6461b08",
+          "6464abab2e973610841a8df59f779780481e0e270bb0f56c91933214d26db3d9"
+        ],
+        "rep": 3,
+        "warmup": false
+      },
+      {
+        "wall_s": 7.902433301000201,
+        "aggregate_pp_tg": 85.66981513331001,
+        "aggregate_generated": 64.79017038146931,
+        "mean_agent_tg": 19.43637727335637,
+        "mean_agent_pp": 47.99319695535158,
+        "acceptance": [
+          [
+            80,
+            136
+          ],
+          [
+            80,
+            138
+          ],
+          [
+            77,
+            147
+          ],
+          [
+            83,
+            129
+          ]
+        ],
+        "sha": [
+          "f3af82965f59928df998d51ce847237e10860c8812d41631ead85ebe395b6906",
+          "d371a09eb50df2ec2402c1faa5b0e28f978c81140494d3925156628dcb98a8a1",
+          "2fc6140c5c3f123396da4823584d47fcab67051aef05af1e74f97563d6461b08",
+          "6464abab2e973610841a8df59f779780481e0e270bb0f56c91933214d26db3d9"
+        ],
+        "rep": 4,
+        "warmup": false
+      }
+    ],
+    "n_retained": 4,
+    "wall_s": {
+      "mean": 7.802789391249917,
+      "min": 7.664482191001298,
+      "max": 7.902433301000201
+    },
+    "aggregate_pp_tg": {
+      "mean": 86.77540961127377,
+      "min": 85.66981513331001,
+      "max": 88.32951569707488
+    },
+    "aggregate_generated": {
+      "mean": 65.62630682566052,
+      "min": 64.79017038146931,
+      "max": 66.80164259512901
+    },
+    "mean_agent_tg": {
+      "mean": 19.841199568133952,
+      "min": 19.43637727335637,
+      "max": 20.649347287222536
+    },
+    "mean_agent_pp": {
+      "mean": 47.206024178649216,
+      "min": 44.59555193956926,
+      "max": 48.27108714001931
+    }
+  },
+  {
+    "label": "fork-strict-b",
+    "mode": "strict-fork",
+    "binary": "/workspace/llama-v100-sync-0907/build-sm70-75/bin/llama-server",
+    "argv": [
+      "/workspace/llama-v100-sync-0907/build-sm70-75/bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--mmproj",
+      "/models/local-llm-setup/ornith15/mmproj-Ornith-1.5-35B-BF16.gguf",
+      "--no-mmproj-offload",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "32851",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "2048",
+      "--ubatch-size",
+      "256",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/workspace/oai-qwen38-pp-lab/results/readme-current-0908",
+      "--no-warmup",
+      "--perf",
+      "--slots",
+      "--spec-type",
+      "draft-mtp",
+      "--spec-draft-model",
+      "/workspace/models/Ornith-1.5-35B-A3B/shisa-mtp/mtp-shisa-ornith15-all-Q5_0.gguf",
+      "--spec-draft-device",
+      "CUDA1",
+      "--spec-draft-ngl",
+      "all",
+      "--spec-draft-type-k",
+      "q8_0",
+      "--spec-draft-type-v",
+      "q8_0",
+      "--spec-draft-n-max",
+      "3",
+      "--no-slot-fork-prefix",
+      "--no-spec-mtp-defer-prompt",
+      "--spec-draft-ubatch",
+      "0",
+      "--pipeline-copies",
+      "0"
+    ],
+    "rows": [
+      {
+        "wall_s": 8.055363826000757,
+        "aggregate_pp_tg": 84.04337961928032,
+        "aggregate_generated": 63.560133478687625,
+        "mean_agent_tg": 19.327395251351856,
+        "mean_agent_pp": 45.922813726868384,
+        "acceptance": [
+          [
+            80,
+            139
+          ],
+          [
+            78,
+            145
+          ],
+          [
+            78,
+            147
+          ],
+          [
+            82,
+            132
+          ]
+        ],
+        "sha": [
+          "c6924744a931362528bf4efab9d3960e05f13f4e16c3ca7e320dcd94b25ae570",
+          "1460b73cfbba5fb82cdca1c07f6a5038d49a8f02aef71411e76d22a7832b50eb",
+          "0153f61c874502666923bc9c4f3985b9f7e3458c9117544f801d5994d15e594d",
+          "455ceab0e02ce6a60764283c58eab8f2b2747015a806b3779d96aa654fdbee1a"
+        ],
+        "rep": 0,
+        "warmup": true
+      },
+      {
+        "wall_s": 7.810441409999839,
+        "aggregate_pp_tg": 86.67883983269185,
+        "aggregate_generated": 65.55327325603874,
+        "mean_agent_tg": 19.616944343594433,
+        "mean_agent_pp": 49.728329576558,
+        "acceptance": [
+          [
+            80,
+            136
+          ],
+          [
+            80,
+            138
+          ],
+          [
+            77,
+            147
+          ],
+          [
+            83,
+            129
+          ]
+        ],
+        "sha": [
+          "f3af82965f59928df998d51ce847237e10860c8812d41631ead85ebe395b6906",
+          "d371a09eb50df2ec2402c1faa5b0e28f978c81140494d3925156628dcb98a8a1",
+          "2fc6140c5c3f123396da4823584d47fcab67051aef05af1e74f97563d6461b08",
+          "6464abab2e973610841a8df59f779780481e0e270bb0f56c91933214d26db3d9"
+        ],
+        "rep": 1,
+        "warmup": false
+      },
+      {
+        "wall_s": 7.665431675999571,
+        "aggregate_pp_tg": 88.31857468897462,
+        "aggregate_generated": 66.79336815473413,
+        "mean_agent_tg": 20.18873042211281,
+        "mean_agent_pp": 50.06055255600025,
+        "acceptance": [
+          [
+            79,
+            144
+          ],
+          [
+            81,
+            138
+          ],
+          [
+            80,
+            141
+          ],
+          [
+            84,
+            127
+          ]
+        ],
+        "sha": [
+          "9d72566908c8d61c474dcf5713d1a28b7bc5a555a0bf0c514e8c306e636a40c5",
+          "f290cf95413f0a5bfffff632463ba182252a5adf3ab5e5d5fa8242f4c09b026d",
+          "e7659171a2140770aef9c5ed0c21c17a865635181c539a244c9743e64bad35bc",
+          "f6e908542c00205a7847146093d73552e839445987575d099920ff3ae60b7bf9"
+        ],
+        "rep": 2,
+        "warmup": false
+      },
+      {
+        "wall_s": 7.669583126998987,
+        "aggregate_pp_tg": 88.27076893094471,
+        "aggregate_generated": 66.7572137262093,
+        "mean_agent_tg": 20.15950711856642,
+        "mean_agent_pp": 49.880338313067746,
+        "acceptance": [
+          [
+            79,
+            144
+          ],
+          [
+            81,
+            138
+          ],
+          [
+            80,
+            141
+          ],
+          [
+            84,
+            127
+          ]
+        ],
+        "sha": [
+          "9d72566908c8d61c474dcf5713d1a28b7bc5a555a0bf0c514e8c306e636a40c5",
+          "f290cf95413f0a5bfffff632463ba182252a5adf3ab5e5d5fa8242f4c09b026d",
+          "e7659171a2140770aef9c5ed0c21c17a865635181c539a244c9743e64bad35bc",
+          "f6e908542c00205a7847146093d73552e839445987575d099920ff3ae60b7bf9"
+        ],
+        "rep": 3,
+        "warmup": false
+      },
+      {
+        "wall_s": 7.771906247000516,
+        "aggregate_pp_tg": 87.1086164042806,
+        "aggregate_generated": 65.87830369127278,
+        "mean_agent_tg": 19.747884064413505,
+        "mean_agent_pp": 51.86515357569112,
+        "acceptance": [
+          [
+            79,
+            141
+          ],
+          [
+            79,
+            140
+          ],
+          [
+            81,
+            137
+          ],
+          [
+            83,
+            128
+          ]
+        ],
+        "sha": [
+          "bd68898fd4de8046695cb06ef512b6e98f8aa0b9b65e28f99ea12f7da2f1bdf9",
+          "87fe6e5844a9d25361b44e72746603d550a2dfb85479cc4a9b37a652160de09e",
+          "4c0e412a812cee8d447ff86834b4dc87923a40e93ecf104aa618e49f91bd4455",
+          "fdc6161eb8968e116955ff47760279768679cc2002a4bc258d9b0bf240110811"
+        ],
+        "rep": 4,
+        "warmup": false
+      }
+    ],
+    "n_retained": 4,
+    "wall_s": {
+      "mean": 7.729340614999728,
+      "min": 7.665431675999571,
+      "max": 7.810441409999839
+    },
+    "aggregate_pp_tg": {
+      "mean": 87.59419996422295,
+      "min": 86.67883983269185,
+      "max": 88.31857468897462
+    },
+    "aggregate_generated": {
+      "mean": 66.24553970706373,
+      "min": 65.55327325603874,
+      "max": 66.79336815473413
+    },
+    "mean_agent_tg": {
+      "mean": 19.92826648717179,
+      "min": 19.616944343594433,
+      "max": 20.18873042211281
+    },
+    "mean_agent_pp": {
+      "mean": 50.38359350532928,
+      "min": 49.728329576558,
+      "max": 51.86515357569112
+    }
+  },
+  {
+    "label": "upstream-b",
+    "mode": "upstream",
+    "binary": "/workspace/upstream-fair-0907/build/bin/llama-server",
+    "argv": [
+      "/workspace/upstream-fair-0907/build/bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--mmproj",
+      "/models/local-llm-setup/ornith15/mmproj-Ornith-1.5-35B-BF16.gguf",
+      "--no-mmproj-offload",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "32851",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "2048",
+      "--ubatch-size",
+      "256",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/workspace/oai-qwen38-pp-lab/results/readme-current-0908",
+      "--no-warmup",
+      "--perf",
+      "--slots",
+      "--spec-type",
+      "draft-mtp",
+      "--spec-draft-model",
+      "/workspace/models/Ornith-1.5-35B-A3B/shisa-mtp/mtp-shisa-ornith15-all-Q5_0.gguf",
+      "--spec-draft-device",
+      "CUDA1",
+      "--spec-draft-ngl",
+      "all",
+      "--spec-draft-type-k",
+      "q8_0",
+      "--spec-draft-type-v",
+      "q8_0",
+      "--spec-draft-n-max",
+      "3"
+    ],
+    "rows": [
+      {
+        "wall_s": 10.23812550799994,
+        "aggregate_pp_tg": 66.12538588934088,
+        "aggregate_generated": 50.00915446874819,
+        "mean_agent_tg": 15.225649341029046,
+        "mean_agent_pp": 34.06154870369237,
+        "acceptance": [
+          [
+            83,
+            129
+          ],
+          [
+            83,
+            131
+          ],
+          [
+            82,
+            133
+          ],
+          [
+            84,
+            127
+          ]
+        ],
+        "sha": [
+          "a24abb4dc68233b13c662d1e7e3f64921fa4c7e460954d3c1ed79f44820f6f10",
+          "6ca8763fa0a0b9d005b9517897796e5c44b37bd005d1bfe7c3250fb76f443ff3",
+          "d2369938fbe6d61313765005c92484e2c820fc8bf4bdbedd2f345744014739c0",
+          "2a806a399747920bb76e822ebe71a9cb33ef404ed73d76e2bc190bf8d127e025"
+        ],
+        "rep": 0,
+        "warmup": true
+      },
+      {
+        "wall_s": 11.197252487998412,
+        "aggregate_pp_tg": 60.461260539193084,
+        "aggregate_generated": 45.725502800689604,
+        "mean_agent_tg": 14.150926614512906,
+        "mean_agent_pp": 30.291690132989537,
+        "acceptance": [
+          [
+            79,
+            140
+          ],
+          [
+            75,
+            154
+          ],
+          [
+            79,
+            142
+          ],
+          [
+            82,
+            133
+          ]
+        ],
+        "sha": [
+          "21ea1b8fca1a40ed203ace7b025b1db2207c1587a6f219a08e62252b5a6baea3",
+          "cb1e05b4c50c16f3b1a32e6d5492c2daedd1cdcd8336696f687a25b673e7988d",
+          "e45c4a4d213df60ba7b6f257bee89ed53aa86d06f9296e5cf047ae02aa69dcba",
+          "7b6d05af0f622aba4c92d1080a323d7adf95dd3487714304b8cd6fbf4636ef1e"
+        ],
+        "rep": 1,
+        "warmup": false
+      },
+      {
+        "wall_s": 10.983750678000433,
+        "aggregate_pp_tg": 61.63650467376107,
+        "aggregate_generated": 46.614313726684884,
+        "mean_agent_tg": 14.518758034341294,
+        "mean_agent_pp": 33.07336066263247,
+        "acceptance": [
+          [
+            80,
+            138
+          ],
+          [
+            74,
+            155
+          ],
+          [
+            77,
+            145
+          ],
+          [
+            85,
+            123
+          ]
+        ],
+        "sha": [
+          "115e49d89cf6ff23ecb74a94aa7541ceb97c51b35225b8e2592f3c6307237f43",
+          "65693cc6aeea99e789f07e27666c40274ec7d3e073618cf9935c04246e1c9007",
+          "4030614451d5a60e896a764800d39bdcb286c2e422e258976432fafa61e05c99",
+          "455ceab0e02ce6a60764283c58eab8f2b2747015a806b3779d96aa654fdbee1a"
+        ],
+        "rep": 2,
+        "warmup": false
+      },
+      {
+        "wall_s": 10.61521120100042,
+        "aggregate_pp_tg": 63.776404178957534,
+        "aggregate_generated": 48.23267199353952,
+        "mean_agent_tg": 15.00902483549924,
+        "mean_agent_pp": 29.70860944948818,
+        "acceptance": [
+          [
+            82,
+            134
+          ],
+          [
+            78,
+            144
+          ],
+          [
+            81,
+            138
+          ],
+          [
+            84,
+            127
+          ]
+        ],
+        "sha": [
+          "6f88b7d88b6ab32c96fef66928cafd8a8dca033b434788b0d9bc9dd4913f3883",
+          "51fd9d22221a34e7788560fb5f4ccc5c01fac5d2ad7ec7c3b21f7b975a7a4255",
+          "927010b0db1079c095684bbc756fbaf3fa8e6f98d92b31d242448edbdec9035f",
+          "7966593c9e096b8f4622440939e5d3f37fb758c2c570b652d8c8df4f3d699321"
+        ],
+        "rep": 3,
+        "warmup": false
+      },
+      {
+        "wall_s": 10.96121861500069,
+        "aggregate_pp_tg": 61.76320569626349,
+        "aggregate_generated": 46.71013488402793,
+        "mean_agent_tg": 14.456847331909739,
+        "mean_agent_pp": 33.21918527735446,
+        "acceptance": [
+          [
+            81,
+            135
+          ],
+          [
+            76,
+            153
+          ],
+          [
+            77,
+            147
+          ],
+          [
+            86,
+            122
+          ]
+        ],
+        "sha": [
+          "115e49d89cf6ff23ecb74a94aa7541ceb97c51b35225b8e2592f3c6307237f43",
+          "19ea001a340cbc39a5a4ba7fa6f5102bd7c069a45438c8e17fe2356278bf7aa0",
+          "3285a7dac52030905ae65182dbbe7bfc4eb2c03445d666dc3ec774491580b9b5",
+          "e02c79afa2364c0e3a67e0411119ce86b9bdadf6a6b9958d1c70cce01a812ae4"
+        ],
+        "rep": 4,
+        "warmup": false
+      }
+    ],
+    "n_retained": 4,
+    "wall_s": {
+      "mean": 10.939358245499989,
+      "min": 10.61521120100042,
+      "max": 11.197252487998412
+    },
+    "aggregate_pp_tg": {
+      "mean": 61.9093437720438,
+      "min": 60.461260539193084,
+      "max": 63.776404178957534
+    },
+    "aggregate_generated": {
+      "mean": 46.820655851235486,
+      "min": 45.725502800689604,
+      "max": 48.23267199353952
+    },
+    "mean_agent_tg": {
+      "mean": 14.533889204065794,
+      "min": 14.150926614512906,
+      "max": 15.00902483549924
+    },
+    "mean_agent_pp": {
+      "mean": 31.57321138061616,
+      "min": 29.70860944948818,
+      "max": 33.21918527735446
+    }
+  },
+  {
+    "label": "fork-production",
+    "mode": "production-fork",
+    "binary": "/workspace/llama-v100-sync-0907/build-sm70-75/bin/llama-server",
+    "argv": [
+      "/workspace/llama-v100-sync-0907/build-sm70-75/bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--mmproj",
+      "/models/local-llm-setup/ornith15/mmproj-Ornith-1.5-35B-BF16.gguf",
+      "--no-mmproj-offload",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "32851",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "2048",
+      "--ubatch-size",
+      "256",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/workspace/oai-qwen38-pp-lab/results/readme-current-0908",
+      "--no-warmup",
+      "--perf",
+      "--slots",
+      "--spec-type",
+      "draft-mtp",
+      "--spec-draft-model",
+      "/workspace/models/Ornith-1.5-35B-A3B/shisa-mtp/mtp-shisa-ornith15-all-Q5_0.gguf",
+      "--spec-draft-device",
+      "CUDA1",
+      "--spec-draft-ngl",
+      "all",
+      "--spec-draft-type-k",
+      "q8_0",
+      "--spec-draft-type-v",
+      "q8_0",
+      "--spec-draft-n-max",
+      "3",
+      "--slot-fork-prefix",
+      "--spec-mtp-defer-prompt",
+      "--spec-draft-ubatch",
+      "128",
+      "--pipeline-copies",
+      "1"
+    ],
+    "rows": [
+      {
+        "wall_s": 5.85635568699945,
+        "aggregate_pp_tg": 115.60090202561899,
+        "aggregate_generated": 87.42638380667196,
+        "mean_agent_tg": 27.55749643689977,
+        "mean_agent_pp": 66.56335548477801,
+        "acceptance": [
+          [
+            79,
+            140
+          ],
+          [
+            76,
+            153
+          ],
+          [
+            81,
+            133
+          ],
+          [
+            84,
+            128
+          ]
+        ],
+        "sha": [
+          "9f1dc81e1713d6a76c61c80dab29b8227c5c497b10f29279293ed151fc008937",
+          "685445074153a3a3bf64ce764ceb0a613eabdca630776bb580ff18c9d125d9b7",
+          "ccd34153cc715fa6e485376fc765d8091c11903573af0f0ae472751b13492b78",
+          "e02c79afa2364c0e3a67e0411119ce86b9bdadf6a6b9958d1c70cce01a812ae4"
+        ],
+        "rep": 0,
+        "warmup": true
+      },
+      {
+        "wall_s": 5.417505735000304,
+        "aggregate_pp_tg": 124.96525765098465,
+        "aggregate_generated": 94.50843710089238,
+        "mean_agent_tg": 29.768357830924366,
+        "mean_agent_pp": 66.01438175503888,
+        "acceptance": [
+          [
+            83,
+            128
+          ],
+          [
+            80,
+            137
+          ],
+          [
+            78,
+            143
+          ],
+          [
+            87,
+            119
+          ]
+        ],
+        "sha": [
+          "7064bbd30bd81d826a6767282deb270ef018c8d39fa3eb7005fe2d961dcdf4d9",
+          "c21b17a6dfde80689a3a78506f59fe4b2785a8ea1e44678d8ef6a1e3ebd4f9de",
+          "a6626cbff09b9f34967122f19b98e19b05ae1d131ed48b51ccec47195fdf9083",
+          "e02c79afa2364c0e3a67e0411119ce86b9bdadf6a6b9958d1c70cce01a812ae4"
+        ],
+        "rep": 1,
+        "warmup": false
+      },
+      {
+        "wall_s": 5.4578370330000325,
+        "aggregate_pp_tg": 124.04181288422797,
+        "aggregate_generated": 93.81005642056827,
+        "mean_agent_tg": 29.37080976504131,
+        "mean_agent_pp": 66.61975170962494,
+        "acceptance": [
+          [
+            80,
+            140
+          ],
+          [
+            79,
+            140
+          ],
+          [
+            83,
+            129
+          ],
+          [
+            88,
+            114
+          ]
+        ],
+        "sha": [
+          "7872144d913b2b7d42349aa9321ad6c7e25ce0c335234898a9e81217c8af9c7f",
+          "b886e7c982cfa25bbd3bc0f98eaca3f0ee23f2e2c83eb5d9dd7d447870213b8b",
+          "2c276e49c1045bb7029bbc5dd69295d6a2df4499d1a59f47f8c7d9d43440cc0e",
+          "6322f317bfd21d0b9e101d64766327cc3bc3683451b43603ae6ab15b26a6706e"
+        ],
+        "rep": 2,
+        "warmup": false
+      },
+      {
+        "wall_s": 5.915938206999272,
+        "aggregate_pp_tg": 114.4366246420605,
+        "aggregate_generated": 86.54586678985963,
+        "mean_agent_tg": 26.625401580557742,
+        "mean_agent_pp": 78.06215617669255,
+        "acceptance": [
+          [
+            79,
+            143
+          ],
+          [
+            79,
+            142
+          ],
+          [
+            74,
+            154
+          ],
+          [
+            84,
+            127
+          ]
+        ],
+        "sha": [
+          "033e6c216662f874889ae29a68d0ed44ed202a9c26b41a377490fa85ad1f57fa",
+          "4abbecd663a259e81dd1b15dd424f6121c854b71e214a9627fad3ccecc10956c",
+          "4030614451d5a60e896a764800d39bdcb286c2e422e258976432fafa61e05c99",
+          "2a806a399747920bb76e822ebe71a9cb33ef404ed73d76e2bc190bf8d127e025"
+        ],
+        "rep": 3,
+        "warmup": false
+      },
+      {
+        "wall_s": 5.611812642999212,
+        "aggregate_pp_tg": 120.63838247425522,
+        "aggregate_generated": 91.23611791258298,
+        "mean_agent_tg": 27.752816404153286,
+        "mean_agent_pp": 71.59413289746307,
+        "acceptance": [
+          [
+            80,
+            139
+          ],
+          [
+            80,
+            140
+          ],
+          [
+            79,
+            143
+          ],
+          [
+            86,
+            121
+          ]
+        ],
+        "sha": [
+          "2d34e76121b2fd3d8d3e7809b9a5c1ce586dcfb065971a2f507a8c21719167d8",
+          "712d7ad12bb5b66c08f184d3616e4d8d1f6f2d2eb3c4199407eb46b56237cdb7",
+          "c098384a116a82d9b09592584d4025825583b1f672eb977e24765dce5428ae9e",
+          "9cafe581923d236b28c1a5187da787d233d5f94d958ab47a43cac7f33190148b"
+        ],
+        "rep": 4,
+        "warmup": false
+      }
+    ],
+    "n_retained": 4,
+    "wall_s": {
+      "mean": 5.600773404499705,
+      "min": 5.417505735000304,
+      "max": 5.915938206999272
+    },
+    "aggregate_pp_tg": {
+      "mean": 121.02051941288208,
+      "min": 114.4366246420605,
+      "max": 124.96525765098465
+    },
+    "aggregate_generated": {
+      "mean": 91.52511955597582,
+      "min": 86.54586678985963,
+      "max": 94.50843710089238
+    },
+    "mean_agent_tg": {
+      "mean": 28.379346395169176,
+      "min": 26.625401580557742,
+      "max": 29.768357830924366
+    },
+    "mean_agent_pp": {
+      "mean": 70.57260563470486,
+      "min": 66.01438175503888,
+      "max": 78.06215617669255
+    }
+  }
+]

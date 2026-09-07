@@ -1,0 +1,14 @@
+{
+  "date": "2026-09-08",
+  "upstream_commit": "67672dc5b76f8bc17785a19d3dc6d1463fc2902c",
+  "fork_commit": "c886bc606568d228f73c4bed3d7c6c6b67f834a5",
+  "upstream_server_sha256": "a2957d77a834ab8c0f4fcb86397be2eeb5d2a031ebe3370a045bfe1118f936bf",
+  "upstream_llama_bench_sha256": "fbe64f70eef0b24d051d20f9cebfa34a9219ebaba997f51da04401c7abc949d3",
+  "upstream_libggml_cuda_sha256": "e3c8dcc60b1c0a6d596d701700244a0773352c45597953398717cf6cbde19b66",
+  "fork_server_sha256": "e81ee9bd4c66ce0881e28e62f722761b99f4b7b149f300a8943333364f8a4245",
+  "fork_llama_bench_sha256": "2c9af544a8559526e582573da8f4c022bf80d11decadb246ea64a0ba522bdc62",
+  "fork_libggml_cuda_sha256": "f10f7222749b777ddf2d1f65ab90390fa9c2ba626298539ed28a25c74c263ec3",
+  "v100": {"name": "Tesla V100-SXM2-32GB", "power_limit_w": 200, "memory_mib": 32768},
+  "rtx2080ti": {"name": "NVIDIA GeForce RTX 2080 Ti", "power_limit_w": 250, "memory_mib": 22528},
+  "v100_100k_cache_sha256": "1290e6936fd6df5c9a2891eb82ec84279b7b985b01ff00bf047fee722a7e7769"
+}

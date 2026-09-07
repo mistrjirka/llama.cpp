@@ -1,0 +1,29 @@
+{
+  "upstream": {
+    "n": 8,
+    "wall_s": 10.700943478750105,
+    "aggregate_pp_tg": 63.31750974491549,
+    "aggregate_generated": 47.885620368385126,
+    "mean_agent_tg": 14.804073769008017,
+    "mean_agent_pp": 31.492903068677013
+  },
+  "fork_strict": {
+    "n": 8,
+    "wall_s": 7.766065003124822,
+    "aggregate_pp_tg": 87.18480478774836,
+    "aggregate_generated": 65.93592326636212,
+    "mean_agent_tg": 19.88473302765287,
+    "mean_agent_pp": 48.794808841989244
+  },
+  "fork_production": {
+    "n": 4,
+    "wall_s": 5.600773404499705,
+    "aggregate_pp_tg": 121.02051941288208,
+    "aggregate_generated": 91.52511955597582,
+    "mean_agent_tg": 28.379346395169176,
+    "mean_agent_pp": 70.57260563470486
+  },
+  "strict_gain_pct": 37.69462055438695,
+  "strict_wall_reduction_pct": 27.4263524655873,
+  "production_gain_vs_upstream_pct": 91.13278443898412
+}

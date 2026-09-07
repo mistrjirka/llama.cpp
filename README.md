@@ -8,7 +8,7 @@ A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) 
 
 ## Performance vs vanilla llama.cpp
 
-The headline vanilla-vs-fork tables below are the retained direct comparison from **5 September 2026**: fork snapshot `547593d21` versus upstream `6a1a922d2`. The branch has since been merged forward through upstream `67672dc5b`; current sync regression evidence is in [Upstream sync validation](benches/upstream-sync-0907/REPORT.md), while the older Flash-Next integration measurements remain documented below. The same model and common runtime settings are used on both sides of each comparison, and mixed V100 + RTX results are not reported as single-GPU numbers.
+The headline vanilla-vs-fork tables below were **rerun after the current upstream sync**: exact upstream llama.cpp `67672dc5b` versus `v100-optimized` runtime `c886bc606`. At benchmark time the fork contained every upstream commit (**0 behind**) plus 69 fork commits. The same model and common runtime settings are used on both sides of each direct comparison, and mixed V100 + RTX results are not reported as single-GPU numbers. Raw results and reproducible harnesses are in the [current benchmark refresh](benches/readme-current-0908/REPORT.md).
 
 `PP` is prompt-processing throughput and `TG` is token-generation throughput. Higher is better.
 
@@ -20,19 +20,19 @@ One V100, Qwen3.8-27B `UD-Q5_K_XL`, 100,000 restored tokens, q8_0 K/V, MTP off. 
 
 | appended prompt | vanilla llama.cpp PP | `v100-optimized` PP | speedup |
 |---:|---:|---:|---:|
-| +128 | 155.59 tok/s | **190.58 tok/s** | **+22.49%** |
-| +256 | 211.10 tok/s | **290.56 tok/s** | **+37.64%** |
-| +1,000 | 300.94 tok/s | **433.19 tok/s** | **+43.94%** |
+| +128 | 157.43 tok/s | **195.97 tok/s** | **+24.48%** |
+| +256 | 215.96 tok/s | **297.95 tok/s** | **+37.97%** |
+| +1,000 | 299.86 tok/s | **431.85 tok/s** | **+44.02%** |
 
-At +1,000 tokens, prompt processing falls from **3.323 s to 2.308 s**, saving about **1.014 s**. The fork is primarily optimized for this long-KV workload.
+At +1,000 tokens, prompt processing falls from **3.335 s to 2.316 s**, saving about **1.019 s**. The fork is primarily optimized for this long-KV workload.
 
 #### Standard `llama-bench`
 
 | test | vanilla llama.cpp | `v100-optimized` | change |
 |---|---:|---:|---:|
-| pp512 | 784.14 tok/s | **796.50 tok/s** | **+1.58%** |
-| pp2048 | 780.25 tok/s | **800.43 tok/s** | **+2.59%** |
-| tg128 | 27.89 tok/s | 27.72 tok/s | -0.62% (effectively unchanged) |
+| pp512 | 773.84 tok/s | **797.81 tok/s** | **+3.10%** |
+| pp2048 | 775.32 tok/s | **800.47 tok/s** | **+3.24%** |
+| tg128 | 27.58 tok/s | **27.68 tok/s** | +0.36% (neutral) |
 
 Short `pp512`/`pp2048` runs do not represent the long-context gain above.
 
@@ -44,9 +44,9 @@ Single-GPU Qwen3.8-27B, q8_0 K/V, FlashAttention on, three repetitions per proce
 
 | test | vanilla llama.cpp | `v100-optimized` | change |
 |---|---:|---:|---:|
-| pp512 | 657.36 tok/s | **675.88 tok/s** | **+2.82%** |
-| pp2048 | 658.78 tok/s | **678.37 tok/s** | **+2.97%** |
-| tg128 | 24.70 tok/s | 24.67 tok/s | -0.12% (neutral) |
+| pp512 | 660.28 tok/s | **680.34 tok/s** | **+3.04%** |
+| pp2048 | 660.80 tok/s | **682.19 tok/s** | **+3.24%** |
+| tg128 | 24.67 tok/s | **24.74 tok/s** | +0.28% (neutral) |
 
 The long-context RTX investigation also contains isolated 101k-KV attention tests and V100 + RTX tensor-parallel tests. They are kept in [Detailed benchmarks and methodology](#detailed-benchmarks-and-methodology) because they are not RTX-only end-to-end measurements.
 
@@ -55,14 +55,14 @@ The long-context RTX investigation also contains isolated 101k-KV attention test
 | GPU / model | recommended setup |
 |---|---|
 | **V100 — Qwen3.8-27B** | normal CUDA build, **MMQ off**, MTP `n-max=3`; add `--spec-mtp-defer-prompt` for lower agent-turn TTFT |
-| **V100 — Ornith-1.5-35B-A3B** | separate build with `GGML_CUDA_FORCE_MMQ=ON` |
+| **V100 — Ornith-1.5-35B-A3B** | normal CUDA build with `GGML_CUDA_VOLTA_FORCE_MMQ=moe` |
 | **RTX 2080 Ti — Qwen3.8-27B** | SM75 build; leave `GGML_CUDA_VOLTA_*` unset; Turing paths are selected automatically |
 | **V100 + RTX 2080 Ti — Qwen3.8 Flash-Next** | q8_0 K/V, `n-cpu-moe=18`, layer split **35:14**; enable the QSA PP raw-q8 stack documented below with tile 16 |
 
-Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. If you serve both Qwen and Ornith on V100, keep separate normal and FORCE_MMQ binaries.
+Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. The same binary can serve dense Qwen and Ornith: leave `GGML_CUDA_VOLTA_FORCE_MMQ` unset for Qwen and set it to `moe` for Ornith.
 
 > [!WARNING]
-> `GGML_CUDA_FORCE_MMQ=ON` is intended for routed quantized MoE workloads such as Ornith. Do not enable it globally for dense Qwen3.8; it is a known prompt-processing regression there.
+> Prefer the fork's runtime `GGML_CUDA_VOLTA_FORCE_MMQ=moe` selector for Ornith. A global `GGML_CUDA_FORCE_MMQ=ON` build is retained for historical reproduction, but do not use global FORCE_MMQ for dense Qwen3.8; it is a known prompt-processing regression there.
 
 ## Faster MTP generation and per-agent pause
 
@@ -82,22 +82,21 @@ These are **within-fork comparisons**, separate from the vanilla-versus-fork tab
 
 The tests do not establish a universal MTP speedup, a new 350k–400k rate, or a quality improvement. The target model, context limits and cache precision are unchanged. See the [final integration tests and benchmark details](benches/mtp-final-integration-0907/REPORT.md), and the [before/after GPU timelines](benches/mtp-gantt-0907/REPORT.md#what-nsight-found).
 
-### Fair comparison with upstream
+### Fair comparison with current upstream
 
-A separate four-agent test compares the fork with **upstream snapshot `f114f91f9`** on exactly the same 100k cached histories. For this table, **aggregate PP+TG** means all newly processed prompt tokens plus all generated tokens divided by whole-turn wall time: `38+42+44+41` appended tokens plus `4×128` generated tokens = **677 tokens per turn**.
+The four-agent serving test was also rerun against the **exact upstream parent `67672dc5b`**. Each agent starts with 100k cached C++ source tokens, appends `38/42/44/41` tokens and generates 128 tokens with Ornith MTP3. **Aggregate PP+TG** is `(38+42+44+41 + 4×128) / whole-turn wall time` = `677 / wall time`; aggregate generated is `512 / wall time`.
 
 | Engine / mode | Whole turn | Aggregate PP+TG | Aggregate generated | Mean TG per agent |
 |---|---:|---:|---:|---:|
-| Upstream `f114f91f9` | 10.647 s | **63.65 tok/s** | 48.13 tok/s | 14.84 tok/s |
-| Upstream `f114f91f9` + global `GGML_CUDA_FORCE_MMQ=ON` | 10.720 s | 63.17 tok/s | 47.77 tok/s | 14.68 tok/s |
-| `v100-optimized`, **common-denominator settings** | **7.735 s** | **87.55 tok/s** | **66.21 tok/s** | **19.91 tok/s** |
-| `v100-optimized`, **normal optimized serving** | **5.683 s** | **119.24 tok/s** | **90.18 tok/s** | **27.35 tok/s** |
+| Upstream `67672dc5b` | 10.701 s | 63.32 tok/s | 47.89 tok/s | 14.80 tok/s |
+| `v100-optimized`, **common-denominator settings** | **7.766 s** | **87.18 tok/s** | **65.94 tok/s** | **19.88 tok/s** |
+| `v100-optimized`, **normal optimized serving** | **5.601 s** | **121.02 tok/s** | **91.53 tok/s** | **28.38 tok/s** |
 
-The strict common-denominator comparison is the fair fork-vs-upstream claim: **+37.6% aggregate PP+TG throughput** and a **27.3% shorter turn** versus that upstream snapshot. It disables fork-only prefix sharing, deferred-MTP prompt handling, the separate draft ubatch and the custom pipeline-copy setting; the fork’s kernel/runtime optimizations remain enabled, because those are what this A/B is measuring. Against the pre-sync upstream base `465e49b9c`, the same strict test was **+39.6%**. The branch is now merged through `67672dc5b`; see the current sync gate above.
+The strict common-denominator comparison is the fair fork-vs-upstream claim: **+37.7% aggregate PP+TG throughput** and a **27.4% shorter complete turn**. It disables fork-only prefix sharing, deferred-MTP prompt handling, the separate draft ubatch and custom pipeline-copy selection; fork kernel/runtime optimizations remain enabled because those are what the A/B measures.
 
-The **119.24 tok/s** row is the practical deployment result with the fork's normal serving features re-enabled. Do not interpret its **+87.3%** difference from upstream snapshot `f114f91f9` as a pure kernel-speed claim: it also benefits from fork-only serving behavior. Upstream was given a global FORCE_MMQ build as an additional best-effort Ornith control; it did not improve this workload.
+The **121.02 tok/s** row is the practical deployment result with the fork's normal serving features re-enabled. Its **+91.1%** difference from upstream is **not** a pure kernel-speed claim because it also includes fork-only serving behavior.
 
-Upstream does not natively restore this fork's MTP-aware `.draft`/`.spec` snapshot companions. To avoid charging upstream for rebuilding four 100k histories, the benchmark uses a **restore-only setup shim** that loads identical warm target/draft/spec states before the timer starts. The timed completion path remains upstream code. Full methodology, exact shim diffs, argv, acceptance counts and per-run results are in [the fair upstream benchmark report](benches/upstream-fair-0907/REPORT.md).
+Upstream does not natively restore this fork's MTP-aware `.draft`/`.spec` snapshot companions. The benchmark therefore uses a **restore-only setup shim** to load identical warm target/draft/spec states before timing; that shim is never executed by timed completion requests and changes no decode path. The mirrored strict test retains eight measurements per side after warmups; the production arm retains four. Exact shim diff, argv, raw timings, acceptance counts and output hashes are in the [fresh benchmark report](benches/readme-current-0908/REPORT.md).
 
 ### Pause drafting for an individual agent
 
@@ -406,7 +405,7 @@ Enable it with:
 
 ## Detailed benchmarks and methodology
 
-The headline tables above are the retained **5 September vanilla-vs-fork snapshot**: upstream `6a1a922d2`; fork CUDA/runtime code `547593d21`; CUDA 12.9. Those historical tables predate later MTP/serving work. The current branch is merged through upstream `67672dc5b`; use the [current upstream sync validation](benches/upstream-sync-0907/REPORT.md) for the latest integration gate. The relevant methodology for the historical headline is summarized below.
+The headline tables above are the fresh **current-parent comparison**: upstream `67672dc5b` versus fork runtime `c886bc606`, measured after the upstream merge. The integration regression gate is separately retained in [upstream sync validation](benches/upstream-sync-0907/REPORT.md); the complete fresh A/B evidence is in [the current benchmark refresh](benches/readme-current-0908/REPORT.md).
 
 ### Current-upstream V100 100k methodology
 
@@ -420,8 +419,9 @@ The V100 and RTX short-context tables use the same command on each binary, with 
 llama-bench \
   -m Qwen3.8-27B-UD-Q5_K_XL.gguf \
   -p 512,2048 -n 128 -r 3 \
+  -b 2048 -ub 512 \
   -fa on -ctk q8_0 -ctv q8_0 \
-  -ngl 99 -sm none -o json
+  -ngl 999 -sm none -o jsonl
 ```
 
 Each GPU was run upstream/fork/fork/upstream. The table values are the mean of the two process-level `avg_ts` values per side; each process-level value already contains three benchmark repetitions.
@@ -504,7 +504,7 @@ TG   27.591 ->  36.471 tok/s   +32.19%
 
 All four full generated-token SHAs were identical. MTP acceptance was 167/261 with the paths off and 170/252 with them on. The q8 attention sub-kernel dropped from about 2.674 ms to 1.419 ms at ~101k KV and from 6.879 ms to 3.363 ms at ~260k KV.
 
-For routed MoE models such as Ornith, build a separate binary with `GGML_CUDA_FORCE_MMQ=ON`. Do not use FORCE_MMQ for dense Qwen3.8; it can reduce prompt-processing throughput.
+For routed MoE models such as Ornith, the current branch can select MMQ only for expert matmuls at runtime with `GGML_CUDA_VOLTA_FORCE_MMQ=moe`. This avoids a separate global-FORCE_MMQ binary and leaves dense Qwen on its normal FP16/cuBLAS path.
 
 ### Isolated 256x256 FlashAttention benchmark
 
@@ -583,7 +583,7 @@ The FA optimization still helps after MMQ has made the MoE matmuls much faster. 
 | 16,384 | 1171.403 ± 5.112 | 1238.417 ± 3.333 | **+5.72%** |
 | 65,536 | 760.651 ± 2.346 | 895.968 ± 2.160 | **+17.79%** |
 
-For Ornith on V100, use this branch with a FORCE_MMQ build.
+These measurements predate the MoE-only runtime selector and used a globally forced MMQ build. For current serving, prefer `GGML_CUDA_VOLTA_FORCE_MMQ=moe` on the normal build; it forces the routed expert path without globally forcing dense matmuls.
 
 Build an MMQ-forced variant with:
 

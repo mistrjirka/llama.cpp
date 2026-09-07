@@ -1,0 +1,29 @@
+{
+  "128": {
+    "upstream_pp": 157.42725063236506,
+    "fork_pp": 195.96872254791523,
+    "gain_pct": 24.482084112333812,
+    "upstream_ms": 813.1395,
+    "fork_ms": 653.1683333333333,
+    "n_per_side": 6,
+    "output_exact": true
+  },
+  "256": {
+    "upstream_pp": 215.95802755594326,
+    "fork_pp": 297.95310369299614,
+    "gain_pct": 37.96806123162628,
+    "upstream_ms": 1185.819,
+    "fork_ms": 859.1961666666666,
+    "n_per_side": 6,
+    "output_exact": true
+  },
+  "1000": {
+    "upstream_pp": 299.8587554304389,
+    "fork_pp": 431.8497284840085,
+    "gain_pct": 44.01771522865832,
+    "upstream_ms": 3335.0080000000003,
+    "fork_ms": 2315.6338333333333,
+    "n_per_side": 6,
+    "output_exact": true
+  }
+}
