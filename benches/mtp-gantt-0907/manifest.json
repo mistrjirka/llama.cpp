@@ -1,0 +1,58 @@
+{
+  "measured_source_base": "f9d1c3a2b",
+  "prototype_commit": "8ef021edd",
+  "prior_production": "5a1e654a2",
+  "root": "/workspace/oai-qwen38-pp-lab/results/mtp-gantt-0907",
+  "artifacts": {
+    "baseline-timeline-summary.json": {
+      "bytes": 5787,
+      "sha256": "ba1d663e36370b4d1ced7111fbbb89cb76d05d0f8acec76b4092d017ac10af6f"
+    },
+    "patched-timeline-summary.json": {
+      "bytes": 5881,
+      "sha256": "fd8fd8d04544af8c3637322b87175ae882371a1b305f455909115209d686f36a"
+    },
+    "four-bench-raw.json": {
+      "bytes": 375522,
+      "sha256": "1195284b93c807f8a9cdfdb1310acc635a9400ad246b15a22e8f0957b3525edc"
+    },
+    "one-bench-raw.json": {
+      "bytes": 56751,
+      "sha256": "9389f1ef556cb6951c8d2cc366b1eacd781bf7f2c2bbdd07dd184fce57748ab9"
+    },
+    "equiv-raw.json": {
+      "bytes": 23801,
+      "sha256": "a198ae5fa20aad483d99b45746a36fe5a357553553bf51f2261858af5b99356d"
+    },
+    "build-manifest.json": {
+      "bytes": 27901,
+      "sha256": "677d2b39f7abdc57df5d25dba14df490b4d9147cbda02b2675c301b4fe7bc5f9"
+    },
+    "baseline-gantt.png": {
+      "bytes": 140401,
+      "sha256": "006f3315349317fe7467f544908b79874b6025478f9a8a251072ff750e0e4515"
+    },
+    "patched-gantt.png": {
+      "bytes": 151567,
+      "sha256": "dcddc99bd288bf6133a5768eec7624390ae340805474b3c28efc2b56fe858771"
+    }
+  },
+  "traces": [
+    {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-gantt-0907/baseline.nsys-rep",
+      "bytes": 24736208
+    },
+    {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-gantt-0907/patched.nsys-rep",
+      "bytes": 24994610
+    },
+    {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-gantt-0907/baseline.sqlite",
+      "bytes": 69025792
+    },
+    {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-gantt-0907/patched.sqlite",
+      "bytes": 69672960
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "patched": {
+    "outputs_equal": true,
+    "acceptance_equal": true,
+    "raw_target_draft_spec_hashes_equal": true,
+    "restored_continuation_equal": true
+  },
+  "disabled": {
+    "outputs_equal": true,
+    "acceptance_equal": true,
+    "raw_target_draft_spec_hashes_equal": true,
+    "restored_continuation_equal": true
+  }
+}

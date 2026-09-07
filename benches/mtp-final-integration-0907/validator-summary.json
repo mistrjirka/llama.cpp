@@ -1,0 +1,11 @@
+{
+  "kv_calls": 35,
+  "kv_shapes": 12,
+  "compared_bytes": 3560722328,
+  "sampling_views": 425,
+  "hidden_rows": 311,
+  "image": {
+    "completion_tokens": 16,
+    "no_server_error": true
+  }
+}

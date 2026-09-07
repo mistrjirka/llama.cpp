@@ -1,0 +1,17 @@
+Internal ctest changing into directory: /workspace/llama-parallel-all-0907/build-sm70-75
+Test project /workspace/llama-parallel-all-0907/build-sm70-75
+    Start 18: test-sampling
+1/4 Test #18: test-sampling ....................   Passed    2.71 sec
+    Start 19: test-mtp-draft-budget
+2/4 Test #19: test-mtp-draft-budget ............   Passed    0.00 sec
+    Start 20: test-kv-indexed-remove
+3/4 Test #20: test-kv-indexed-remove ...........   Passed    0.34 sec
+    Start 25: test-batch-alloc
+4/4 Test #25: test-batch-alloc .................   Passed    0.09 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Label Time Summary:
+main    =   3.15 sec*proc (4 tests)
+
+Total Test time (real) =   3.16 sec

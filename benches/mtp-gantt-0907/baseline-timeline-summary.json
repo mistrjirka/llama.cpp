@@ -1,0 +1,232 @@
+[
+  {
+    "phase": "baseline/mtp3x4/TG",
+    "profiled_wall_ms": 5957.355929,
+    "gpu_busy_any_ms": 4196.534365,
+    "neither_gpu_active_ms": 1760.821564,
+    "neither_gpu_active_pct": 29.557098568316885,
+    "simultaneous_gpu_ms": 39.891208,
+    "gpu_busy_ms": {
+      "NVIDIA GeForce RTX 2080 Ti": 1819.895636,
+      "Tesla V100-SXM2-32GB": 2416.529937
+    },
+    "cpu_scopes": {
+      "Draft orchestration": {
+        "calls": 51,
+        "wall_ms_union": 941.425928,
+        "gpu_idle_overlap_ms": 290.795559
+      },
+      "KV tail removal": {
+        "calls": 551,
+        "wall_ms_union": 554.136747,
+        "gpu_idle_overlap_ms": 554.136747
+      },
+      "Prompt copies": {
+        "calls": 185,
+        "wall_ms_union": 19.505786,
+        "gpu_idle_overlap_ms": 19.505786
+      },
+      "Target readback/sampling": {
+        "calls": 512,
+        "wall_ms_union": 219.386391,
+        "gpu_idle_overlap_ms": 219.386391
+      },
+      "Draft readback/sampling": {
+        "calls": 539,
+        "wall_ms_union": 608.026355,
+        "gpu_idle_overlap_ms": 17.286148
+      },
+      "Cache refresh": {
+        "calls": 51,
+        "wall_ms_union": 31.970916,
+        "gpu_idle_overlap_ms": 27.280244
+      }
+    },
+    "sync": {
+      "calls": 8740,
+      "wall_ms_union": 3832.276681,
+      "gpu_idle_overlap_ms": 94.550867
+    },
+    "kernels_by_launch_stage": {
+      "target": {
+        "calls": 141134,
+        "summed_gpu_ms": 3450.8424180002216
+      },
+      "refresh": {
+        "calls": 961,
+        "summed_gpu_ms": 6.633115000000003
+      },
+      "draft": {
+        "calls": 13109,
+        "summed_gpu_ms": 622.190003999997
+      }
+    },
+    "copies": {
+      "2": {
+        "calls": 1645,
+        "bytes": 998918256,
+        "summed_gpu_ms": 78.51772100000055
+      },
+      "1": {
+        "calls": 2720,
+        "bytes": 932600428,
+        "summed_gpu_ms": 74.12929500000078
+      },
+      "8": {
+        "calls": 1138,
+        "bytes": 601263160,
+        "summed_gpu_ms": 4.113019999999992
+      }
+    },
+    "unmatched_kernels": 0
+  },
+  {
+    "phase": "baseline/offx4/TG",
+    "profiled_wall_ms": 5361.738271,
+    "gpu_busy_any_ms": 4426.037711,
+    "neither_gpu_active_ms": 935.70056,
+    "neither_gpu_active_pct": 17.451440422985915,
+    "simultaneous_gpu_ms": 0.0,
+    "gpu_busy_ms": {
+      "NVIDIA GeForce RTX 2080 Ti": 1516.238963,
+      "Tesla V100-SXM2-32GB": 2909.798748
+    },
+    "cpu_scopes": {
+      "Draft orchestration": {
+        "calls": 0,
+        "wall_ms_union": 0.0,
+        "gpu_idle_overlap_ms": 0.0
+      },
+      "KV tail removal": {
+        "calls": 4,
+        "wall_ms_union": 4.057213,
+        "gpu_idle_overlap_ms": 4.057213
+      },
+      "Prompt copies": {
+        "calls": 0,
+        "wall_ms_union": 0.0,
+        "gpu_idle_overlap_ms": 0.0
+      },
+      "Target readback/sampling": {
+        "calls": 512,
+        "wall_ms_union": 245.051126,
+        "gpu_idle_overlap_ms": 245.051126
+      },
+      "Draft readback/sampling": {
+        "calls": 0,
+        "wall_ms_union": 0.0,
+        "gpu_idle_overlap_ms": 0.0
+      },
+      "Cache refresh": {
+        "calls": 0,
+        "wall_ms_union": 0.0,
+        "gpu_idle_overlap_ms": 0.0
+      }
+    },
+    "sync": {
+      "calls": 6942,
+      "wall_ms_union": 4071.112274,
+      "gpu_idle_overlap_ms": 114.39025
+    },
+    "kernels_by_launch_stage": {
+      "target": {
+        "calls": 239662,
+        "summed_gpu_ms": 4325.654605000352
+      }
+    },
+    "copies": {
+      "2": {
+        "calls": 498,
+        "bytes": 776208384,
+        "summed_gpu_ms": 59.79842399999997
+      },
+      "1": {
+        "calls": 2193,
+        "bytes": 498145280,
+        "summed_gpu_ms": 40.58468199999962
+      }
+    },
+    "unmatched_kernels": 0
+  },
+  {
+    "phase": "baseline/mtp3x1/TG",
+    "profiled_wall_ms": 2478.756729,
+    "gpu_busy_any_ms": 1912.202467,
+    "neither_gpu_active_ms": 566.554262,
+    "neither_gpu_active_pct": 22.856388259954976,
+    "simultaneous_gpu_ms": 0.0,
+    "gpu_busy_ms": {
+      "NVIDIA GeForce RTX 2080 Ti": 946.476238,
+      "Tesla V100-SXM2-32GB": 965.726229
+    },
+    "cpu_scopes": {
+      "Draft orchestration": {
+        "calls": 44,
+        "wall_ms_union": 565.537064,
+        "gpu_idle_overlap_ms": 103.667739
+      },
+      "KV tail removal": {
+        "calls": 134,
+        "wall_ms_union": 132.101706,
+        "gpu_idle_overlap_ms": 132.101706
+      },
+      "Prompt copies": {
+        "calls": 45,
+        "wall_ms_union": 4.574492,
+        "gpu_idle_overlap_ms": 4.574492
+      },
+      "Target readback/sampling": {
+        "calls": 128,
+        "wall_ms_union": 56.554412,
+        "gpu_idle_overlap_ms": 56.554412
+      },
+      "Draft readback/sampling": {
+        "calls": 130,
+        "wall_ms_union": 444.035811,
+        "gpu_idle_overlap_ms": 5.253242
+      },
+      "Cache refresh": {
+        "calls": 44,
+        "wall_ms_union": 21.206895,
+        "gpu_idle_overlap_ms": 18.795554
+      }
+    },
+    "sync": {
+      "calls": 5875,
+      "wall_ms_union": 1781.112837,
+      "gpu_idle_overlap_ms": 52.176712
+    },
+    "kernels_by_launch_stage": {
+      "target": {
+        "calls": 87472,
+        "summed_gpu_ms": 1413.4210029999929
+      },
+      "refresh": {
+        "calls": 720,
+        "summed_gpu_ms": 2.8308470000000012
+      },
+      "draft": {
+        "calls": 7540,
+        "summed_gpu_ms": 452.9389329999966
+      }
+    },
+    "copies": {
+      "2": {
+        "calls": 586,
+        "bytes": 243638432,
+        "summed_gpu_ms": 19.300320999999965
+      },
+      "1": {
+        "calls": 2250,
+        "bytes": 277567500,
+        "summed_gpu_ms": 23.108226999999584
+      },
+      "8": {
+        "calls": 260,
+        "bytes": 129131600,
+        "summed_gpu_ms": 0.6031360000000004
+      }
+    },
+    "unmatched_kernels": 0
+  }
+]

@@ -1,0 +1,86 @@
+{
+  "old_default_disabled_parity": {
+    "patched": {
+      "outputs_equal": true,
+      "acceptance_equal": true,
+      "raw_target_draft_spec_hashes_equal": true,
+      "restored_continuation_equal": true
+    },
+    "disabled": {
+      "outputs_equal": true,
+      "acceptance_equal": true,
+      "raw_target_draft_spec_hashes_equal": true,
+      "restored_continuation_equal": true
+    }
+  },
+  "transitions": {
+    "output_tokens_equal": true,
+    "snapshot_bytes_equal": true,
+    "continuation_equal": true,
+    "acceptance_equal": true
+  },
+  "malformed_requests_rejected": 6,
+  "bank": {
+    "saved": {
+      "filename": "parked-budget.bin",
+      "n_saved": 4,
+      "n_written": 460427588,
+      "timings": {
+        "save_ms": 88.146
+      }
+    },
+    "loaded": {
+      "filename": "parked-budget.bin",
+      "n_restored": 4,
+      "n_read": 460427588,
+      "timings": {
+        "restore_ms": 104.14
+      }
+    },
+    "reference_timing": {
+      "cache_n": 4096,
+      "prompt_n": 38,
+      "prompt_ms": 112.561,
+      "prompt_per_token_ms": 2.9621315789473686,
+      "prompt_per_second": 337.5947264150105,
+      "predicted_n": 64,
+      "predicted_ms": 496.689,
+      "predicted_per_token_ms": 7.8839523809523815,
+      "predicted_per_second": 126.8399340432343,
+      "draft_n": 57,
+      "draft_n_accepted": 43
+    },
+    "restored_timing": {
+      "cache_n": 4096,
+      "prompt_n": 38,
+      "prompt_ms": 213.093,
+      "prompt_per_token_ms": 5.607710526315789,
+      "prompt_per_second": 178.32589526638603,
+      "predicted_n": 64,
+      "predicted_ms": 501.565,
+      "predicted_per_token_ms": 7.961349206349206,
+      "predicted_per_second": 125.60685055775423,
+      "draft_n": 57,
+      "draft_n_accepted": 43
+    },
+    "sha_equal": true,
+    "sha": "22a8984b7b7f49c2eefbc76ccd2e43ef94051dde446857b096e4a1830f19bb95"
+  },
+  "qwen_mixed_budgets_passed": true,
+  "qwen_production_profile": {
+    "production_defaults_output_equal": true,
+    "production_defaults_snapshot_equal": true,
+    "cache_and_view_validators_passed": true
+  },
+  "same_input_validators": {
+    "kv_calls": 35,
+    "kv_shapes": 12,
+    "compared_bytes": 3560722328,
+    "sampling_views": 425,
+    "hidden_rows": 311,
+    "image": {
+      "completion_tokens": 16,
+      "no_server_error": true
+    }
+  }
+}

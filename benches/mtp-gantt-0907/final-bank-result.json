@@ -1,0 +1,244 @@
+{
+  "reference": {
+    "index": 0,
+    "id_slot": 0,
+    "stop": true,
+    "model": "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+    "tokens_predicted": 64,
+    "tokens_evaluated": 4038,
+    "generation_settings": {
+      "seed": 1234,
+      "temperature": 0.0,
+      "dynatemp_range": 0.0,
+      "dynatemp_exponent": 1.0,
+      "top_k": 20,
+      "top_p": 0.949999988079071,
+      "min_p": 0.05000000074505806,
+      "top_n_sigma": -1.0,
+      "xtc_probability": 0.0,
+      "xtc_threshold": 0.10000000149011612,
+      "typical_p": 1.0,
+      "repeat_last_n": 64,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0,
+      "frequency_penalty": 0.0,
+      "dry_multiplier": 0.0,
+      "dry_base": 1.75,
+      "dry_allowed_length": 2,
+      "dry_penalty_last_n": 64,
+      "dry_sequence_breakers": [
+        "\n",
+        ":",
+        "\"",
+        "*"
+      ],
+      "mirostat": 0,
+      "mirostat_tau": 5.0,
+      "mirostat_eta": 0.10000000149011612,
+      "adaptive_target": -1.0,
+      "adaptive_decay": 0.8999999761581421,
+      "stop": [],
+      "max_tokens": 64,
+      "n_predict": 64,
+      "n_keep": 0,
+      "n_discard": 0,
+      "ignore_eos": true,
+      "stream": false,
+      "logit_bias": [
+        {
+          "bias": null,
+          "token": 248044
+        },
+        {
+          "bias": null,
+          "token": 248046
+        },
+        {
+          "bias": null,
+          "token": 248063
+        },
+        {
+          "bias": null,
+          "token": 248064
+        },
+        {
+          "bias": null,
+          "token": 248065
+        }
+      ],
+      "n_probs": 0,
+      "min_keep": 0,
+      "grammar": "",
+      "grammar_lazy": false,
+      "grammar_triggers": [],
+      "preserved_tokens": [],
+      "chat_format": "Content-only",
+      "reasoning_format": "deepseek",
+      "reasoning_in_content": false,
+      "generation_prompt": "",
+      "samplers": [
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature"
+      ],
+      "speculative.types": "none,draft-mtp",
+      "timings_per_token": false,
+      "post_sampling_probs": false,
+      "backend_sampling": false,
+      "lora": []
+    },
+    "has_new_line": true,
+    "truncated": false,
+    "stop_type": "limit",
+    "stopping_word": "",
+    "tokens_cached": 4101,
+    "timings": {
+      "cache_n": 4000,
+      "prompt_n": 38,
+      "prompt_ms": 115.156,
+      "prompt_per_token_ms": 3.030421052631579,
+      "prompt_per_second": 329.98714786897773,
+      "predicted_n": 64,
+      "predicted_ms": 531.07,
+      "predicted_per_token_ms": 8.42968253968254,
+      "predicted_per_second": 118.62842939725459,
+      "draft_n": 62,
+      "draft_n_accepted": 41
+    }
+  },
+  "saved": {
+    "filename": "parked-bank.bin",
+    "n_saved": 2,
+    "n_written": 227905962,
+    "timings": {
+      "save_ms": 41.846
+    }
+  },
+  "loaded": {
+    "filename": "parked-bank.bin",
+    "n_restored": 2,
+    "n_read": 227905962,
+    "timings": {
+      "restore_ms": 52.329
+    }
+  },
+  "resumed": {
+    "index": 0,
+    "id_slot": 0,
+    "stop": true,
+    "model": "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+    "tokens_predicted": 64,
+    "tokens_evaluated": 4038,
+    "generation_settings": {
+      "seed": 1234,
+      "temperature": 0.0,
+      "dynatemp_range": 0.0,
+      "dynatemp_exponent": 1.0,
+      "top_k": 20,
+      "top_p": 0.949999988079071,
+      "min_p": 0.05000000074505806,
+      "top_n_sigma": -1.0,
+      "xtc_probability": 0.0,
+      "xtc_threshold": 0.10000000149011612,
+      "typical_p": 1.0,
+      "repeat_last_n": 64,
+      "repeat_penalty": 1.0,
+      "presence_penalty": 0.0,
+      "frequency_penalty": 0.0,
+      "dry_multiplier": 0.0,
+      "dry_base": 1.75,
+      "dry_allowed_length": 2,
+      "dry_penalty_last_n": 64,
+      "dry_sequence_breakers": [
+        "\n",
+        ":",
+        "\"",
+        "*"
+      ],
+      "mirostat": 0,
+      "mirostat_tau": 5.0,
+      "mirostat_eta": 0.10000000149011612,
+      "adaptive_target": -1.0,
+      "adaptive_decay": 0.8999999761581421,
+      "stop": [],
+      "max_tokens": 64,
+      "n_predict": 64,
+      "n_keep": 0,
+      "n_discard": 0,
+      "ignore_eos": true,
+      "stream": false,
+      "logit_bias": [
+        {
+          "bias": null,
+          "token": 248044
+        },
+        {
+          "bias": null,
+          "token": 248046
+        },
+        {
+          "bias": null,
+          "token": 248063
+        },
+        {
+          "bias": null,
+          "token": 248064
+        },
+        {
+          "bias": null,
+          "token": 248065
+        }
+      ],
+      "n_probs": 0,
+      "min_keep": 0,
+      "grammar": "",
+      "grammar_lazy": false,
+      "grammar_triggers": [],
+      "preserved_tokens": [],
+      "chat_format": "Content-only",
+      "reasoning_format": "deepseek",
+      "reasoning_in_content": false,
+      "generation_prompt": "",
+      "samplers": [
+        "penalties",
+        "dry",
+        "top_n_sigma",
+        "top_k",
+        "typ_p",
+        "top_p",
+        "min_p",
+        "xtc",
+        "temperature"
+      ],
+      "speculative.types": "none,draft-mtp",
+      "timings_per_token": false,
+      "post_sampling_probs": false,
+      "backend_sampling": false,
+      "lora": []
+    },
+    "has_new_line": true,
+    "truncated": false,
+    "stop_type": "limit",
+    "stopping_word": "",
+    "tokens_cached": 4101,
+    "timings": {
+      "cache_n": 4000,
+      "prompt_n": 38,
+      "prompt_ms": 222.637,
+      "prompt_per_token_ms": 5.858868421052631,
+      "prompt_per_second": 170.68142312373953,
+      "predicted_n": 64,
+      "predicted_ms": 555.414,
+      "predicted_per_token_ms": 8.816095238095238,
+      "predicted_per_second": 113.42890168414912,
+      "draft_n": 62,
+      "draft_n_accepted": 41
+    }
+  }
+}

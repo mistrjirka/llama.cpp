@@ -1,0 +1,112 @@
+{
+  "previous_production": "5a1e654a21966e8b9653678af55bd4a937ddb1af",
+  "baseline_binary_source": "f9d1c3a2b (same runtime as previous production; following commit changed documentation only)",
+  "integration_source": "c30407d9856a52646e48bfe131798827fa1267e8",
+  "compiler_build": "Full CMake build in reused build-sm70-75 tree; no private TU relinking",
+  "hardware": "NVIDIA GeForce RTX 2080 Ti, 22528 MiB, 250.00 W\nTesla V100-SXM2-32GB, 32768 MiB, 200.00 W\n",
+  "model_settings": "Ornith AD-Q6_K-Q5_K, Shisa Q5_0 head, target/draft Q8_0 K/V; 1.4M physical / 4x400k logical; target ubatch256 / draft128; one pipeline copy; unchanged YaRN and layer placement",
+  "artifacts": {
+    "baseline-bin/llama-server": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/llama-server",
+      "bytes": 17888,
+      "sha256": "07edb94e4f0b94d84f1dee39f8b8b67a47ba05447f93c8455d7630ebe6049387"
+    },
+    "baseline-bin/libllama-server-impl.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libllama-server-impl.so",
+      "bytes": 7041000,
+      "sha256": "e2894a57988fe46b8828b24318267859edfef1958e942e151bc5187bd26588d4"
+    },
+    "baseline-bin/libllama.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libllama.so.0.4.0",
+      "bytes": 4803376,
+      "sha256": "0e214f9bb0a395d3b7021017723b33bcb859fae314bf835fdde96d8abaefeb40"
+    },
+    "baseline-bin/libllama-common.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libllama-common.so.0.4.0",
+      "bytes": 5978504,
+      "sha256": "bf0c30c66622dbac3a7803c90fba4e7b01c6098a9c7d2b538c9ffd639e904bac"
+    },
+    "baseline-bin/libggml-cuda.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libggml-cuda.so.0.23.0",
+      "bytes": 133649536,
+      "sha256": "58988a7798295756176e57ee01cd881ece2498c64f0a2b2f9211cddc09d1d44a"
+    },
+    "baseline-bin/libggml-base.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-production-merge-0907/final-bin/libggml-base.so.0.23.0",
+      "bytes": 948856,
+      "sha256": "cc46c0ca1f071b006317d63e02c07a05439eb0a38ca1e493c597be9d735839f8"
+    },
+    "candidate-bin/llama-server": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/candidate-bin/llama-server",
+      "bytes": 17888,
+      "sha256": "bf84fe01d2db2e7c2b4dedc9062414b31dbbe4feaae3fcb602ce29b1c88fe0b8"
+    },
+    "candidate-bin/libllama-server-impl.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/candidate-bin/libllama-server-impl.so",
+      "bytes": 7046680,
+      "sha256": "de5792a69b9e0ab76660e821aa9d74786bf3111027a9f3d36a98ddfddf5526b6"
+    },
+    "candidate-bin/libllama.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/candidate-bin/libllama.so.0.4.0",
+      "bytes": 4803504,
+      "sha256": "06a2d3cb8e9d8adfad58cf1660957b717f4102cd273944befe253be6cd479a70"
+    },
+    "candidate-bin/libllama-common.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/candidate-bin/libllama-common.so.0.4.0",
+      "bytes": 5978504,
+      "sha256": "b68c273a599a61fb0b5cc466e9568367ec775f9a57a028dfe1cd8a86a061e7db"
+    },
+    "candidate-bin/libggml-cuda.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/candidate-bin/libggml-cuda.so.0.23.0",
+      "bytes": 133649536,
+      "sha256": "58988a7798295756176e57ee01cd881ece2498c64f0a2b2f9211cddc09d1d44a"
+    },
+    "candidate-bin/libggml-base.so": {
+      "resolved_path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/candidate-bin/libggml-base.so.0.23.0",
+      "bytes": 948856,
+      "sha256": "f7cc68fa93aade49ba8a499ed87d0b56711e94141f97854f603431d7713ff0d9"
+    },
+    "real-fixture.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json",
+      "bytes": 4999750,
+      "sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce"
+    }
+  },
+  "result_hashes": {
+    "equiv-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/equiv-raw.json",
+      "bytes": 23812,
+      "sha256": "61588ab3ccd4fd45f57a3301fbdea6479ae7b27824e6abe0b72a09eafb5f8561"
+    },
+    "validation-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/validation-raw.json",
+      "bytes": 3334878,
+      "sha256": "5905793b7cfec5d5e1a84d403137e6b284a59b3c1d746a79f7b7d1fb77ef9699"
+    },
+    "qwen-production-profile.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/qwen-production-profile.json",
+      "bytes": 6177,
+      "sha256": "4ac69b852e8441e6a70abef57818437938ca05a15587c6e04de0eb65e2bc4009"
+    },
+    "validator-summary.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/validator-summary.json",
+      "bytes": 194,
+      "sha256": "b16b82cf36502ee846b874f69634481725ab30c9d24e42df90b6154d6a410161"
+    },
+    "one-bench-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/one-bench-raw.json",
+      "bytes": 57057,
+      "sha256": "ea86215528de02380cf47162909ceb5871ed4bc17543cf98694895673ed8de2f"
+    },
+    "four-bench-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/four-bench-raw.json",
+      "bytes": 152249,
+      "sha256": "0bdd3e5944aa6101841b0647567004fb98d1dd07c970959eb8d5d4746ec04a7f"
+    },
+    "off-bench-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-final-integration-0907/off-bench-raw.json",
+      "bytes": 144103,
+      "sha256": "1f2e58325c8070f7a7ca84fa856550be426fa565bab14b8092820e60327e325a"
+    }
+  }
+}

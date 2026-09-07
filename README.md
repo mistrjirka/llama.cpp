@@ -4,7 +4,7 @@
 
 A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) for NVIDIA Volta (SM70) and Turing (SM75), tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main target is long-context Qwen3.8-27B serving; Ornith-1.5-35B-A3B has additional routed-MoE tuning.
 
-**Branch:** `v100-optimized` · **Validated multi-agent code:** `439f2245e3` · **Upstream merged through:** `465e49b9c`
+**Branch:** `v100-optimized` · **Upstream merged through:** `465e49b9c` · **Latest serving update:** [faster MTP and per-agent pause](#faster-mtp-generation-and-per-agent-pause)
 
 ## Performance vs vanilla llama.cpp
 
@@ -63,6 +63,51 @@ Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. If you s
 
 > [!WARNING]
 > `GGML_CUDA_FORCE_MMQ=ON` is intended for routed quantized MoE workloads such as Ornith. Do not enable it globally for dense Qwen3.8; it is a known prompt-processing regression there.
+
+## Faster MTP generation and per-agent pause
+
+**Enabled by default after rebuilding. No lower-precision KV cache or new launch flags are needed.** MTP (multi-token prediction) uses a small draft head to propose tokens that the main model verifies. This update removes CPU stalls between those steps: deleting a few rejected tokens now visits only their cache entries, instead of scanning the entire reserved pool. It also avoids copying a long prompt that the MTP head never reads. The earlier K/V-only draft refresh and consolidated readbacks remain enabled.
+
+### Measured impact on V100 + RTX 2080 Ti
+
+| Workload | TG per agent, before → after (tok/s) | Complete turn, before → after | Turn latency |
+|---|---:|---:|---:|
+| One active agent, MTP3 | 53.27 → **56.96** | 2.659 → **2.500 s** | **-6.0%** |
+| Four active agents, MTP3 | 24.60 → **27.25** | 6.276 → **5.711 s** | **-9.0%** |
+| Four active agents, MTP off | 26.14 → **26.00** | 5.709 → **5.750 s** | +0.7% (within variation) |
+
+Both sides already include the earlier K/V-only refresh and readback fixes. The new MTP3 gains above are not added to older percentages. Four-agent MTP3 is now close to ordinary decoding in this workload, rather than substantially slower; this does not mean speculation always wins.
+
+These are **within-fork comparisons**, separate from the vanilla-versus-fork tables above. Both sides use Ornith Q6/Q5 weights, a Shisa Q5_0 head, Q8 target/draft KV and unchanged attention kernels. Each active agent starts with 100k cached C++ source tokens, appends a short review request and generates 128 tokens; four histories remain resident in every test. "Turn time" includes the prompt append and generation, but excludes model loading and cache restoration. TG is **per agent**, not combined throughput. Four retained measurements per condition use A/B/B/A ordering.
+
+The tests do not establish a universal MTP speedup, a new 350k–400k rate, or a quality improvement. The target model, context limits and cache precision are unchanged. See the [final integration tests and benchmark details](benches/mtp-final-integration-0907/REPORT.md), and the [before/after GPU timelines](benches/mtp-gantt-0907/REPORT.md#what-nsight-found).
+
+### Pause drafting for an individual agent
+
+On a server started with `--spec-type draft-mtp`, a request can limit drafting without unloading the model or losing its cached history. For the native `/completion` endpoint:
+
+```json
+{"prompt":"Continue this task.","n_predict":128,"speculative_n_max":0}
+```
+
+`0` pauses proposals while keeping draft K/V current. A later request can use `1`, `2`, or `3` (up to the server's configured maximum), or omit the field to return to the server default. Agents can use different limits concurrently; one agent's pause does not change another's setting. The draft remains GPU-resident, so pausing is **not** a VRAM-saving unload. This field is supported for MTP-only serving, not mixed speculative methods.
+
+**Automatic occupancy-based switching is not enabled.** The request control is available for clients to use; the server's configured draft depth stays unchanged unless a request supplies a limit. Do not assume that four active agents always benefit from disabling MTP—context length and acceptance change the trade-off.
+
+<details>
+<summary>Compatibility switches</summary>
+
+For troubleshooting, set a switch to `0` before starting the server:
+
+```sh
+export LLAMA_KV_INDEXED_RM=0          # original full-pool sequence-removal scan
+export LLAMA_MTP_SKIP_PROMPT_COPY=0   # retain the original prompt-copy path
+export LLAMA_MTP_REQUEST_BUDGET=0     # ignore per-request MTP ceilings
+```
+
+Unset values enable the new defaults. Existing `LLAMA_EXPERIMENT_*` aliases remain recognized when their production equivalent is unset. Older refresh/readback switches are documented in [Lower MTP refresh overhead](#lower-mtp-refresh-overhead).
+
+</details>
 
 ## Multi-agent KV sharing and parked sessions
 
@@ -245,7 +290,7 @@ Single-layer Qwen/Ornith MTP heads now refresh K/V without running unused draft 
 
 The integrated build versus the previous production revision measured **2.5% shorter four-agent MTP1 turns** (5.936 → 5.786 s) at 100k context on the V100 + 2080 Ti pair, with Q6/Q5 weights and Q8 target/draft KV unchanged. MTP-off remained effectively unchanged; four-agent MTP3's 1.2% mean reduction overlapped timing variation. These within-fork results are not additive, not a claim that MTP always beats ordinary decoding, and not the vanilla baseline used in the headline tables.
 
-See [the production integration report and regression evidence](benches/mtp-production-merge-0907/REPORT.md) for the integrated build's tests and measurements. To diagnose regressions, set `LLAMA_MTP_KV_ONLY=0`, `LLAMA_MTP_BULK_HIDDEN=0`, or `LLAMA_SAMPLING_VIEW=0` before starting the engine. Existing launch configurations pick up the defaults after rebuilding; no lower-precision KV or changed MTP depth is required. Unresolved attention, compact-layout and grouping experiments remain excluded.
+See [the production integration report and regression evidence](benches/mtp-production-merge-0907/REPORT.md) for the integrated build's tests and measurements. To diagnose regressions, set `LLAMA_MTP_KV_ONLY=0`, `LLAMA_MTP_BULK_HIDDEN=0`, or `LLAMA_SAMPLING_VIEW=0` before starting the engine. Existing launch configurations pick up the defaults after rebuilding; no lower-precision KV or changed MTP depth is required. This refresh optimization does not change attention kernels, physical cache placement or GPU grouping.
 
 
 The tables below isolate individual fork options. They are useful for choosing settings, but they are **not** the vanilla-vs-fork headline comparison above.
@@ -576,6 +621,8 @@ The fork is best understood as **upstream llama.cpp plus the patches below**. Do
 | Volta runtime foundation | `0471a9885` | V100, Qwen/Ornith | Integrated the first V100-specific FA/GDN/speculative/cache/scheduler stack used by the later patches. | Bundled foundation; **do not assign one percentage** to this commit. Use the isolated rows below. |
 | Qwen MTP3 decode stack | `4cb009882` | Qwen3.8-27B, V100 | q8_0 tiled target-verification attention, exact 131072-row MTP proposal shortlist, Q5_K T=4 weight reuse and Q6_K T=4 `w4r4` scheduling. | **+32.19% TG** in the within-fork 100k + 1k + 256 MTP3 A/B, PP +0.65%; generated-token SHA matched. |
 | Volta Qwen prompt-attention dispatch | `d3c14522d` | Qwen3.8, V100 | Adds the sm70 D256 32-column prompt configuration and a measured small/medium-suffix dispatch gate. | Part of the D256 FA stack. The isolated D256 stack measured **+27.84% Qwen PP at 100k KV**; that whole number should not be attributed to this commit alone. |
+| Indexed KV rollback and MTP prompt-copy removal | `d61c6b5d8`, `c30407d98` | Generic sequence cache; MTP server path | Uses the existing sequence-position index to remove a short rejected tail; does not copy unused prompt tokens for MTP-only drafting. | See [the measured MTP update](#faster-mtp-generation-and-per-agent-pause). No changed target arithmetic or KV precision. |
+| Per-agent warm MTP pause | `bdeb7a7fe`, `c30407d98` | MTP-only requests | Adds a bounded `speculative_n_max` ceiling; zero pauses proposals while keeping draft state resumable. | Request control, **not** an automatic load controller or independent throughput claim. |
 | Recurrent previous-state checkpoint | `be6567cea` | hybrid/recurrent models, mainly non-MTP Qwen | Avoids replaying a separate checkpoint tail for cached agent turns; preserves the previous recurrent state on device. | Qwen 100k cached: **+14.08% PP at +128**, +11.50% at +177, +10.63% at +256, +5.56% at +512. |
 | Deferred MTP prompt catch-up | `214200a2c` | Qwen + draft-MTP | Defers MTP hidden-state catch-up until after the first target token is queued. | Representative +177 agent turn: **TTFT -5.28%** (864.9 → 819.3 ms), TG -0.38%, same MTP acceptance. |
 | Volta MoE MMQ + mirrored-copy/runtime cleanup | `cee72e8c8` | Ornith/MoE on V100; mixed GPU | Adds expert-only `GGML_CUDA_VOLTA_FORCE_MMQ=moe`, Volta MMQ sizing/register fixes and large mirrored-input async fan-out. | **Ornith Q5/Q4: +54.7% PP** at 100k in the current test (917.6 → 1419.3), TG flat and exact SHA. The mirrored-input subpath separately measured about +1.16% PP on a large 1k fan-out workload. |
