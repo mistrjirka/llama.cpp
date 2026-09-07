@@ -10366,6 +10366,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // Long-span boundary checks for the shape-gated refined path.
+    for (int kv : {65536, 100096}) {
+        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {8, 1}, kv, 4,
+            true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    }
     // Ornith layer-split multi-agent verification geometry, including incomplete tiles.
     for (int kv : {512, 4096}) {
         for (int nb : {1, 2, 3, 4, 5, 8, 12, 16}) {
@@ -10705,6 +10710,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 // Test cases for performance evaluation: should be representative of real-world use cases
 static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+    // Same exact Ornith operator shapes are available in perf mode as correctness.
+    // This avoids empty "successful" perf filters and includes long KV spans.
+    for (int kv : {4096, 100096}) {
+        for (int nb : {4, 8, 16}) {
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {8, 1}, kv, nb,
+                true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+        }
+    }
+
 
     // SWIGLU at a 27B-class FFN width, fused [gate|up] vs split operands
     // note: same bytes either way, so a backend that indexes them differently shows it here

@@ -3,6 +3,7 @@
 #include "fattn-mma-f16.cuh"
 #include "fattn-q8-volta.cuh"
 #include "fattn-q8-multi.cuh"
+#include "fattn-q8-refined.cuh"
 #include "fattn-tile.cuh"
 #include "fattn-vec.cuh"
 #include "fattn.cuh"
@@ -519,6 +520,7 @@ enum best_fattn_kernel {
     BEST_FATTN_KERNEL_MMA_F16 = 400,
     BEST_FATTN_KERNEL_VOLTA_Q8_W4 = 500,
     BEST_FATTN_KERNEL_VOLTA_Q8_MULTI = 501,
+    BEST_FATTN_KERNEL_VOLTA_Q8_REFINED = 502,
 };
 
 static bool ggml_cuda_fattn_kv_type_supported(ggml_type type) {
@@ -680,11 +682,16 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
             K->type == GGML_TYPE_Q8_0 && V->type == GGML_TYPE_Q8_0 &&
             K->ne[0] == 256 && V->ne[0] == 256 && K->ne[2] == 2 && V->ne[2] == 2 &&
             K->ne[3] == 1 && V->ne[3] == 1 && mask != nullptr && max_bias == 0.0f &&
-            KQV->src[4] == nullptr) {
+            KQV->src[4] == nullptr &&
+            // The measured crossover is shape-specific. Never replace efficient
+            // large-query tiles with serial four-query passes in auto mode.
+            (std::getenv("GGML_CUDA_VOLTA_Q8_REFINED_AUTO") == nullptr ||
+             (Q->ne[1] == 4 && K->ne[1] >= 65536))) {
         float logit_softcap = 0.0f;
         memcpy(&logit_softcap, (const float *) KQV->op_params + 2, sizeof(float));
         if (logit_softcap == 0.0f) {
-            return BEST_FATTN_KERNEL_VOLTA_Q8_MULTI;
+            return std::getenv("GGML_CUDA_VOLTA_Q8_REFINED") != nullptr
+                ? BEST_FATTN_KERNEL_VOLTA_Q8_REFINED : BEST_FATTN_KERNEL_VOLTA_Q8_MULTI;
         }
     }
 
@@ -759,6 +766,9 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
 
     const best_fattn_kernel kernel = ggml_cuda_get_best_fattn_kernel(device, dst);
 
+    if (kernel == BEST_FATTN_KERNEL_VOLTA_Q8_REFINED) {
+        return ggml_q8refined::get_alloc_size(dst);
+    }
     if (kernel == BEST_FATTN_KERNEL_VOLTA_Q8_MULTI) {
         return ggml_q8multi::get_alloc_size(dst);
     }
@@ -779,6 +789,7 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
             need_f16_K = K->type == GGML_TYPE_F32;
             need_f16_V = V->type == GGML_TYPE_F32;
             break;
+        case BEST_FATTN_KERNEL_VOLTA_Q8_REFINED:
         case BEST_FATTN_KERNEL_VOLTA_Q8_MULTI:
         case BEST_FATTN_KERNEL_VOLTA_Q8_W4:
             GGML_ABORT("unreachable");
@@ -805,6 +816,9 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
             break;
         case BEST_FATTN_KERNEL_MMA_F16:
             ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);
+            break;
+        case BEST_FATTN_KERNEL_VOLTA_Q8_REFINED:
+            ggml_q8refined::launch(ctx, dst);
             break;
         case BEST_FATTN_KERNEL_VOLTA_Q8_MULTI:
             ggml_q8multi::launch(ctx, dst);
