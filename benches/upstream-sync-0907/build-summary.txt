@@ -1,0 +1,6 @@
+[100%] Built target llama-server-impl
+[100%] Built target llama-server
+[100%] Built target test-sampling
+[100%] Built target test-mtp-draft-budget
+[100%] Built target test-kv-indexed-remove
+[100%] Built target test-batch-alloc

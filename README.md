@@ -4,11 +4,11 @@
 
 A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) for NVIDIA Volta (SM70) and Turing (SM75), tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main target is long-context Qwen3.8-27B serving; Ornith-1.5-35B-A3B has additional routed-MoE tuning.
 
-**Branch:** `v100-optimized` · **Upstream merged through:** `465e49b9c` · **Latest serving update:** [faster MTP and per-agent pause](#faster-mtp-generation-and-per-agent-pause)
+**Branch:** `v100-optimized` · **Upstream merged through:** `67672dc5b` · **Latest serving update:** [faster MTP and per-agent pause](#faster-mtp-generation-and-per-agent-pause)
 
 ## Performance vs vanilla llama.cpp
 
-The headline vanilla-vs-fork tables below are the retained direct comparison from **5 September 2026**: fork snapshot `547593d21` versus upstream `6a1a922d2`. The branch has since been merged forward to upstream `465e49b9c`; the new code was regression-gated separately and is documented in [Post-upstream integration validation](#post-upstream-integration-validation). The same model and common runtime settings are used on both sides of each comparison, and mixed V100 + RTX results are not reported as single-GPU numbers.
+The headline vanilla-vs-fork tables below are the retained direct comparison from **5 September 2026**: fork snapshot `547593d21` versus upstream `6a1a922d2`. The branch has since been merged forward through upstream `67672dc5b`; current sync regression evidence is in [Upstream sync validation](benches/upstream-sync-0907/REPORT.md), while the older Flash-Next integration measurements remain documented below. The same model and common runtime settings are used on both sides of each comparison, and mixed V100 + RTX results are not reported as single-GPU numbers.
 
 `PP` is prompt-processing throughput and `TG` is token-generation throughput. Higher is better.
 
@@ -84,18 +84,18 @@ The tests do not establish a universal MTP speedup, a new 350k–400k rate, or a
 
 ### Fair comparison with upstream
 
-A separate four-agent test compares the current fork with **latest upstream `f114f91f9`** on exactly the same 100k cached histories. For this table, **aggregate PP+TG** means all newly processed prompt tokens plus all generated tokens divided by whole-turn wall time: `38+42+44+41` appended tokens plus `4×128` generated tokens = **677 tokens per turn**.
+A separate four-agent test compares the fork with **upstream snapshot `f114f91f9`** on exactly the same 100k cached histories. For this table, **aggregate PP+TG** means all newly processed prompt tokens plus all generated tokens divided by whole-turn wall time: `38+42+44+41` appended tokens plus `4×128` generated tokens = **677 tokens per turn**.
 
 | Engine / mode | Whole turn | Aggregate PP+TG | Aggregate generated | Mean TG per agent |
 |---|---:|---:|---:|---:|
-| Latest upstream | 10.647 s | **63.65 tok/s** | 48.13 tok/s | 14.84 tok/s |
-| Latest upstream + global `GGML_CUDA_FORCE_MMQ=ON` | 10.720 s | 63.17 tok/s | 47.77 tok/s | 14.68 tok/s |
+| Upstream `f114f91f9` | 10.647 s | **63.65 tok/s** | 48.13 tok/s | 14.84 tok/s |
+| Upstream `f114f91f9` + global `GGML_CUDA_FORCE_MMQ=ON` | 10.720 s | 63.17 tok/s | 47.77 tok/s | 14.68 tok/s |
 | `v100-optimized`, **common-denominator settings** | **7.735 s** | **87.55 tok/s** | **66.21 tok/s** | **19.91 tok/s** |
 | `v100-optimized`, **normal optimized serving** | **5.683 s** | **119.24 tok/s** | **90.18 tok/s** | **27.35 tok/s** |
 
-The strict common-denominator comparison is the fair fork-vs-upstream claim: **+37.6% aggregate PP+TG throughput** and a **27.3% shorter turn** versus latest upstream. It disables fork-only prefix sharing, deferred-MTP prompt handling, the separate draft ubatch and the custom pipeline-copy setting; the fork’s kernel/runtime optimizations remain enabled, because those are what this A/B is measuring. Against the exact upstream base currently merged into this branch (`465e49b9c`), the same strict test is **+39.6%**.
+The strict common-denominator comparison is the fair fork-vs-upstream claim: **+37.6% aggregate PP+TG throughput** and a **27.3% shorter turn** versus that upstream snapshot. It disables fork-only prefix sharing, deferred-MTP prompt handling, the separate draft ubatch and the custom pipeline-copy setting; the fork’s kernel/runtime optimizations remain enabled, because those are what this A/B is measuring. Against the pre-sync upstream base `465e49b9c`, the same strict test was **+39.6%**. The branch is now merged through `67672dc5b`; see the current sync gate above.
 
-The **119.24 tok/s** row is the practical deployment result with the fork's normal serving features re-enabled. Do not interpret its **+87.3%** difference from latest upstream as a pure kernel-speed claim: it also benefits from fork-only serving behavior. Upstream was given a global FORCE_MMQ build as an additional best-effort Ornith control; it did not improve this workload.
+The **119.24 tok/s** row is the practical deployment result with the fork's normal serving features re-enabled. Do not interpret its **+87.3%** difference from upstream snapshot `f114f91f9` as a pure kernel-speed claim: it also benefits from fork-only serving behavior. Upstream was given a global FORCE_MMQ build as an additional best-effort Ornith control; it did not improve this workload.
 
 Upstream does not natively restore this fork's MTP-aware `.draft`/`.spec` snapshot companions. To avoid charging upstream for rebuilding four 100k histories, the benchmark uses a **restore-only setup shim** that loads identical warm target/draft/spec states before the timer starts. The timed completion path remains upstream code. Full methodology, exact shim diffs, argv, acceptance counts and per-run results are in [the fair upstream benchmark report](benches/upstream-fair-0907/REPORT.md).
 
@@ -314,7 +314,7 @@ The tables below isolate individual fork options. They are useful for choosing s
 
 ### Post-upstream integration validation
 
-The current patch stack is synced through upstream `465e49b9c` and regression-gated as code commit **`f3f0eef26`**. Hardware was the mixed **Tesla V100-SXM2 32 GB + RTX 2080 Ti 22 GB** system; logical `CUDA0` was the V100 and `CUDA1` the 2080 Ti.
+The table in this section records the earlier Flash-Next integration synced through upstream `465e49b9c` and regression-gated as code commit **`f3f0eef26`**. The current branch is synced through `67672dc5b`; see the [current upstream sync validation](benches/upstream-sync-0907/REPORT.md). Hardware was the mixed **Tesla V100-SXM2 32 GB + RTX 2080 Ti 22 GB** system; logical `CUDA0` was the V100 and `CUDA1` the 2080 Ti.
 
 For Qwen3.8 Flash-Next, the new raw-q8 tiled QSA prefill path uses a **35:14** layer split, 100,000 restored tokens, +1,000 prompt tokens, q8_0 K/V, `n-cpu-moe=18`, batch/ubatch `2048/1000`, and tile width 16. The 36:13 raw-q8 placement is intentionally **not** recommended: it can run out of V100 workspace memory during the prompt.
 
@@ -406,7 +406,7 @@ Enable it with:
 
 ## Detailed benchmarks and methodology
 
-The headline tables above are the retained **5 September vanilla-vs-fork snapshot**: upstream `6a1a922d2`; fork CUDA/runtime code `547593d21`; CUDA 12.9. The current branch is newer (`f3f0eef26`, upstream merged through `465e49b9c`), so use the post-upstream validation section for the current integration gate. The relevant methodology for the historical headline is summarized below.
+The headline tables above are the retained **5 September vanilla-vs-fork snapshot**: upstream `6a1a922d2`; fork CUDA/runtime code `547593d21`; CUDA 12.9. Those historical tables predate later MTP/serving work. The current branch is merged through upstream `67672dc5b`; use the [current upstream sync validation](benches/upstream-sync-0907/REPORT.md) for the latest integration gate. The relevant methodology for the historical headline is summarized below.
 
 ### Current-upstream V100 100k methodology
 
