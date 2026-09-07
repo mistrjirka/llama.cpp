@@ -194,6 +194,32 @@ std::vector<std::unique_ptr<field>> make_llama_cmpl_schema(const common_params &
     // Speculative decoding params
     //
 
+    // Request-local ceiling only: never resize the target/draft contexts or
+    // mutate the process-wide MTP configuration. Zero keeps K/V warm without
+    // preparing a speculative prompt/checkpoint for this request.
+    const char * request_budget = std::getenv("LLAMA_EXPERIMENT_MTP_REQUEST_BUDGET");
+    if (request_budget && std::string(request_budget) == "1" &&
+            std::find(params_base.speculative.types.begin(), params_base.speculative.types.end(),
+                COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params_base.speculative.types.end() &&
+            std::all_of(params_base.speculative.types.begin(), params_base.speculative.types.end(),
+                [](auto type) { return type == COMMON_SPECULATIVE_TYPE_NONE || type == COMMON_SPECULATIVE_TYPE_DRAFT_MTP; })) {
+        const int max_depth = std::max(0, params_base.speculative.draft.n_max);
+        add((new field_num("speculative_n_max", params.speculative.draft.n_max))
+            ->set_hard_limits(0, max_depth)
+            ->add_alias("speculative.n_max")
+            ->set_desc("Experimental per-request MTP ceiling. Zero pauses proposals while preserving draft KV; cannot exceed the server's configured depth.")
+            ->set_handler([max_depth](field_eval_context & ctx, const json & data) {
+                const char * key = data.contains("speculative_n_max") && !data.at("speculative_n_max").is_null()
+                    ? "speculative_n_max" : "speculative.n_max";
+                const auto & value = data.at(key);
+                // Reject booleans, fractional values and overflow before conversion.
+                if (!value.is_number_integer() || value.get<double>() < 0 || value.get<double>() > max_depth) {
+                    throw std::invalid_argument("MTP ceiling must be an integer between 0 and " + std::to_string(max_depth));
+                }
+                ctx.params.speculative.draft.n_max = value.get<int32_t>();
+            }));
+    }
+
     // TODO: to keep things simple, we disable speculative parameter adjustments for now
 #if 0
     // TODO: for now, be able to adjust only the draft-model based speculative parameters

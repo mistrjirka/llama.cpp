@@ -498,6 +498,14 @@ struct server_slot {
             return 0;
         }
 
+        const char * request_budget = std::getenv("LLAMA_EXPERIMENT_MTP_REQUEST_BUDGET");
+        const bool use_request_budget = request_budget && std::strcmp(request_budget, "1") == 0 &&
+                common_speculative_can_defer_prompt(spec);
+        const int request_max = use_request_budget ? task->params.speculative.draft.n_max : INT_MAX;
+        if (request_max <= 0) {
+            return 0;
+        }
+
         // determine the max draft that fits the current slot state
         // note: slot.prompt is not yet expanded with the `id` token sampled above
         //       also, need to leave space for 1 extra token to allow context shifts
@@ -509,7 +517,7 @@ struct server_slot {
 
         SLT_DBG(*this, "max possible draft: %d\n", n_draft_max);
 
-        return n_draft_max;
+        return std::min(n_draft_max, request_max);
     }
 
     // add sampled token of this slot to the batch, optionally add the speculative draft tokens if any
