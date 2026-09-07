@@ -1,0 +1,189 @@
+{
+  "scope": "Safe production source 7571e2e17, Ornith AD-Q6_K-Q5_K, Q8 target/draft KV, CPU projector, 4 resident slots; approx12k cached code, 23 new input, 192 output per active request. Screening, two runs for four-agent off and MTP3, one otherwise; forwarding timing shim but no Nsight on these runs. Output quality not validated across MTP depths.",
+  "summary": [
+    {
+      "concurrent": 1,
+      "depth": 0,
+      "runs": 1,
+      "wall_s": 2.5749106660368852,
+      "mean_tg_per_request": 77.81625585658993,
+      "whole_turn_output_tps": 74.56569368890472,
+      "accepted": 0,
+      "drafted": 0
+    },
+    {
+      "concurrent": 1,
+      "depth": 3,
+      "runs": 1,
+      "wall_s": 2.0858293260098435,
+      "mean_tg_per_request": 97.49290113862521,
+      "whole_turn_output_tps": 92.0497173981597,
+      "accepted": 123,
+      "drafted": 203
+    },
+    {
+      "concurrent": 4,
+      "depth": 0,
+      "runs": 2,
+      "wall_s": 4.532106514496263,
+      "mean_tg_per_request": 45.53696517665368,
+      "whole_turn_output_tps": 169.48731141728888,
+      "accepted": 0,
+      "drafted": 0
+    },
+    {
+      "concurrent": 4,
+      "depth": 1,
+      "runs": 1,
+      "wall_s": 5.575225402018987,
+      "mean_tg_per_request": 37.27069379163338,
+      "whole_turn_output_tps": 137.75227809119252,
+      "accepted": 342,
+      "drafted": 418
+    },
+    {
+      "concurrent": 4,
+      "depth": 2,
+      "runs": 1,
+      "wall_s": 6.176706980040763,
+      "mean_tg_per_request": 34.0490444303192,
+      "whole_turn_output_tps": 124.33809835591904,
+      "accepted": 442,
+      "drafted": 640
+    },
+    {
+      "concurrent": 4,
+      "depth": 3,
+      "runs": 2,
+      "wall_s": 5.888591601018561,
+      "mean_tg_per_request": 35.36678007288846,
+      "whole_turn_output_tps": 130.42169674137415,
+      "accepted": 968,
+      "drafted": 1660
+    }
+  ],
+  "raw": [
+    {
+      "label": "code-p1-mtp0",
+      "concurrent": 1,
+      "depth": 0,
+      "wall_s": 2.5749106660368852,
+      "mean_tg_per_request": 77.81625585658993,
+      "whole_turn_output_tps": 74.56569368890472,
+      "accepted": 0,
+      "drafted": 0,
+      "hashes": [
+        "93ae4e3e821e4ea950b7169f661a99348be83307ea960f82bc7c5dd648b2a2cd"
+      ]
+    },
+    {
+      "label": "code-p1-mtp3",
+      "concurrent": 1,
+      "depth": 3,
+      "wall_s": 2.0858293260098435,
+      "mean_tg_per_request": 97.49290113862521,
+      "whole_turn_output_tps": 92.0497173981597,
+      "accepted": 123,
+      "drafted": 203,
+      "hashes": [
+        "f05405b4a94c75439164652f11e9c3f859e36237dc88d0269423289891b2a798"
+      ]
+    },
+    {
+      "label": "code-p4-mtp0-repeat",
+      "concurrent": 4,
+      "depth": 0,
+      "wall_s": 4.592088439967483,
+      "mean_tg_per_request": 44.94062185221581,
+      "whole_turn_output_tps": 167.2441657080625,
+      "accepted": 0,
+      "drafted": 0,
+      "hashes": [
+        "d8d09140acca43b78d620d2088d50e97a5e7368daad72e6485c89e59f735d33e",
+        "5b887a025241a0404ddf68dcf98d132b5af40149bd1efe355950cba346752a49",
+        "b109ae04dada2763762f22eddf548d0e2ff5cd4106e721c4c47b79ca25b20597",
+        "d835b3b936d4115c5f12fdb5c664eeeb1bf078d1af1a2bde8ce60c4d22cac21d"
+      ]
+    },
+    {
+      "label": "code-p4-mtp0",
+      "concurrent": 4,
+      "depth": 0,
+      "wall_s": 4.472124589025043,
+      "mean_tg_per_request": 46.13330850109155,
+      "whole_turn_output_tps": 171.7304571265153,
+      "accepted": 0,
+      "drafted": 0,
+      "hashes": [
+        "93ae4e3e821e4ea950b7169f661a99348be83307ea960f82bc7c5dd648b2a2cd",
+        "828ed5ec35602371750a22a8e92e3b5966641823426dc58e9296521c4064c798",
+        "c0e8fc3037fd182e043a86285b25c475dfdf4bf7c10edf223e42f587a5d9e636",
+        "85a5fa5594c6433b213a79d3d58c68070009f0e68ec672a0208bfa5461d2898c"
+      ]
+    },
+    {
+      "label": "code-p4-mtp1",
+      "concurrent": 4,
+      "depth": 1,
+      "wall_s": 5.575225402018987,
+      "mean_tg_per_request": 37.27069379163338,
+      "whole_turn_output_tps": 137.75227809119252,
+      "accepted": 342,
+      "drafted": 418,
+      "hashes": [
+        "e75e27c629e9e8ce91b13c1b2266347330b39617e25e4735cf3a81d3b5e14e5b",
+        "88b7741712c6f0b7837ca040de949ad7c5476d40c9d9f0fdd0f24058c9ac8d4f",
+        "38cdb79731f4336532e702b604731d500dc2baabee10f53975a398066e6825f6",
+        "ef2b95f573825f6990a351943950070e1a9f12a9f166ee9953584ff6ccf0e95c"
+      ]
+    },
+    {
+      "label": "code-p4-mtp2",
+      "concurrent": 4,
+      "depth": 2,
+      "wall_s": 6.176706980040763,
+      "mean_tg_per_request": 34.0490444303192,
+      "whole_turn_output_tps": 124.33809835591904,
+      "accepted": 442,
+      "drafted": 640,
+      "hashes": [
+        "c7c0101e7f4978363e16bb8f4308186208571f759b9bd5623299c8ecab747e88",
+        "a6bd5fbcc08db5f26aca9216ed94ad5e8438670a79b25be11dada55810b72812",
+        "5b8fd44696eecf245c1db6e086a08b5b895336af02838f7426e1cc72631c0770",
+        "7607ee1b510cbe4d9180e50ba4da73ae7784cf8a3d2963407d0d6ca33f3f0750"
+      ]
+    },
+    {
+      "label": "code-p4-mtp3-repeat",
+      "concurrent": 4,
+      "depth": 3,
+      "wall_s": 5.89080004603602,
+      "mean_tg_per_request": 35.35920183432511,
+      "whole_turn_output_tps": 130.3727836623474,
+      "accepted": 484,
+      "drafted": 830,
+      "hashes": [
+        "cdd0f583b5b1c5a9e98f7330e1672603378e68a2136d6dcecb9070366c60da53",
+        "668e1946013657e402cfc5e25720243fb69a23af92070a29bb4ed614de9e91c0",
+        "38cdb79731f4336532e702b604731d500dc2baabee10f53975a398066e6825f6",
+        "af80c0b52cb9bd1cc88ad66302cfcf7e1a7e784aab571572fdce714413a41667"
+      ]
+    },
+    {
+      "label": "code-p4-mtp3",
+      "concurrent": 4,
+      "depth": 3,
+      "wall_s": 5.886383156001102,
+      "mean_tg_per_request": 35.3743583114518,
+      "whole_turn_output_tps": 130.47060982040094,
+      "accepted": 484,
+      "drafted": 830,
+      "hashes": [
+        "cdd0f583b5b1c5a9e98f7330e1672603378e68a2136d6dcecb9070366c60da53",
+        "668e1946013657e402cfc5e25720243fb69a23af92070a29bb4ed614de9e91c0",
+        "38cdb79731f4336532e702b604731d500dc2baabee10f53975a398066e6825f6",
+        "af80c0b52cb9bd1cc88ad66302cfcf7e1a7e784aab571572fdce714413a41667"
+      ]
+    }
+  ]
+}

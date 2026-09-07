@@ -1,0 +1,2 @@
+MTP_PROFILE target/decode calls=194 ms=1606.744259 tokens=856
+MTP_PROFILE target/sample calls=768 ms=422.996123 tokens=0

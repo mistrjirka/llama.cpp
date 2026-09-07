@@ -1,0 +1,76 @@
+{
+  "label": "code-p4-mtp0",
+  "wall_s": 4.472124589025043,
+  "whole_turn_output_tps": 171.7304571265153,
+  "rows": [
+    {
+      "slot": 0,
+      "wall_s": 4.449669201043434,
+      "timings": {
+        "cache_n": 12009,
+        "prompt_n": 23,
+        "prompt_ms": 292.348,
+        "prompt_per_token_ms": 12.710782608695652,
+        "prompt_per_second": 78.67336188378233,
+        "predicted_n": 192,
+        "predicted_ms": 4141.849,
+        "predicted_per_token_ms": 21.68507329842932,
+        "predicted_per_second": 46.1146700422927
+      },
+      "sha": "93ae4e3e821e4ea950b7169f661a99348be83307ea960f82bc7c5dd648b2a2cd"
+    },
+    {
+      "slot": 1,
+      "wall_s": 4.453629398019984,
+      "timings": {
+        "cache_n": 12011,
+        "prompt_n": 23,
+        "prompt_ms": 278.45,
+        "prompt_per_token_ms": 12.106521739130434,
+        "prompt_per_second": 82.60010773927097,
+        "predicted_n": 192,
+        "predicted_ms": 4140.414,
+        "predicted_per_token_ms": 21.677560209424083,
+        "predicted_per_second": 46.13065263521957
+      },
+      "sha": "828ed5ec35602371750a22a8e92e3b5966641823426dc58e9296521c4064c798"
+    },
+    {
+      "slot": 2,
+      "wall_s": 4.449133321002591,
+      "timings": {
+        "cache_n": 12010,
+        "prompt_n": 23,
+        "prompt_ms": 263.572,
+        "prompt_per_token_ms": 11.459652173913044,
+        "prompt_per_second": 87.26268344133672,
+        "predicted_n": 192,
+        "predicted_ms": 4140.026,
+        "predicted_per_token_ms": 21.675528795811516,
+        "predicted_per_second": 46.13497596391907
+      },
+      "sha": "c0e8fc3037fd182e043a86285b25c475dfdf4bf7c10edf223e42f587a5d9e636"
+    },
+    {
+      "slot": 3,
+      "wall_s": 4.456881305959541,
+      "timings": {
+        "cache_n": 12012,
+        "prompt_n": 23,
+        "prompt_ms": 249.736,
+        "prompt_per_token_ms": 10.858086956521738,
+        "prompt_per_second": 92.09725470096423,
+        "predicted_n": 192,
+        "predicted_ms": 4138.415,
+        "predicted_per_token_ms": 21.667094240837695,
+        "predicted_per_second": 46.15293536293484
+      },
+      "sha": "85a5fa5594c6433b213a79d3d58c68070009f0e68ec672a0208bfa5461d2898c"
+    }
+  ],
+  "profiled": false,
+  "safe_baseline": "7571e2e17",
+  "weights": "AD-Q6_K-Q5_K",
+  "target_kv": "q8_0/q8_0",
+  "draft_kv": "q8_0/q8_0"
+}

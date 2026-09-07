@@ -1,0 +1,26 @@
+{
+  "source_baseline": "7571e2e17",
+  "model": "Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K",
+  "draft": "Shisa12K Q5_0",
+  "target_KV": "q8_0/q8_0",
+  "draft_KV": "q8_0/q8_0",
+  "physical_pool": 1400000,
+  "logical_slot_context": 400000,
+  "slots_resident": 4,
+  "batch": 2048,
+  "ubatch": 256,
+  "draft_ubatch": 128,
+  "projector": "CPU",
+  "GPU_power_limits_W": {
+    "V100": 200,
+    "RTX2080Ti": 250
+  },
+  "library_SHA256": {
+    "libllama.so": "ac275f4384668e218d0879cbd0db0ac31c641d69a34c7520b9fd4366a594b70b",
+    "libllama-common.so": "5f3e2f3c6b51af177a352099ff586c4bb2b0863832e1e536cac30752c78bd0fc",
+    "libllama-server-impl.so": "fb940e101dd5f3d3b70fdbf000d26929c44561f3a118b83e09a9e9d1e4a79189",
+    "libggml-cuda.so": "24b492f76cde767a6158a47e2b95cf38d568dcaf109b585ad529760c35ea7165"
+  },
+  "large_raw_artifacts": "/workspace/oai-qwen38-pp-lab/results/mtp-study-0907",
+  "production_changes": false
+}

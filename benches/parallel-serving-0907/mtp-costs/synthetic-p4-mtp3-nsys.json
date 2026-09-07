@@ -1,0 +1,84 @@
+{
+  "label": "synthetic-p4-mtp3-nsys",
+  "wall_s": 15.45597833598731,
+  "whole_turn_output_tps": 49.68951064144598,
+  "rows": [
+    {
+      "slot": 0,
+      "wall_s": 15.391695703030564,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 7025.909,
+        "prompt_per_token_ms": 7.0259089999999995,
+        "prompt_per_second": 142.3303376118307,
+        "predicted_n": 192,
+        "predicted_ms": 7058.514,
+        "predicted_per_token_ms": 36.95557068062827,
+        "predicted_per_second": 27.059519893280655,
+        "draft_n": 171,
+        "draft_n_accepted": 133
+      },
+      "sha": "0eb68b351bf4e7bd99480daa4985016c20b794b4ee6fc0b23b211df386b4a736"
+    },
+    {
+      "slot": 1,
+      "wall_s": 15.202617129019927,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 6968.559,
+        "prompt_per_token_ms": 6.968559,
+        "prompt_per_second": 143.50169095217532,
+        "predicted_n": 192,
+        "predicted_ms": 8163.432,
+        "predicted_per_token_ms": 42.74048167539267,
+        "predicted_per_second": 23.39702223280601,
+        "draft_n": 171,
+        "draft_n_accepted": 133
+      },
+      "sha": "0eb68b351bf4e7bd99480daa4985016c20b794b4ee6fc0b23b211df386b4a736"
+    },
+    {
+      "slot": 2,
+      "wall_s": 15.384652429958805,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 6859.742,
+        "prompt_per_token_ms": 6.859742,
+        "prompt_per_second": 145.77807736792434,
+        "predicted_n": 192,
+        "predicted_ms": 7059.511,
+        "predicted_per_token_ms": 36.960790575916235,
+        "predicted_per_second": 27.055698333779777,
+        "draft_n": 171,
+        "draft_n_accepted": 133
+      },
+      "sha": "0eb68b351bf4e7bd99480daa4985016c20b794b4ee6fc0b23b211df386b4a736"
+    },
+    {
+      "slot": 3,
+      "wall_s": 15.447227147000376,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 7013.769,
+        "prompt_per_token_ms": 7.013769,
+        "prompt_per_second": 142.5766944990632,
+        "predicted_n": 192,
+        "predicted_ms": 6946.313,
+        "predicted_per_token_ms": 36.368130890052356,
+        "predicted_per_second": 27.496601434458828,
+        "draft_n": 171,
+        "draft_n_accepted": 133
+      },
+      "sha": "0eb68b351bf4e7bd99480daa4985016c20b794b4ee6fc0b23b211df386b4a736"
+    }
+  ],
+  "profiled": true,
+  "safe_baseline": "7571e2e17",
+  "weights": "AD-Q6_K-Q5_K",
+  "target_kv": "q8_0/q8_0",
+  "draft_kv": "q8_0/q8_0"
+}

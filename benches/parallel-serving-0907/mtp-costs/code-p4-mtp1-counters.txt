@@ -1,0 +1,12 @@
+MTP_PROFILE MTP/accept calls=418 ms=0.804641 tokens=342
+MTP_PROFILE MTP/catchup calls=109 ms=117.379788 tokens=852
+MTP_PROFILE MTP/draft calls=108 ms=356.631805 tokens=0
+MTP_PROFILE MTP/flush calls=4 ms=4.455190 tokens=0
+MTP_PROFILE catchup/decode calls=109 ms=107.158342 tokens=852
+MTP_PROFILE catchup/hidden calls=1279 ms=3.547241 tokens=0
+MTP_PROFILE draft/decode calls=108 ms=146.528656 tokens=418
+MTP_PROFILE draft/hidden calls=418 ms=0.399545 tokens=0
+MTP_PROFILE draft/sample calls=418 ms=203.310050 tokens=0
+MTP_PROFILE flush/decode calls=2 ms=2.941255 tokens=80
+MTP_PROFILE target/decode calls=111 ms=1409.771845 tokens=932
+MTP_PROFILE target/sample calls=768 ms=315.549670 tokens=0

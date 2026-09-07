@@ -1,0 +1,30 @@
+{
+  "label": "code-p1-mtp3",
+  "wall_s": 2.0858293260098435,
+  "whole_turn_output_tps": 92.0497173981597,
+  "rows": [
+    {
+      "slot": 0,
+      "wall_s": 2.071798802993726,
+      "timings": {
+        "cache_n": 12009,
+        "prompt_n": 23,
+        "prompt_ms": 96.853,
+        "prompt_per_token_ms": 4.210999999999999,
+        "prompt_per_second": 237.47328425552126,
+        "predicted_n": 192,
+        "predicted_ms": 1959.117,
+        "predicted_per_token_ms": 10.257157068062828,
+        "predicted_per_second": 97.49290113862521,
+        "draft_n": 203,
+        "draft_n_accepted": 123
+      },
+      "sha": "f05405b4a94c75439164652f11e9c3f859e36237dc88d0269423289891b2a798"
+    }
+  ],
+  "profiled": false,
+  "safe_baseline": "7571e2e17",
+  "weights": "AD-Q6_K-Q5_K",
+  "target_kv": "q8_0/q8_0",
+  "draft_kv": "q8_0/q8_0"
+}

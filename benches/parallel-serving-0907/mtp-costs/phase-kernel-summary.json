@@ -1,0 +1,53 @@
+{
+  "MTP/catchup": {
+    "attention": 111.858123,
+    "Q8_to_FP16": 80.42824,
+    "matmul": 38.168203,
+    "other": 9.733038000000002
+  },
+  "MTP/draft": {
+    "Q8_to_FP16": 224.909107,
+    "matmul": 228.84485399999994,
+    "attention": 145.71309099999996,
+    "other": 98.028535
+  },
+  "MTP/flush": {
+    "attention": 79.32857,
+    "Q8_to_FP16": 10.600103,
+    "matmul": 11.181348999999999,
+    "other": 2.2495970000000005
+  },
+  "MTP/flush_before_last": {
+    "attention": 238.64603699999998,
+    "Q8_to_FP16": 29.185525,
+    "matmul": 30.994868,
+    "other": 6.354543999999998
+  },
+  "catchup/decode": {
+    "attention": 111.858123,
+    "Q8_to_FP16": 80.42824,
+    "matmul": 38.168203,
+    "other": 9.733038000000002
+  },
+  "draft/decode": {
+    "Q8_to_FP16": 224.909107,
+    "matmul": 228.84485399999994,
+    "attention": 145.71309099999996,
+    "other": 98.028535
+  },
+  "flush/decode": {
+    "attention": 317.974607,
+    "Q8_to_FP16": 39.785628,
+    "matmul": 42.176217,
+    "other": 8.604140999999998
+  },
+  "target/decode": {
+    "attention": 5799.635744,
+    "matmul": 3451.9511220000018,
+    "Q8_to_FP16": 867.594289,
+    "other": 1350.8223039999996
+  },
+  "CCCL:cub::DeviceRadixSort": {
+    "other": 24.736802
+  }
+}

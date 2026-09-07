@@ -1,0 +1,43 @@
+{
+  "measurement_s": 15.331694953,
+  "kernel_total_ms": 12816.112299,
+  "kernel_ms_by_group": {
+    "other": 1202.6169369999318,
+    "matmul": 3761.0642679999423,
+    "GDN": 264.5357530000003,
+    "Q8_to_FP16": 1212.7172640000015,
+    "attention": 6375.1780770000005
+  },
+  "kernel_ms_by_device": {
+    "1": 4366.791414000347,
+    "0": 8449.32088499999
+  },
+  "kernel_share_pct": {
+    "other": 9.383632953136406,
+    "matmul": 29.34637415976299,
+    "GDN": 2.0640873521422027,
+    "Q8_to_FP16": 9.462442554397919,
+    "attention": 49.743462980559514
+  },
+  "scope": "Only GPU kernels launched in the marked measured request interval; no startup/restores. Device durations are summed, not wall-time fractions.",
+  "memory_copies": [
+    {
+      "kind": 1,
+      "ms": 507.212217,
+      "MiB": 6284.795639038086,
+      "count": 3695
+    },
+    {
+      "kind": 2,
+      "ms": 100.058874,
+      "MiB": 1234.0990600585938,
+      "count": 2028
+    },
+    {
+      "kind": 8,
+      "ms": 6.205073,
+      "MiB": 1087.6432800292969,
+      "count": 1788
+    }
+  ]
+}

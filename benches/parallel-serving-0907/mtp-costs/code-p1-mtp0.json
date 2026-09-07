@@ -1,0 +1,28 @@
+{
+  "label": "code-p1-mtp0",
+  "wall_s": 2.5749106660368852,
+  "whole_turn_output_tps": 74.56569368890472,
+  "rows": [
+    {
+      "slot": 0,
+      "wall_s": 2.561426095024217,
+      "timings": {
+        "cache_n": 12009,
+        "prompt_n": 23,
+        "prompt_ms": 93.514,
+        "prompt_per_token_ms": 4.0658260869565215,
+        "prompt_per_second": 245.95247770387323,
+        "predicted_n": 192,
+        "predicted_ms": 2454.5,
+        "predicted_per_token_ms": 12.850785340314136,
+        "predicted_per_second": 77.81625585658993
+      },
+      "sha": "93ae4e3e821e4ea950b7169f661a99348be83307ea960f82bc7c5dd648b2a2cd"
+    }
+  ],
+  "profiled": false,
+  "safe_baseline": "7571e2e17",
+  "weights": "AD-Q6_K-Q5_K",
+  "target_kv": "q8_0/q8_0",
+  "draft_kv": "q8_0/q8_0"
+}
