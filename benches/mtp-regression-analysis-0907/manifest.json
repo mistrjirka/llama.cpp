@@ -1,0 +1,35 @@
+{
+  "source_base": "80247767c53dad5c446b8d24a8b71c94fb9a82ae",
+  "binary_dir": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/final-bin",
+  "original_binary_manifest": "../parallel-refined-0907/hardened-manifest.json",
+  "fixture": "/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json",
+  "gpu": "NVIDIA GeForce RTX 2080 Ti, 22528 MiB, 250.00 W\nTesla V100-SXM2-32GB, 32768 MiB, 200.00 W\n",
+  "runtime_changes": "No experimental attention, grouping, compact restore, sampling-view or bulk-hidden flags. Warm diagnostic alone loads no-proposals.so. No production settings changed.",
+  "artifacts": {
+    "depth-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-regression-analysis-0907/depth-raw.json",
+      "bytes": 198918,
+      "sha256": "2fcb532d89cbdba5a99622e0a6fa0e772dbe693de2c534302dbee3c886f80062"
+    },
+    "warm-raw.json": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-regression-analysis-0907/warm-raw.json",
+      "bytes": 97177,
+      "sha256": "44b076b2313758b4bace2afe6acdd6b3f705eac71779c85acd53e29ecd3267b7"
+    },
+    "depth-screen.py": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-regression-analysis-0907/depth-screen.py",
+      "bytes": 3349,
+      "sha256": "49bdddcb18055bcd2db397c620ea7f6a1372a752923519987f16054a9f6dcb67"
+    },
+    "warm-screen.py": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-regression-analysis-0907/warm-screen.py",
+      "bytes": 3749,
+      "sha256": "32366e289e684aa8b6f944f0b4e8d2900d7ef39d177e385429a604aafebf35bd"
+    },
+    "no-proposals.cpp": {
+      "path": "/workspace/oai-qwen38-pp-lab/results/mtp-regression-analysis-0907/no-proposals.cpp",
+      "bytes": 455,
+      "sha256": "dca1f2e785215c4be3e1ad8f59e90fc717e5b2938e606c782d5f2ef338034213"
+    }
+  }
+}

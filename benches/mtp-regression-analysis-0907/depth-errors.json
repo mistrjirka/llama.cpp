@@ -1,0 +1,12 @@
+[
+  {
+    "arm": "warm0",
+    "block": 1,
+    "error": "RemoteDisconnected('Remote end closed connection without response')"
+  },
+  {
+    "arm": "warm0",
+    "block": 8,
+    "error": "RemoteDisconnected('Remote end closed connection without response')"
+  }
+]

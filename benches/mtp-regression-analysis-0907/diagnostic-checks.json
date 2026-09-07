@@ -1,0 +1,14 @@
+{
+  "1-warm0.log": [
+    "/workspace/llama-parallel-all-0907/src/llama-context.cpp:2268: GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max) failed"
+  ],
+  "8-warm0.log": [
+    "/workspace/llama-parallel-all-0907/src/llama-context.cpp:2268: GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max) failed"
+  ],
+  "warm-1-warm.log": [
+    "MTP_NO_PROPOSALS_DIAGNOSTIC calls=254"
+  ],
+  "warm-2-warm.log": [
+    "MTP_NO_PROPOSALS_DIAGNOSTIC calls=254"
+  ]
+}

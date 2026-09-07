@@ -183,3 +183,7 @@ The grouped arms in this auxiliary 256-ubatch test fall back to serial schedulin
 The hardened-build A/B/B/A comparison was repeated without profiler or compilation: four measured turns per arm after per-process warmups. Mean whole-turn time was **6.4481 s off versus 6.3959 s on**, about 0.8% lower; observed ranges 6.3106–6.5563 and 6.2747–6.5640 overlap. This final run does **not** establish a robust throughput win. It confirms the earlier conclusion that a large reduction in sync-call count mostly removes inexpensive calls, not the necessary device waits. Raw data are `final-host-results.json` and `final-host-summary.json`. Independently scheduled generations can differ as batch-admission timing changes, so same-buffer field tests and fixed-input probabilities, rather than those generated hashes, establish view equivalence.
 
 The complete source harnesses and immutable binary/fixture hashes are in this directory. Raw full-vocabulary dumps and model snapshots remain in Development Sandbox, not Git. This follow-up keeps all experimental execution flags opt-in and does not alter either production branch.
+
+## MTP regression follow-up
+
+A [fresh depth and retained-state cost analysis](../mtp-regression-analysis-0907/REPORT.md) separates MTP1/2/3 from true-off and a no-proposals diagnostic. It identifies the remaining maintenance cost and proposes a scoped K/V-only refresh and genuine suspend/resume path. These are diagnostic results and proposed next interventions, not a new production speedup.
