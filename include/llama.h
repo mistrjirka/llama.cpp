@@ -766,6 +766,14 @@ extern "C" {
                  llama_pos p0,
                  llama_pos p1);
 
+    // Losslessly share an attention-prefix [0, p1) between two sequences when the
+    // memory backend supports metadata-shared cells. Recurrent tail state is unchanged.
+    LLAMA_API bool llama_memory_seq_share_prefix(
+            llama_memory_t mem,
+              llama_seq_id seq_id_src,
+              llama_seq_id seq_id_dst,
+                 llama_pos p1);
+
     // Removes all tokens that do not belong to the specified sequence
     LLAMA_API void llama_memory_seq_keep(
             llama_memory_t mem,

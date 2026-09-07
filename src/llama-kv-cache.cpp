@@ -540,6 +540,31 @@ void llama_kv_cache::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, ll
     //}
 }
 
+bool llama_kv_cache::seq_share_prefix(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p1) {
+    // Views backed by another cache do not own cells to deduplicate here.
+    if (other) {
+        return true;
+    }
+    if (p1 <= 0 || seq_id_src == seq_id_dst) {
+        return true;
+    }
+    if (seq_id_src < 0 || seq_id_dst < 0 ||
+            (size_t) seq_id_src >= seq_to_stream.size() || (size_t) seq_id_dst >= seq_to_stream.size()) {
+        return false;
+    }
+    if (seq_to_stream[seq_id_src] != seq_to_stream[seq_id_dst]) {
+        return false;
+    }
+
+    // Drop only the destination's duplicate prefix cells, then attach its sequence id to
+    // the source cells. In a unified stream seq_cp() is metadata-only.
+    if (!seq_rm(seq_id_dst, 0, p1)) {
+        return false;
+    }
+    seq_cp(seq_id_src, seq_id_dst, 0, p1);
+    return true;
+}
+
 void llama_kv_cache::seq_keep(llama_seq_id seq_id) {
     // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
     if (other) {

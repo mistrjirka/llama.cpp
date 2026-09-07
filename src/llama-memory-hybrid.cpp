@@ -154,6 +154,10 @@ void llama_memory_hybrid::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_ds
     mem_recr->seq_cp(seq_id_src, seq_id_dst, p0, p1);
 }
 
+bool llama_memory_hybrid::seq_share_prefix(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p1) {
+    return mem_attn->seq_share_prefix(seq_id_src, seq_id_dst, p1);
+}
+
 void llama_memory_hybrid::seq_keep(llama_seq_id seq_id) {
     mem_attn->seq_keep(seq_id);
     mem_recr->seq_keep(seq_id);

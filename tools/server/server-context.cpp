@@ -719,23 +719,32 @@ struct server_slot {
         return res;
     }
 
-    void copy_state_to(server_slot & other) const {
-        GGML_ASSERT(state == SLOT_STATE_DONE_PROMPT);
-
+    void clone_prompt_memory_to(server_slot & other) const {
         mem.seq_rm(other.id,     -1, -1);
         mem.seq_cp(id, other.id, -1, -1);
 
-        other.i_batch = i_batch;
-
-        other.stats = stats;
-
         other.prompt = prompt.clone();
         // ON_DEVICE checkpoints refer to the source sequence's transient context storage and
-        // cannot be cloned to a child sequence. The copied live memory is sufficient; portable
+        // cannot be cloned to another sequence. The copied live memory is sufficient; portable
         // host checkpoints remain available for deeper replay.
         other.prompt.checkpoints.remove_if([](const common_prompt_checkpoint & ckpt) {
             return ckpt.data_tgt_on_device;
         });
+
+        // MTP carries one hidden row outside the llama memory objects. A fork must copy that
+        // per-sequence state as well or the first draft after the branch starts from stale data.
+        std::vector<uint8_t> spec_state;
+        if (common_speculative_get_state(spec, id, spec_state)) {
+            common_speculative_set_state(spec, other.id, spec_state);
+        }
+    }
+
+    void copy_state_to(server_slot & other) const {
+        GGML_ASSERT(state == SLOT_STATE_DONE_PROMPT);
+
+        clone_prompt_memory_to(other);
+        other.i_batch = i_batch;
+        other.stats = stats;
         other.init_sampler();
     }
 };
@@ -1554,6 +1563,7 @@ private:
         server_slot * ret = nullptr;
 
         bool update_cache = false;
+        bool forked_prefix = false;
 
         // if a specific slot is requested, use it (still goes through cache update logic below)
         if (task.id_slot != -1) {
@@ -1563,8 +1573,64 @@ private:
             }
         }
 
+        // With a unified KV stream, an exact branch can share the donor's attention cells
+        // by sequence-id metadata instead of duplicating the prefix. Only fork into an empty
+        // destination: established agent slots retain the existing LCP/LRU semantics.
+        if (params_base.slot_fork_prefix && params_base.kv_unified &&
+                task.type == SERVER_TASK_TYPE_COMPLETION && !task.tokens.empty() &&
+                !task.tokens.has_mtmd && task.params.lora.empty()) {
+            server_slot * dst = nullptr;
+
+            if (ret != nullptr) {
+                if (!ret->is_processing() && ret->prompt.tokens.empty()) {
+                    dst = ret;
+                }
+            } else if (task.id_slot == -1) {
+                int64_t t_last = -1;
+                for (auto & cur : slots) {
+                    if (cur.is_processing() || !cur.prompt.tokens.empty()) {
+                        continue;
+                    }
+                    if (dst == nullptr || cur.t_last_used <= t_last) {
+                        dst = &cur;
+                        t_last = cur.t_last_used;
+                    }
+                }
+            }
+
+            if (dst != nullptr) {
+                server_slot * donor = nullptr;
+                size_t donor_tokens = 0;
+
+                for (auto & cur : slots) {
+                    if (&cur == dst || cur.is_processing() || cur.prompt.tokens.empty() ||
+                            cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, params_base.lora_adapters)) {
+                        continue;
+                    }
+
+                    const size_t n_cur = cur.prompt.tokens.size();
+                    if (n_cur > task.tokens.size() || n_cur <= donor_tokens) {
+                        continue;
+                    }
+                    if (cur.prompt.tokens.get_common_prefix(task.tokens) != n_cur) {
+                        continue;
+                    }
+
+                    donor = &cur;
+                    donor_tokens = n_cur;
+                }
+
+                if (donor != nullptr) {
+                    donor->clone_prompt_memory_to(*dst);
+                    ret = dst;
+                    forked_prefix = true;
+                    SLT_INF(*dst, "forked exact prefix from slot %d, n_tokens = %zu\n", donor->id, donor_tokens);
+                }
+            }
+        }
+
         // find the slot that has at least n% prompt similarity
-        if (slot_prompt_similarity != 0.0f) {
+        if (!forked_prefix && slot_prompt_similarity != 0.0f) {
             float f_sim_best = 0;
 
             for (server_slot & slot : slots) {
@@ -2742,6 +2808,32 @@ private:
 
                         slot->prompt.clear();
                         slot->prompt.tokens = std::move(restored);
+
+                        // Slot files are self-contained and therefore restore duplicate KV cells.
+                        // With prefix forking enabled, immediately collapse any exact common text
+                        // prefix against an already-restored idle slot. The memory primitive only
+                        // changes attention-cell ownership; this slot's recurrent tail stays intact.
+                        if (params_base.slot_fork_prefix && params_base.kv_unified &&
+                                !slot->prompt.tokens.has_mtmd) {
+                            server_slot * donor = nullptr;
+                            int lcp_best = 0;
+                            for (auto & cur : slots) {
+                                if (&cur == slot || cur.is_processing() || cur.prompt.tokens.empty() ||
+                                        cur.prompt.tokens.has_mtmd || !are_lora_equal(cur.lora, slot->lora)) {
+                                    continue;
+                                }
+                                const int lcp = cur.prompt.tokens.get_common_prefix(slot->prompt.tokens);
+                                if (lcp > lcp_best) {
+                                    donor = &cur;
+                                    lcp_best = lcp;
+                                }
+                            }
+                            if (donor != nullptr && lcp_best > 0 &&
+                                    slot->mem.seq_share_prefix(donor->id, slot->id, lcp_best)) {
+                                SLT_INF(*slot, "deduplicated restored prefix with slot %d, n_tokens = %d\n",
+                                        donor->id, lcp_best);
+                            }
+                        }
                     } catch (const std::exception & err) {
                         slot->prompt_clear();
                         send_error(task, std::string("Unable to restore slot: ") + err.what(), ERROR_TYPE_INVALID_REQUEST);

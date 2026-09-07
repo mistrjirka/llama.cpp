@@ -109,6 +109,12 @@ struct llama_memory_i {
 
     virtual bool seq_rm  (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1) = 0;
     virtual void seq_cp  (llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) = 0;
+    // Repoint the destination's attention prefix at the source's cells without changing
+    // recurrent tail state. Returns false for memory types that cannot do this exactly.
+    virtual bool seq_share_prefix(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p1) {
+        (void) seq_id_src; (void) seq_id_dst; (void) p1;
+        return false;
+    }
     virtual void seq_keep(llama_seq_id seq_id) = 0;
     virtual void seq_add (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, llama_pos shift) = 0;
     virtual void seq_div (llama_seq_id seq_id,                              llama_pos p0, llama_pos p1, int d) = 0;

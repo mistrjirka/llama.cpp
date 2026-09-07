@@ -4094,6 +4094,17 @@ void llama_memory_seq_cp(
     mem->seq_cp(seq_id_src, seq_id_dst, p0, p1);
 }
 
+bool llama_memory_seq_share_prefix(
+        llama_memory_t mem,
+          llama_seq_id seq_id_src,
+          llama_seq_id seq_id_dst,
+             llama_pos p1) {
+    if (!mem) {
+        return true;
+    }
+    return mem->seq_share_prefix(seq_id_src, seq_id_dst, p1);
+}
+
 void llama_memory_seq_keep(
         llama_memory_t mem,
           llama_seq_id seq_id) {
