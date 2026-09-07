@@ -11,6 +11,8 @@
 #include "server-common.h"
 
 #include <sstream>
+#include <fstream>
+#include <limits>
 
 //
 // task_params
@@ -1653,6 +1655,15 @@ json server_task_result_slot_erase::to_json() {
     };
 }
 
+json server_task_result_prompt_cache_io::to_json() {
+    return json {
+        { "filename", filename },
+        { is_save ? "n_saved" : "n_restored", n_states },
+        { is_save ? "n_written" : "n_read", n_bytes },
+        { "timings", { { is_save ? "save_ms" : "restore_ms", t_ms } } },
+    };
+}
+
 //
 // server_task_result_get_lora
 //
@@ -1708,7 +1719,7 @@ size_t server_prompt_cache::n_tokens() const {
     return res;
 }
 
-server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & prompt, size_t state_size_tgt, size_t state_size_dft) {
+server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & prompt, size_t state_size_tgt, size_t state_size_dft, size_t state_size_spec) {
     // first check if the current state is contained fully in the cache
     for (auto it = states.begin(); it != states.end(); ++it) {
         const int cur_lcp_len = it->prompt.tokens.get_common_prefix(prompt.tokens);
@@ -1732,7 +1743,7 @@ server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & pro
         portable_checkpoints.push_back(ckpt);
     }
 
-    const size_t state_size_new = state_size_tgt + state_size_dft + checkpoints_size;
+    const size_t state_size_new = state_size_tgt + state_size_dft + state_size_spec + checkpoints_size;
 
     // skip over-limit entries to avoid disturbing the cache
     if (limit_size > 0 && state_size_new > limit_size) {
@@ -1766,11 +1777,13 @@ server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & pro
 
     std::vector<uint8_t> state_data_tgt;
     std::vector<uint8_t> state_data_dft;
+    std::vector<uint8_t> state_data_spec;
 
     // check if we can allocate enough memory for the new state
     try {
         state_data_tgt.resize(state_size_tgt);
         state_data_dft.resize(state_size_dft);
+        state_data_spec.resize(state_size_spec);
     } catch (const std::bad_alloc & e) {
         SRV_ERR("failed to allocate memory for prompt cache state: %s\n", e.what());
 
@@ -1791,13 +1804,17 @@ server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & pro
         /*.data   =*/ {
             /*.main =*/ std::move(state_data_tgt),
             /*.drft =*/ std::move(state_data_dft),
+            /*.spec =*/ std::move(state_data_spec),
         },
     });
 
     return &states.back();
 }
 
-bool server_prompt_cache::load(server_prompt & prompt, const server_tokens & tokens_new, llama_context * ctx_tgt, llama_context * ctx_dft, int32_t id_slot) {
+bool server_prompt_cache::load(
+        server_prompt & prompt, const server_tokens & tokens_new,
+        llama_context * ctx_tgt, llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
+        int32_t prefix_seq_id, const server_tokens * prefix_tokens) {
     int lcp_best = prompt.tokens.get_common_prefix(tokens_new);
 
     float f_keep_best = prompt.tokens.size() > 0 ? float(lcp_best) / prompt.tokens.size() : -1.0f; // empty slot: any cache entry wins
@@ -1833,11 +1850,25 @@ bool server_prompt_cache::load(server_prompt & prompt, const server_tokens & tok
     if (it_best != states.end()) {
         SRV_TRC(" - found better prompt with f_keep = %.3f, f_sim = %.3f\n", f_keep_best, f_sim_best);
 
+        int restore_lcp = 0;
+        if (prefix_seq_id >= 0 && prefix_tokens != nullptr) {
+            restore_lcp = (int) it_best->prompt.tokens.get_common_prefix(*prefix_tokens);
+        }
+
         {
             auto & data = it_best->data.main;
 
             const size_t size = data.size();
-            const size_t n = llama_state_seq_set_data_ext(ctx_tgt, data.data(), size, id_slot, 0);
+            size_t n = 0;
+            if (restore_lcp > 0) {
+                n = llama_state_seq_set_data_prefix(ctx_tgt, data.data(), size, id_slot, prefix_seq_id, restore_lcp);
+                if (n == size) {
+                    SRV_TRC(" - restored target RAM state onto live prefix seq %d, n_tokens = %d\n", prefix_seq_id, restore_lcp);
+                }
+            }
+            if (n != size) {
+                n = llama_state_seq_set_data_ext(ctx_tgt, data.data(), size, id_slot, 0);
+            }
             if (n != size) {
                 SRV_ERR("failed to restore state with size %zu\n", size);
 
@@ -1855,7 +1886,16 @@ bool server_prompt_cache::load(server_prompt & prompt, const server_tokens & tok
                 GGML_ASSERT(ctx_dft);
 
                 const size_t size = data.size();
-                const size_t n = llama_state_seq_set_data_ext(ctx_dft, data.data(), size, id_slot, 0);
+                size_t n = 0;
+                if (restore_lcp > 0) {
+                    n = llama_state_seq_set_data_prefix(ctx_dft, data.data(), size, id_slot, prefix_seq_id, restore_lcp);
+                    if (n == size) {
+                        SRV_TRC(" - restored draft RAM state onto live prefix seq %d, n_tokens = %d\n", prefix_seq_id, restore_lcp);
+                    }
+                }
+                if (n != size) {
+                    n = llama_state_seq_set_data_ext(ctx_dft, data.data(), size, id_slot, 0);
+                }
                 if (n != size) {
                     SRV_WRN("failed to restore state with size %zu\n", size);
 
@@ -1867,12 +1907,119 @@ bool server_prompt_cache::load(server_prompt & prompt, const server_tokens & tok
             }
         }
 
+        if (!it_best->data.spec.empty()) {
+            common_speculative_set_state(spec, id_slot, it_best->data.spec);
+            it_best->data.spec.clear();
+            it_best->data.spec.shrink_to_fit();
+        }
+
         prompt = std::move(it_best->prompt);
 
         states.erase(it_best);
     }
 
     return true;
+}
+
+
+size_t server_prompt_cache::save_file(const std::string & filepath) const {
+    constexpr uint32_t magic = 0x31435250u; // "PRC1"
+    constexpr uint32_t version = 1;
+
+    std::ofstream out(filepath, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        throw std::runtime_error("Unable to open prompt-cache file for writing");
+    }
+
+    auto write_raw = [&](const void * ptr, size_t n) {
+        out.write(reinterpret_cast<const char *>(ptr), (std::streamsize) n);
+        if (!out) throw std::runtime_error("Unable to write prompt-cache file");
+    };
+    auto write_u32 = [&](uint32_t v) { write_raw(&v, sizeof(v)); };
+    auto write_u64 = [&](uint64_t v) { write_raw(&v, sizeof(v)); };
+
+    write_u32(magic);
+    write_u32(version);
+    write_u64((uint64_t) states.size());
+
+    for (const auto & state : states) {
+        const auto packed = state.prompt.tokens.serialize();
+        const uint8_t has_mtmd = state.prompt.tokens.has_mtmd ? 1 : 0;
+        write_raw(&has_mtmd, sizeof(has_mtmd));
+        write_u64((uint64_t) packed.size());
+        if (!packed.empty()) write_raw(packed.data(), packed.size());
+
+        for (const auto * data : { &state.data.main, &state.data.drft, &state.data.spec }) {
+            write_u64((uint64_t) data->size());
+            if (!data->empty()) write_raw(data->data(), data->size());
+        }
+    }
+
+    out.flush();
+    if (!out) throw std::runtime_error("Unable to flush prompt-cache file");
+    return (size_t) out.tellp();
+}
+
+size_t server_prompt_cache::load_file(const std::string & filepath, bool has_mtmd_runtime) {
+    constexpr uint32_t magic = 0x31435250u;
+    constexpr uint32_t version = 1;
+
+    std::ifstream in(filepath, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("Unable to open prompt-cache file for reading");
+    }
+    in.seekg(0, std::ios::end);
+    const uint64_t file_size = (uint64_t) in.tellg();
+    in.seekg(0, std::ios::beg);
+    uint64_t nread = 0;
+
+    auto read_raw = [&](void * ptr, size_t n) {
+        if (n > file_size - nread) throw std::runtime_error("Truncated prompt-cache file");
+        in.read(reinterpret_cast<char *>(ptr), (std::streamsize) n);
+        if (!in) throw std::runtime_error("Unable to read prompt-cache file");
+        nread += n;
+    };
+    auto read_u32 = [&]() { uint32_t v; read_raw(&v, sizeof(v)); return v; };
+    auto read_u64 = [&]() { uint64_t v; read_raw(&v, sizeof(v)); return v; };
+
+    if (read_u32() != magic || read_u32() != version) {
+        throw std::runtime_error("Unsupported prompt-cache file format");
+    }
+    const uint64_t count = read_u64();
+    if (count > 1000000) throw std::runtime_error("Invalid prompt-cache entry count");
+
+    std::list<server_prompt_cache_state> loaded;
+    for (uint64_t i = 0; i < count; ++i) {
+        uint8_t entry_has_mtmd = 0;
+        read_raw(&entry_has_mtmd, sizeof(entry_has_mtmd));
+        if (entry_has_mtmd && !has_mtmd_runtime) {
+            throw std::runtime_error("Prompt-cache file contains media state but no mmproj is loaded");
+        }
+
+        const uint64_t packed_size = read_u64();
+        if (packed_size > file_size - nread || packed_size % sizeof(llama_token) != 0) {
+            throw std::runtime_error("Invalid prompt-cache token payload size");
+        }
+        llama_tokens packed(packed_size / sizeof(llama_token));
+        if (packed_size) read_raw(packed.data(), packed_size);
+
+        server_prompt_cache_state state;
+        state.prompt.tokens = server_tokens::deserialize(packed, entry_has_mtmd != 0);
+        for (auto * data : { &state.data.main, &state.data.drft, &state.data.spec }) {
+            const uint64_t sz = read_u64();
+            if (sz > file_size - nread || sz > std::numeric_limits<size_t>::max()) {
+                throw std::runtime_error("Invalid prompt-cache state payload size");
+            }
+            data->resize((size_t) sz);
+            if (sz) read_raw(data->data(), (size_t) sz);
+        }
+        loaded.push_back(std::move(state));
+    }
+    if (nread != file_size) throw std::runtime_error("Trailing data in prompt-cache file");
+
+    states = std::move(loaded);
+    update();
+    return (size_t) nread;
 }
 
 void server_prompt_cache::update() {

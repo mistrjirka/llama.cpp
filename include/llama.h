@@ -900,6 +900,16 @@ extern "C" {
                           size_t   size,
                     llama_seq_id   dest_seq_id);
 
+    // Restore sequence data while losslessly reusing an already-live text prefix.
+    // This is the in-memory counterpart of llama_state_seq_load_file_prefix().
+    LLAMA_API size_t llama_state_seq_set_data_prefix(
+            struct llama_context * ctx,
+                   const uint8_t * src,
+                          size_t   size,
+                    llama_seq_id   dest_seq_id,
+                    llama_seq_id   prefix_seq_id,
+                       llama_pos   prefix_pos);
+
     LLAMA_API size_t llama_state_seq_save_file(
             struct llama_context * ctx,
                       const char * filepath,

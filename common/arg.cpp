@@ -3845,7 +3845,7 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     add_opt(common_arg(
         {"--slot-fork-prefix"},
         {"--no-slot-fork-prefix"},
-        "when unified KV is enabled, preserve an idle exact-prefix slot by sharing its state with an empty slot (default: disabled)",
+        "when unified KV is enabled, preserve an idle exact-prefix slot by sharing its state with an empty slot (default: enabled)",
         [](common_params & params, bool value) {
             params.slot_fork_prefix = value;
         }

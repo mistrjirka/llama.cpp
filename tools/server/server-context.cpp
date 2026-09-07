@@ -303,13 +303,17 @@ struct server_slot {
 
         const size_t cur_size_tgt =           llama_state_seq_get_size_ext(ctx_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE);
         const size_t cur_size_dft = ctx_dft ? llama_state_seq_get_size_ext(ctx_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE) : 0;
+        std::vector<uint8_t> spec_state;
+        common_speculative_get_state(spec, id, spec_state);
+        const size_t cur_size_spec = spec_state.size();
 
-        const size_t cur_size = cur_size_tgt + cur_size_dft;
+        const size_t cur_size = cur_size_tgt + cur_size_dft + cur_size_spec;
 
-        SRV_TRC(" - saving prompt with length %d, total state size = %.3f MiB (draft: %.3f MiB)\n",
-                (int) prompt.tokens.size(), cur_size / (1024.0 * 1024.0), cur_size_dft / (1024.0 * 1024.0));
+        SRV_TRC(" - saving prompt with length %d, total state size = %.3f MiB (draft: %.3f MiB, spec: %.3f MiB)\n",
+                (int) prompt.tokens.size(), cur_size / (1024.0 * 1024.0), cur_size_dft / (1024.0 * 1024.0),
+                cur_size_spec / (1024.0 * 1024.0));
 
-        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft);
+        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft, cur_size_spec);
         if (cur == nullptr) {
             return false;
         }
@@ -318,12 +322,15 @@ struct server_slot {
         if (ctx_dft) {
             llama_state_seq_get_data_ext(ctx_dft, cur->data.drft.data(), cur_size_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE);
         }
+        cur->data.spec = std::move(spec_state);
 
         return true;
     }
 
-    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
-        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id);
+    bool prompt_load(
+            server_prompt_cache & prompt_cache, const server_tokens & tokens,
+            int32_t prefix_seq_id = -1, const server_tokens * prefix_tokens = nullptr) {
+        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, spec, id, prefix_seq_id, prefix_tokens);
         if (!res) {
             SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
         }
@@ -1718,7 +1725,27 @@ private:
 
                 ret->prompt_save(*prompt_cache);
 
-                if (!ret->prompt_load(*prompt_cache, task.tokens)) {
+                server_slot * cache_donor = nullptr;
+                size_t cache_donor_lcp = 0;
+                if (params_base.slot_fork_prefix && params_base.kv_unified &&
+                        !task.tokens.has_mtmd && task.params.lora.empty()) {
+                    for (auto & cur : slots) {
+                        if (&cur == ret || cur.is_processing() || cur.prompt.tokens.empty() || cur.prompt.tokens.has_mtmd ||
+                                !cur.lora.empty()) {
+                            continue;
+                        }
+                        const size_t lcp = cur.prompt.tokens.get_common_prefix(task.tokens);
+                        if (lcp > cache_donor_lcp) {
+                            cache_donor = &cur;
+                            cache_donor_lcp = lcp;
+                        }
+                    }
+                }
+
+                if (!ret->prompt_load(
+                            *prompt_cache, task.tokens,
+                            cache_donor ? cache_donor->id : -1,
+                            cache_donor ? &cache_donor->prompt.tokens : nullptr)) {
                     ret->prompt_clear();
                 }
 
@@ -1751,6 +1778,10 @@ private:
             if (slot.prompt.n_tokens() > 0) {
                 SRV_WRN("purging slot %d with %zu tokens\n", slot.id, slot.prompt.tokens.size());
 
+                if (prompt_cache && slot.prompt_save(*prompt_cache)) {
+                    prompt_cache->update();
+                    SLT_TRC(slot, "%s", "parked idle slot in RAM cache before KV purge\n");
+                }
                 slot.prompt_clear();
 
                 res = true;
@@ -2712,6 +2743,36 @@ private:
 
                     queue_results.send(std::move(res));
                 } break;
+            case SERVER_TASK_TYPE_PROMPT_CACHE_SAVE:
+            case SERVER_TASK_TYPE_PROMPT_CACHE_RESTORE:
+                {
+                    if (!prompt_cache) {
+                        send_error(task, "RAM prompt cache is disabled", ERROR_TYPE_NOT_SUPPORTED);
+                        break;
+                    }
+                    const bool is_save = task.type == SERVER_TASK_TYPE_PROMPT_CACHE_SAVE;
+                    const int64_t t_start = ggml_time_us();
+                    try {
+                        size_t n_bytes = 0;
+                        if (is_save) {
+                            n_bytes = prompt_cache->save_file(task.prompt_cache_action.filepath);
+                        } else {
+                            n_bytes = prompt_cache->load_file(task.prompt_cache_action.filepath, mctx != nullptr);
+                        }
+                        const double t_ms = (ggml_time_us() - t_start) / 1000.0;
+                        auto res = std::make_unique<server_task_result_prompt_cache_io>();
+                        res->id       = task.id;
+                        res->filename = task.prompt_cache_action.filename;
+                        res->is_save  = is_save;
+                        res->n_states = prompt_cache->states.size();
+                        res->n_bytes  = n_bytes;
+                        res->t_ms     = t_ms;
+                        queue_results.send(std::move(res));
+                    } catch (const std::exception & e) {
+                        send_error(task, e.what(), ERROR_TYPE_SERVER);
+                    }
+                } break;
+
             case SERVER_TASK_TYPE_SLOT_SAVE:
                 {
                     const int id_slot = task.slot_action.id_slot;
@@ -5218,6 +5279,19 @@ void server_routes::init_routes() {
         return res;
     };
 
+    this->post_prompt_cache = [this](const server_http_req & req) {
+        auto res = create_response();
+        if (params.slot_save_path.empty()) {
+            res->error(format_error_response("This server does not support prompt-cache persistence. Start it with `--slot-save-path`", ERROR_TYPE_NOT_SUPPORTED));
+            return res;
+        }
+        const std::string action = req.get_param("action");
+        if (action == "save") return handle_prompt_cache_io(req, true);
+        if (action == "restore") return handle_prompt_cache_io(req, false);
+        res->error(format_error_response("Invalid prompt-cache action", ERROR_TYPE_INVALID_REQUEST));
+        return res;
+    };
+
     this->get_props = [this](const server_http_req &) {
         auto res = create_response(true);
         // note: do NOT use ctx_server here, this endpoint must be accessible during sleep
@@ -5702,6 +5776,35 @@ void server_routes::init_routes() {
         res->ok(result->to_json());
         return res;
     };
+}
+
+std::unique_ptr<server_res_generator> server_routes::handle_prompt_cache_io(const server_http_req & req, bool is_save) {
+    auto res = create_response();
+    const json request_data = json::parse(req.body);
+    const std::string filename = request_data.at("filename");
+    if (!fs_validate_filename(filename)) {
+        res->error(format_error_response("Invalid filename", ERROR_TYPE_INVALID_REQUEST));
+        return res;
+    }
+    const std::string filepath = params.slot_save_path + filename;
+    auto & rd = res->rd;
+    server_task task(is_save ? SERVER_TASK_TYPE_PROMPT_CACHE_SAVE : SERVER_TASK_TYPE_PROMPT_CACHE_RESTORE);
+    task.id = rd.get_new_id();
+    task.prompt_cache_action.filename = filename;
+    task.prompt_cache_action.filepath = filepath;
+    rd.post_task(std::move(task));
+    auto result = rd.next(req.should_stop);
+    if (!result) {
+        GGML_ASSERT(req.should_stop());
+        return res;
+    }
+    if (result->is_error()) {
+        res->error(result->to_json());
+        return res;
+    }
+    GGML_ASSERT(dynamic_cast<server_task_result_prompt_cache_io *>(result.get()) != nullptr);
+    res->ok(result->to_json());
+    return res;
 }
 
 std::unique_ptr<server_res_generator> server_routes::handle_slots_save(const server_http_req & req, int id_slot) {

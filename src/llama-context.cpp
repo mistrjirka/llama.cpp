@@ -3175,6 +3175,29 @@ size_t llama_context::state_seq_set_data(llama_seq_id seq_id, const uint8_t * sr
     }
 }
 
+size_t llama_context::state_seq_set_data_prefix(
+        llama_seq_id seq_id, llama_seq_id prefix_seq_id, llama_pos prefix_pos,
+        const uint8_t * src, size_t size) {
+    llama_io_read_host io(src, size);
+
+    try {
+        uint32_t magic_read;
+        io.read(&magic_read, sizeof(magic_read));
+        if (io_magic != magic_read) {
+            throw std::runtime_error("wrong sequence state magic");
+        }
+
+        llama_seq_id seq_id_read;
+        io.read(&seq_id_read, sizeof(seq_id_read));
+        (void) seq_id_read;
+
+        return state_seq_read_data_prefix(io, seq_id, prefix_seq_id, prefix_pos, LLAMA_STATE_SEQ_FLAGS_NONE);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: error loading state with prefix: %s\n", __func__, err.what());
+        return 0;
+    }
+}
+
 bool llama_context::state_load_file(const char * filepath, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
     llama_file file(filepath, "rb");
 
@@ -4286,6 +4309,13 @@ size_t llama_state_seq_get_data(llama_context * ctx, uint8_t * dst, size_t size,
 
 size_t llama_state_seq_set_data(llama_context * ctx, const uint8_t * src, size_t size, llama_seq_id seq_id) {
     return llama_state_seq_set_data_ext(ctx, src, size, seq_id, 0);
+}
+
+size_t llama_state_seq_set_data_prefix(
+        llama_context * ctx, const uint8_t * src, size_t size, llama_seq_id dest_seq_id,
+        llama_seq_id prefix_seq_id, llama_pos prefix_pos) {
+    ctx->synchronize();
+    return ctx->state_seq_set_data_prefix(dest_seq_id, prefix_seq_id, prefix_pos, src, size);
 }
 
 size_t llama_state_seq_get_size_ext(llama_context * ctx, llama_seq_id seq_id, llama_state_seq_flags flags) {

@@ -11,6 +11,8 @@
 // TODO: prevent including the whole server-common.h as we only use server_tokens
 #include "server-common.h"
 
+struct common_speculative;
+
 
 enum server_task_type {
     SERVER_TASK_TYPE_COMPLETION,
@@ -25,6 +27,8 @@ enum server_task_type {
     SERVER_TASK_TYPE_SLOT_SAVE,
     SERVER_TASK_TYPE_SLOT_RESTORE,
     SERVER_TASK_TYPE_SLOT_ERASE,
+    SERVER_TASK_TYPE_PROMPT_CACHE_SAVE,
+    SERVER_TASK_TYPE_PROMPT_CACHE_RESTORE,
     SERVER_TASK_TYPE_GET_LORA,
     SERVER_TASK_TYPE_SET_LORA,
 };
@@ -168,6 +172,13 @@ struct server_task {
         std::string filepath;
     };
     slot_action slot_action;
+
+    // used by SERVER_TASK_TYPE_PROMPT_CACHE_SAVE / RESTORE
+    struct prompt_cache_action {
+        std::string filename;
+        std::string filepath;
+    };
+    prompt_cache_action prompt_cache_action;
 
     // used by SERVER_TASK_TYPE_METRICS
     bool metrics_reset_bucket = false;
@@ -535,6 +546,16 @@ struct server_task_result_slot_erase : server_task_result {
     virtual json to_json() override;
 };
 
+struct server_task_result_prompt_cache_io : server_task_result {
+    std::string filename;
+    bool is_save = false;
+    size_t n_states = 0;
+    size_t n_bytes = 0;
+    double t_ms = 0.0;
+
+    virtual json to_json() override;
+};
+
 struct server_task_result_control : server_task_result {
     bool        success = false;
     std::string message; // optional detail when success is false
@@ -588,9 +609,10 @@ struct server_prompt {
 struct server_prompt_data {
     std::vector<uint8_t> main;
     std::vector<uint8_t> drft;
+    std::vector<uint8_t> spec;
 
     size_t size() const {
-        return main.size() + drft.size();
+        return main.size() + drft.size() + spec.size();
     }
 };
 
@@ -627,9 +649,17 @@ struct server_prompt_cache {
 
     size_t n_tokens() const;
 
-    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft);
+    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft, size_t state_size_spec);
 
-    bool load(server_prompt & prompt, const server_tokens & tokens_new, llama_context * ctx_tgt, llama_context * ctx_dft, int32_t id_slot);
+    bool load(
+            server_prompt & prompt, const server_tokens & tokens_new,
+            llama_context * ctx_tgt, llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
+            int32_t prefix_seq_id = -1, const server_tokens * prefix_tokens = nullptr);
+
+    // Persist the parked-agent RAM cache. Checkpoints are intentionally omitted: the full
+    // target/draft sequence states are sufficient for correctness and portable across process restarts.
+    size_t save_file(const std::string & filepath) const;
+    size_t load_file(const std::string & filepath, bool has_mtmd);
 
     void update();
 };
