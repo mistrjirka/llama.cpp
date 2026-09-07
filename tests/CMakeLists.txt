@@ -378,3 +378,7 @@ if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
+
+llama_build(test-kv-indexed-remove.cpp)
+target_include_directories(test-kv-indexed-remove PRIVATE ../src)
+llama_test(test-kv-indexed-remove LABEL core)
