@@ -72,3 +72,22 @@ Do not count the profiled 0.3% → 10.3% overlap change as a 34× throughput imp
 All GPU workloads use the Development Sandbox `gpu:all` lock. Do not run Nsight, compilation or another model during timing. Every timing arm must use the same ubatch and physical KV capacity, and two-copy arms must reject an allocation fallback. Do not combine ubatch256 fallback measurements with ubatch128 active-pipeline measurements.
 
 The acceptance target is not merely a faster synthetic string. It includes fixed-input distribution checks, preserved speculative state, whole-turn latency, generation throughput, stable behavior with changing request counts, and memory margins. No claim of all-model coverage, long-running agent quality, near-350k performance or production readiness is made here.
+
+### Build the validation programs
+
+From this worktree, after the CUDA build completes:
+
+```sh
+cmake --build build-sm70-75 --target llama-server test-batch-alloc -j 12
+build-sm70-75/bin/test-batch-alloc
+B="$(pwd)/build-sm70-75/bin"
+R=/workspace/oai-qwen38-pp-lab/results/group-pipeline-0907
+c++ -O2 -std=c++17 -Icommon -Iinclude -Iggml/include -Isrc -Ivendor \
+  benches/group-pipeline-0907/teacher-groups.cpp \
+  "$B/libllama-common.so" "$B/libllama.so" "$B/libggml.so" \
+  -Wl,-rpath,"$B" -pthread -ldl -o "$R/teacher-groups"
+c++ -O2 -std=c++17 benches/group-pipeline-0907/compare-logits.cpp \
+  -o "$R/compare-logits"
+```
+
+`run128.py` pins the immutable `validated128-bin` snapshot used in the results. To test a new build, copy it to a separately named immutable directory and adjust that path deliberately; do not silently replace a recorded binary snapshot. The teacher program additionally uses `GROUP_FIXTURE`, `GROUP_SNAPSHOTS` and `GROUP_LOGITS`; the included driver sets them. Full float-output files are validation artifacts and are not required for serving.
