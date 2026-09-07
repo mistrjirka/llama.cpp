@@ -491,7 +491,10 @@ struct server_slot {
     int get_n_draft_max() const {
         GGML_ASSERT(task);
 
-        if (!can_speculate()) {
+        // A loaded speculative context can legitimately have a zero proposal
+        // budget. Do not copy the whole prompt or prepare checkpoints for it.
+        // Keep this independent of cache maintenance and of the adaptive policy.
+        if (!can_speculate() || common_speculative_n_max(spec) <= 0) {
             return 0;
         }
 
