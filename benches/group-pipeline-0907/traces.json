@@ -1,0 +1,12 @@
+{
+  "pipeline128.nsys-rep": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/group-pipeline-0907/pipeline128.nsys-rep",
+    "bytes": 55283047,
+    "sha256": "5651c34ab4a33ab7f00d2e69ec78df259a2597a9af0e19a8dedccff0486ad6fe"
+  },
+  "pipeline128.sqlite": {
+    "path": "/workspace/oai-qwen38-pp-lab/results/group-pipeline-0907/pipeline128.sqlite",
+    "bytes": 144195584,
+    "sha256": "b96fd6c21034cf37b4a3166532b28e5667c8df3a9bbc1b900c1649bfbe9a6c5c"
+  }
+}

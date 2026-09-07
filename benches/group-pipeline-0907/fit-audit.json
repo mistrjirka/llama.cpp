@@ -1,0 +1,22 @@
+[
+  {
+    "log": "fit-0-control.log",
+    "pipeline_allocation_fallback": false
+  },
+  {
+    "log": "fit-1-group2-double.log",
+    "pipeline_allocation_fallback": true
+  },
+  {
+    "log": "fit-2-group1-double.log",
+    "pipeline_allocation_fallback": true
+  },
+  {
+    "log": "fit-3-control-double.log",
+    "pipeline_allocation_fallback": true
+  },
+  {
+    "log": "fit-4-group2-double128.log",
+    "pipeline_allocation_fallback": false
+  }
+]

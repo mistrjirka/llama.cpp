@@ -722,6 +722,12 @@ void llama_context::sched_reserve() {
 
     LLAMA_LOG_INFO("%s: reserve took %.2f ms, sched copies = %d\n",
             __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
+    if (std::getenv("LLAMA_EXPERIMENT_VERIFY_SCHED_DIAGNOSTIC")) {
+        LLAMA_LOG_WARN("verify_scheduler: requested_copies=%u effective_copies=%d pipeline=%d ubatch=%u\n",
+                cparams.n_pipeline_copies, ggml_backend_sched_get_n_copies(sched.get()),
+                (int)cparams.pipeline_parallel, cparams.n_ubatch);
+    }
+
 }
 
 void llama_context::synchronize() {

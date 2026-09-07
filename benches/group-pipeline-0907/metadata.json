@@ -1,0 +1,19 @@
+{
+  "base": "221ddc9f4f10dbff76cb17714d2dc15521bb11e0",
+  "fixture_sha256": "b4b1df0a6ff02ff058f28eecc076b6f2f303fabe76e0e22db448fe19a944b6ce",
+  "fixture": "100000 actual C++ source tokens per agent, common 98000-token prefix; four different tasks",
+  "target": "Ornith AD-Q6_K-Q5_K",
+  "kv": "Q8 target and draft; no quantization changes",
+  "hardware": "NVIDIA GeForce RTX 2080 Ti, GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29, 250.00 W, 22528 MiB\nTesla V100-SXM2-32GB, GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79, 200.00 W, 32768 MiB\n",
+  "production_unchanged": true,
+  "immutable_binary_dir": "/workspace/oai-qwen38-pp-lab/results/group-pipeline-0907/validated128-bin",
+  "binary_sha256": {
+    "libggml-cuda.so.0.23.0": "79ec074f42254413daf9711ac56ca5c9b6e5145828701301442dd2ebf2996fc3",
+    "libllama.so.0.4.0": "aa2b44726438aedd92cb37544fe7e07c866345d6ed1004c1ffc9959091601e5a",
+    "libllama-common.so.0.4.0": "8ce479151aefe275213cbba532e48818733c8ba4143d9a0b227ef384878dc012",
+    "libllama-server-impl.so": "c3a4c14d8cb50e0936eb9a710a0b0828e1c7280820484937b5d038a5519a4bed",
+    "llama-server": "8c874d5e4cc8c79c50086409f2e91db8769b41e8f74de1ceb0831c4c6d53ba13"
+  },
+  "patch_sha256": "d571541de938ef2c843b3b5deddd5c1f707dabe196e3cf3ebbbe4a40436ddf45",
+  "legacy_256_ubatch_warning": "Two-copy target allocation falls back to serial scheduling. Startup success is not proof that pipelining is active."
+}

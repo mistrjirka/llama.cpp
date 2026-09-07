@@ -507,7 +507,8 @@ llama_ubatch llama_batch_allocr::split_simple(uint32_t n_ubatch) {
     return ubatch_add(idxs, idxs.size(), false);
 }
 
-llama_ubatch llama_batch_allocr::split_equal(uint32_t n_ubatch, bool sequential, uint32_t n_keep_tail) {
+llama_ubatch llama_batch_allocr::split_equal(
+        uint32_t n_ubatch, bool sequential, uint32_t n_keep_tail, uint32_t n_max_seq_sets) {
     if (sequential && has_cpl) {
         LLAMA_LOG_ERROR("%s: sequential split is not supported when there are coupled sequences in the input batch (you may need to use the -kvu flag)\n", __func__);
 
@@ -544,7 +545,8 @@ llama_ubatch llama_batch_allocr::split_equal(uint32_t n_ubatch, bool sequential,
 
             last_seq_id = batch.seq_id[i][0];
 
-            if (cur_seq_set.size() > n_ubatch) {
+            if (cur_seq_set.size() > n_ubatch ||
+                    (n_max_seq_sets > 0 && cur_seq_set.size() >= n_max_seq_sets)) {
                 break;
             }
         }

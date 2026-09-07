@@ -1,0 +1,42 @@
+[
+  {
+    "arm": "C",
+    "rows": 96,
+    "vocab": 248320,
+    "greedy_differences": 0,
+    "normalized_mse": 0,
+    "max_logit_delta": 0,
+    "max_probability_delta": 0,
+    "mean_js_divergence": 0
+  },
+  {
+    "arm": "D",
+    "rows": 96,
+    "vocab": 248320,
+    "greedy_differences": 4,
+    "normalized_mse": 0.000846351207931,
+    "max_logit_delta": 2.84463691711,
+    "max_probability_delta": 0.139478537508,
+    "mean_js_divergence": 0.00100318132623
+  },
+  {
+    "arm": "E",
+    "rows": 96,
+    "vocab": 248320,
+    "greedy_differences": 1,
+    "normalized_mse": 0.00122170095739,
+    "max_logit_delta": 3.09039139748,
+    "max_probability_delta": 0.112613800833,
+    "mean_js_divergence": 0.00104953170932
+  },
+  {
+    "arm": "A2",
+    "rows": 96,
+    "vocab": 248320,
+    "greedy_differences": 0,
+    "normalized_mse": 0,
+    "max_logit_delta": 0,
+    "max_probability_delta": 0,
+    "mean_js_divergence": 0
+  }
+]

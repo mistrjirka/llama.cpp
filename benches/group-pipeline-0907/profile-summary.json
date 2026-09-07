@@ -1,0 +1,217 @@
+[
+  {
+    "arm": "A",
+    "profiled_wall_ms": 7480.146902,
+    "both_gpus_active_pct": 0.291339492198652,
+    "neither_gpu_active_pct": 26.849179612542322,
+    "gpu_busy_pct": {
+      "NVIDIA GeForce RTX 2080 Ti": 33.29092323486564,
+      "Tesla V100-SXM2-32GB": 40.15123664479069
+    },
+    "kernel_duration_sum_ms": 5282.319053000003,
+    "kernel_families_ms": {
+      "kv_conversion": 1037.3201960000008,
+      "attention": 1354.9992529999995,
+      "matmul": 2073.972268000002,
+      "other": 816.0273360000006
+    },
+    "scheduler_configurations": [
+      [
+        "1",
+        "1",
+        "0",
+        "128"
+      ],
+      [
+        "1",
+        "1",
+        "1",
+        "128"
+      ]
+    ],
+    "observed_verification_group_shapes": [],
+    "synchronization_calls": 22617
+  },
+  {
+    "arm": "B",
+    "profiled_wall_ms": 6093.636653,
+    "both_gpus_active_pct": 9.177681979523173,
+    "neither_gpu_active_pct": 32.06423440160439,
+    "gpu_busy_pct": {
+      "NVIDIA GeForce RTX 2080 Ti": 33.25424093020664,
+      "Tesla V100-SXM2-32GB": 43.85920664771215
+    },
+    "kernel_duration_sum_ms": 4513.8236820000075,
+    "kernel_families_ms": {
+      "kv_conversion": 1244.7945529999997,
+      "attention": 1056.7262749999998,
+      "matmul": 1536.4770630000003,
+      "other": 675.8257910000085
+    },
+    "scheduler_configurations": [
+      [
+        "1",
+        "1",
+        "0",
+        "128"
+      ],
+      [
+        "1",
+        "1",
+        "1",
+        "128"
+      ]
+    ],
+    "observed_verification_group_shapes": [
+      [
+        "1",
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1",
+        "2"
+      ],
+      [
+        "2",
+        "2",
+        "1"
+      ],
+      [
+        "3",
+        "1",
+        "3"
+      ],
+      [
+        "4",
+        "1",
+        "4"
+      ],
+      [
+        "8",
+        "2",
+        "4"
+      ]
+    ],
+    "synchronization_calls": 20813
+  },
+  {
+    "arm": "D",
+    "profiled_wall_ms": 6041.101958,
+    "both_gpus_active_pct": 10.29773750426743,
+    "neither_gpu_active_pct": 30.910653767846902,
+    "gpu_busy_pct": {
+      "NVIDIA GeForce RTX 2080 Ti": 34.77460307085253,
+      "Tesla V100-SXM2-32GB": 44.612480665568
+    },
+    "kernel_duration_sum_ms": 4621.817290000008,
+    "kernel_families_ms": {
+      "kv_conversion": 1234.7603090000014,
+      "attention": 1098.5095899999985,
+      "matmul": 1580.9770690000018,
+      "other": 707.5703220000056
+    },
+    "scheduler_configurations": [
+      [
+        "2",
+        "1",
+        "0",
+        "128"
+      ],
+      [
+        "2",
+        "2",
+        "1",
+        "128"
+      ]
+    ],
+    "observed_verification_group_shapes": [
+      [
+        "1",
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1",
+        "2"
+      ],
+      [
+        "2",
+        "2",
+        "1"
+      ],
+      [
+        "3",
+        "1",
+        "3"
+      ],
+      [
+        "4",
+        "1",
+        "4"
+      ],
+      [
+        "8",
+        "2",
+        "4"
+      ]
+    ],
+    "synchronization_calls": 20258
+  },
+  {
+    "arm": "E",
+    "profiled_wall_ms": 7233.955081,
+    "both_gpus_active_pct": 19.14564932311611,
+    "neither_gpu_active_pct": 26.41405133989109,
+    "gpu_busy_pct": {
+      "NVIDIA GeForce RTX 2080 Ti": 38.42152484883532,
+      "Tesla V100-SXM2-32GB": 54.310073134389704
+    },
+    "kernel_duration_sum_ms": 6530.798565000006,
+    "kernel_families_ms": {
+      "kv_conversion": 2162.2279910000016,
+      "attention": 1560.760317,
+      "matmul": 1839.1680490000015,
+      "other": 968.6422080000044
+    },
+    "scheduler_configurations": [
+      [
+        "2",
+        "1",
+        "0",
+        "128"
+      ],
+      [
+        "2",
+        "2",
+        "1",
+        "128"
+      ]
+    ],
+    "observed_verification_group_shapes": [
+      [
+        "1",
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1",
+        "2"
+      ],
+      [
+        "3",
+        "1",
+        "3"
+      ],
+      [
+        "4",
+        "1",
+        "4"
+      ]
+    ],
+    "synchronization_calls": 23567
+  }
+]

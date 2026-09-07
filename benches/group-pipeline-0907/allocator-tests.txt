@@ -1,0 +1,68 @@
+init
+  rejects_n_seq_max_too_large
+  rejects_n_seq_max_too_large (1 assertion(s))                                  [PASS]
+  rejects_invalid_token
+  rejects_invalid_token (2 assertion(s))                                        [PASS]
+  rejects_invalid_seq_id
+  rejects_invalid_seq_id (2 assertion(s))                                       [PASS]
+  autofill_defaults
+  autofill_defaults (20 assertion(s))                                           [PASS]
+  output_all
+  output_all (2 assertion(s))                                                   [PASS]
+  explicit_logits
+  explicit_logits (9 assertion(s))                                              [PASS]
+  pos_from_memory
+  pos_from_memory (3 assertion(s))                                              [PASS]
+  pos_continuity_with_memory
+  pos_continuity_with_memory (3 assertion(s))                                   [PASS]
+  rejects_non_continuous_positions
+  rejects_non_continuous_positions (1 assertion(s))                             [PASS]
+  rejects_decreasing_positions
+  rejects_decreasing_positions (1 assertion(s))                                 [PASS]
+  allows_equal_positions_in_seq
+  allows_equal_positions_in_seq (1 assertion(s))                                [PASS]
+  rejects_coupled_diverged_seqs
+  rejects_coupled_diverged_seqs (2 assertion(s))                                [PASS]
+init (47 assertion(s))                                                          [PASS]
+split
+  split_simple_chunks
+  split_simple_chunks (26 assertion(s))                                         [PASS]
+  split_reset_allows_resplit
+  split_reset_allows_resplit (4 assertion(s))                                   [PASS]
+  split_equal_unequal_lengths
+  split_equal_unequal_lengths (20 assertion(s))                                 [PASS]
+  split_equal_coupled
+  split_equal_coupled (8 assertion(s))                                          [PASS]
+  split_seq_per_sequence
+  split_seq_per_sequence (15 assertion(s))                                      [PASS]
+  ubatch_reserve
+  ubatch_reserve (9 assertion(s))                                               [PASS]
+split (82 assertion(s))                                                         [PASS]
+keep_tail
+  noop_when_seqs_complete
+  noop_when_seqs_complete (5 assertion(s))                                      [PASS]
+  defers_seq_with_short_remainder
+  defers_seq_with_short_remainder (13 assertion(s))                             [PASS]
+  completes_first_seq_when_all_violate
+  completes_first_seq_when_all_violate (12 assertion(s))                        [PASS]
+  truncates_to_preserve_tail
+  truncates_to_preserve_tail (10 assertion(s))                                  [PASS]
+  keeps_full_ubatch_with_sufficient_remainder
+  keeps_full_ubatch_with_sufficient_remainder (6 assertion(s))                  [PASS]
+  multi_seq_prefix_kept
+  multi_seq_prefix_kept (8 assertion(s))                                        [PASS]
+keep_tail (54 assertion(s))                                                     [PASS]
+mrope
+  pos_layout_and_split
+  pos_layout_and_split (12 assertion(s))                                        [PASS]
+  pos_jump_allowed
+  pos_jump_allowed (3 assertion(s))                                             [PASS]
+mrope (15 assertion(s))                                                         [PASS]
+verify_groups
+verify_groups (26582 assertion(s))                                              [PASS]
+
+tests      : 31
+assertions : 26780
+failures   : 0
+exceptions : 0
+skipped    : 0

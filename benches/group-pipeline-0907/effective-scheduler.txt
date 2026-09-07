@@ -1,0 +1,14 @@
+A
+verify_scheduler: requested_copies=1 effective_copies=1 pipeline=0 ubatch=128
+verify_scheduler: requested_copies=1 effective_copies=1 pipeline=1 ubatch=128
+B
+verify_group: tokens=8 sequences=2 tokens_per_seq=4
+verify_scheduler: requested_copies=1 effective_copies=1 pipeline=0 ubatch=128
+verify_scheduler: requested_copies=1 effective_copies=1 pipeline=1 ubatch=128
+D
+verify_group: tokens=8 sequences=2 tokens_per_seq=4
+verify_scheduler: requested_copies=2 effective_copies=1 pipeline=0 ubatch=128
+verify_scheduler: requested_copies=2 effective_copies=2 pipeline=1 ubatch=128
+E
+verify_scheduler: requested_copies=2 effective_copies=1 pipeline=0 ubatch=128
+verify_scheduler: requested_copies=2 effective_copies=2 pipeline=1 ubatch=128

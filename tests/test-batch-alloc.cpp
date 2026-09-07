@@ -650,6 +650,49 @@ static void test_mrope(testing & t) {
     });
 }
 
+static void test_verify_groups(testing & t) {
+    llama_vocab vocab;
+    // Exhaust all unequal 1..4-token verification lengths for four agents,
+    // including sequence IDs in nonmonotonic arrival order.
+    for (uint32_t limit : {1u, 2u, 4u}) {
+        for (int shape = 0; shape < 256; ++shape) {
+            const int lengths[4] = {1+(shape&3), 1+((shape>>2)&3),
+                                    1+((shape>>4)&3), 1+((shape>>6)&3)};
+            batch_builder bb;
+            for (int seq : {2, 0, 3, 1}) {
+                for (int pos = 0; pos < lengths[seq]; ++pos) {
+                    bb.add(pos, {seq}, true);
+                }
+            }
+            llama_batch_allocr ba(1);
+            t.assert_true(ba.init(bb.make(), vocab, nullptr, bb.n_embd, 4, false));
+            int visits[4] = {}, counts[4] = {};
+            for (int step = 0; step < 8; ++step) {
+                auto ub = ba.split_equal(256, false, 4, limit);
+                if (!ub.n_tokens) {
+                    break;
+                }
+                t.assert_true(ub.n_seqs_unq <= limit);
+                for (uint32_t k = 0; k < ub.n_seqs_unq; ++k) {
+                    ++visits[ub.seq_id_unq[k]];
+                }
+                for (uint32_t k = 0; k < ub.n_tokens; ++k) {
+                    const int seq = ub.seq_id[k][0];
+                    t.assert_equal(counts[seq]++, (int) ub.pos[k]);
+                    t.assert_true(ub.output[k] != 0);
+                }
+            }
+            for (int seq = 0; seq < 4; ++seq) {
+                t.assert_equal("no verification sequence split across microbatches", 1, visits[seq]);
+                t.assert_equal(lengths[seq], counts[seq]);
+            }
+            t.assert_equal(ba.get_n_tokens(), ba.get_n_used());
+            ba.split_reset();
+            t.assert_equal(0u, ba.get_n_used());
+        }
+    }
+}
+
 int main(int argc, char ** argv) {
     testing t;
 
@@ -669,6 +712,7 @@ int main(int argc, char ** argv) {
     t.test("split",     test_split);
     t.test("keep_tail", test_keep_tail);
     t.test("mrope",     test_mrope);
+    t.test("verify_groups", test_verify_groups);
 
     return t.summary();
 }

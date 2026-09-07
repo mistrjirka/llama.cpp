@@ -4,6 +4,8 @@
 #include "llama-model.h"
 #include "llama-context.h"
 
+#include <cstdlib>
+
 //
 // llama_memory_hybrid
 //
@@ -65,6 +67,35 @@ llama_memory_hybrid::llama_memory_hybrid(
     )) {}
 
 llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & balloc, uint32_t n_ubatch, bool embd_all) {
+    // Scope the experiment to small all-output hybrid verification batches.
+    // Prefill retains its full ubatch, and the draft context/other memory backends
+    // retain their existing behavior. Recurrent tail protection below is unchanged.
+    static const uint32_t group_limit = []() -> uint32_t {
+        const char * value = std::getenv("LLAMA_EXPERIMENT_VERIFY_GROUP_SEQS");
+        if (!value) {
+            return 0;
+        }
+        char * end = nullptr;
+        const long n = std::strtol(value, &end, 10);
+        return end != value && *end == '\0' && n >= 1 && n <= 16 ? (uint32_t) n : 0;
+    }();
+    uint32_t max_seq_sets = 0;
+    if (group_limit && !embd_all && mem_attn->get_n_stream() == 1 && mem_recr->n_rs_seq > 0 &&
+            balloc.get_n_tokens() <= 64 && balloc.get_n_outputs() == balloc.get_n_tokens()) {
+        const auto & batch = balloc.get_batch();
+        bool independent = batch.token != nullptr;
+        for (int32_t i = 0; independent && i < batch.n_tokens; ++i) {
+            independent = batch.n_seq_id[i] == 1;
+        }
+        if (independent) {
+            max_seq_sets = group_limit;
+        }
+    }
+    if (group_limit && std::getenv("LLAMA_EXPERIMENT_VERIFY_GROUP_TRACE") && balloc.get_n_tokens() <= 64) {
+        LLAMA_LOG_WARN("verify_eligibility: tokens=%u outputs=%u embd_all=%d streams=%u rollback=%u chosen=%u\n",
+                balloc.get_n_tokens(), balloc.get_n_outputs(), (int)embd_all,
+                mem_attn->get_n_stream(), mem_recr->n_rs_seq, max_seq_sets);
+    }
     do {
         balloc.split_reset();
 
@@ -86,7 +117,7 @@ llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & ba
                 //   so that the rollback snapshots remain valid
                 const uint32_t n_rs_seq = mem_recr->n_rs_seq;
 
-                ubatch = balloc.split_equal(n_ubatch, !unified, n_rs_seq > 0 ? n_rs_seq + 1 : 0);
+                ubatch = balloc.split_equal(n_ubatch, !unified, n_rs_seq > 0 ? n_rs_seq + 1 : 0, max_seq_sets);
             }
 
             if (ubatch.n_tokens == 0) {
@@ -99,6 +130,15 @@ llama_memory_context_ptr llama_memory_hybrid::init_batch(llama_batch_allocr & ba
         if (balloc.get_n_used() < balloc.get_n_tokens()) {
             // failed to find a suitable split
             break;
+        }
+
+        if (max_seq_sets && std::getenv("LLAMA_EXPERIMENT_VERIFY_GROUP_TRACE")) {
+            LLAMA_LOG_WARN("verify_groups: tokens=%u limit=%u ubatches=%zu\n",
+                    balloc.get_n_tokens(), max_seq_sets, ubatches.size());
+            for (const auto & ub : ubatches) {
+                LLAMA_LOG_WARN("verify_group: tokens=%u sequences=%u tokens_per_seq=%u\n",
+                        ub.n_tokens, ub.n_seqs_unq, ub.n_seq_tokens);
+            }
         }
 
         // prepare the recurrent batches first

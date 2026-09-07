@@ -1,0 +1,21 @@
+{
+  "identical": {
+    "rows": 1,
+    "vocab": 3,
+    "greedy_differences": 0,
+    "normalized_mse": 0,
+    "max_logit_delta": 0,
+    "max_probability_delta": 0,
+    "mean_js_divergence": 0
+  },
+  "changed": {
+    "rows": 1,
+    "vocab": 3,
+    "greedy_differences": 1,
+    "normalized_mse": 0.8,
+    "max_logit_delta": 2,
+    "max_probability_delta": 0.460656041643,
+    "mean_js_divergence": 0.11055127232
+  },
+  "truncated_rejected": true
+}
