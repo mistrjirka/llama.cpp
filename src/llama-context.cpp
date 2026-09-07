@@ -3289,6 +3289,36 @@ size_t llama_context::state_seq_load_file(llama_seq_id seq_id, const char * file
     return file.tell();
 }
 
+size_t llama_context::state_seq_load_file_prefix(
+        llama_seq_id seq_id, llama_seq_id prefix_seq_id, llama_pos prefix_pos, const char * filepath,
+        llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
+    llama_file file(filepath, "rb");
+
+    const uint32_t magic = file.read_u32();
+    const uint32_t version = file.read_u32();
+    if (magic != LLAMA_STATE_SEQ_MAGIC || version != LLAMA_STATE_SEQ_VERSION) {
+        LLAMA_LOG_ERROR("%s: invalid sequence state file\n", __func__);
+        return 0;
+    }
+
+    const uint32_t n_token_count = file.read_u32();
+    if (tokens_out == nullptr || n_token_count > n_token_capacity) {
+        return 0;
+    }
+    file.read_raw(tokens_out, sizeof(llama_token) * n_token_count);
+    *n_token_count_out = n_token_count;
+
+    const size_t state_size = file.size() - file.tell();
+    llama_io_read_file io(&file);
+    const size_t nread = state_seq_read_data_prefix(io, seq_id, prefix_seq_id, prefix_pos, 0);
+    if (!nread) {
+        LLAMA_LOG_ERROR("%s: failed to restore sequence state with shared prefix\n", __func__);
+        return 0;
+    }
+    GGML_ASSERT(nread <= state_size);
+    return file.tell();
+}
+
 size_t llama_context::state_seq_save_file(llama_seq_id seq_id, const char * filepath, const llama_token * tokens, size_t n_token_count) {
     llama_file file(filepath, "wb");
 
@@ -3368,6 +3398,15 @@ size_t llama_context::state_seq_read_data(llama_io_read_i & io, llama_seq_id seq
         memory->state_read(io, seq_id, flags);
     }
 
+    return io.n_bytes();
+}
+
+size_t llama_context::state_seq_read_data_prefix(
+        llama_io_read_i & io, llama_seq_id seq_id, llama_seq_id prefix_seq_id,
+        llama_pos prefix_pos, llama_state_seq_flags flags) {
+    if (memory && !memory->state_read_prefix(io, seq_id, prefix_seq_id, prefix_pos, flags)) {
+        return 0;
+    }
     return io.n_bytes();
 }
 
@@ -4282,6 +4321,19 @@ size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, lla
         return ctx->state_seq_load_file(dest_seq_id, filepath, tokens_out, n_token_capacity, n_token_count_out);
     } catch (const std::exception & err) {
         LLAMA_LOG_ERROR("%s: error loading sequence state file: %s\n", __func__, err.what());
+        return 0;
+    }
+}
+
+size_t llama_state_seq_load_file_prefix(
+        llama_context * ctx, const char * filepath, llama_seq_id dest_seq_id,
+        llama_seq_id prefix_seq_id, llama_pos prefix_pos, llama_token * tokens_out,
+        size_t n_token_capacity, size_t * n_token_count_out) {
+    try {
+        return ctx->state_seq_load_file_prefix(dest_seq_id, prefix_seq_id, prefix_pos, filepath,
+                tokens_out, n_token_capacity, n_token_count_out);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: error loading sequence state file with prefix: %s\n", __func__, err.what());
         return 0;
     }
 }

@@ -205,6 +205,21 @@ void llama_memory_hybrid::state_read(llama_io_read_i & io, llama_seq_id seq_id, 
     mem_recr->state_read(io, seq_id, flags);
 }
 
+bool llama_memory_hybrid::state_read_prefix(
+        llama_io_read_i & io, llama_seq_id seq_id, llama_seq_id prefix_seq_id,
+        llama_pos prefix_pos, llama_state_seq_flags flags) {
+    if ((flags & LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) != 0) {
+        return false;
+    }
+    if (!mem_attn->state_read_prefix(io, seq_id, prefix_seq_id, prefix_pos, flags)) {
+        return false;
+    }
+    // Crucially, this restores the child's own saved recurrent tail; it is not
+    // copied from the donor prefix.
+    mem_recr->state_read(io, seq_id, flags);
+    return true;
+}
+
 llama_kv_cache * llama_memory_hybrid::get_mem_attn() const {
     return mem_attn.get();
 }

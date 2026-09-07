@@ -175,6 +175,15 @@ struct llama_context {
                 size_t   n_token_capacity,
                 size_t * n_token_count_out);
 
+    size_t state_seq_load_file_prefix(
+          llama_seq_id   seq_id,
+          llama_seq_id   prefix_seq_id,
+             llama_pos   prefix_pos,
+            const char * filepath,
+           llama_token * tokens_out,
+                size_t   n_token_capacity,
+                size_t * n_token_count_out);
+
     size_t state_seq_save_file(
           llama_seq_id   seq_id,
             const char * filepath,
@@ -273,6 +282,9 @@ private:
 
     size_t state_seq_write_data(llama_io_write_i & io, llama_seq_id seq_id, llama_state_seq_flags flags);
     size_t state_seq_read_data (llama_io_read_i  & io, llama_seq_id seq_id, llama_state_seq_flags flags);
+    size_t state_seq_read_data_prefix(
+            llama_io_read_i & io, llama_seq_id seq_id, llama_seq_id prefix_seq_id,
+            llama_pos prefix_pos, llama_state_seq_flags flags);
 
     //
     // members

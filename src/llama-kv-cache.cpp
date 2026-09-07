@@ -2149,6 +2149,45 @@ void llama_kv_cache::state_read(llama_io_read_i & io, llama_seq_id seq_id, llama
     state_read_sinfo(io, seq_id, flags, nullptr, nullptr);
 }
 
+bool llama_kv_cache::state_read_prefix(
+        llama_io_read_i & io, llama_seq_id seq_id, llama_seq_id prefix_seq_id,
+        llama_pos prefix_pos, llama_state_seq_flags flags) {
+    if (other || flags != LLAMA_STATE_SEQ_FLAGS_NONE || seq_id < 0 || prefix_seq_id < 0 || prefix_pos <= 0) {
+        return false;
+    }
+
+    uint32_t n_stream_cur;
+    io.read(&n_stream_cur, sizeof(n_stream_cur));
+    if (n_stream_cur != n_stream || n_stream != 1 ||
+            (size_t) seq_id >= seq_to_stream.size() || (size_t) prefix_seq_id >= seq_to_stream.size() ||
+            seq_to_stream[seq_id] != seq_to_stream[prefix_seq_id]) {
+        return false;
+    }
+
+    uint32_t cell_count;
+    io.read(&cell_count, sizeof(cell_count));
+    if (cell_count == 0) {
+        return true;
+    }
+
+    const uint32_t strm = seq_to_stream[seq_id];
+    slot_info sinfo;
+    if (!state_read_meta_prefix(io, strm, cell_count, sinfo, seq_id, prefix_seq_id, prefix_pos)) {
+        seq_rm(seq_id, -1, -1);
+        return false;
+    }
+    try {
+        if (!state_read_data(io, strm, cell_count, sinfo)) {
+            seq_rm(seq_id, -1, -1);
+            return false;
+        }
+    } catch (...) {
+        seq_rm(seq_id, -1, -1);
+        return false;
+    }
+    return true;
+}
+
 void llama_kv_cache::state_read_sinfo(
         llama_io_read_i & io,
            llama_seq_id   seq_id,
@@ -2355,6 +2394,111 @@ void llama_kv_cache::state_write_data(llama_io_write_i & io, const cell_ranges_t
             }
         }
     }
+}
+
+bool llama_kv_cache::state_read_meta_prefix(
+        llama_io_read_i & io, uint32_t strm, uint32_t cell_count, slot_info & sinfo,
+        llama_seq_id dest_seq_id, llama_seq_id prefix_seq_id, llama_pos prefix_pos) {
+    auto & cells = v_cells[strm];
+
+    if (dest_seq_id == prefix_seq_id || dest_seq_id < 0 || prefix_seq_id < 0 ||
+            (size_t) dest_seq_id >= seq_to_stream.size() || (size_t) prefix_seq_id >= seq_to_stream.size() ||
+            seq_to_stream[dest_seq_id] != strm || seq_to_stream[prefix_seq_id] != strm) {
+        return false;
+    }
+
+    // Clear any debris from a failed full restore, then attach the donor's prefix cells.
+    // In unified KV this copy is metadata-only.
+    seq_rm(dest_seq_id, -1, -1);
+    seq_cp(prefix_seq_id, dest_seq_id, 0, prefix_pos);
+
+    struct saved_cell {
+        llama_pos pos = -1;
+        llama_kv_cell_ext ext;
+        bool has_ext = false;
+    };
+    std::vector<saved_cell> saved(cell_count);
+    std::vector<uint32_t> suffix_src;
+    suffix_src.reserve(cell_count);
+
+    sinfo.s0 = strm;
+    sinfo.s1 = strm;
+    sinfo.resize(1);
+    sinfo.strm[0] = strm;
+    sinfo.idxs[0].resize(cell_count, UINT32_MAX);
+
+    for (uint32_t i = 0; i < cell_count; ++i) {
+        uint32_t n_seq_id;
+        io.read(&saved[i].pos, sizeof(saved[i].pos));
+        io.read(&n_seq_id, sizeof(n_seq_id));
+        if (n_seq_id != 1) {
+            LLAMA_LOG_ERROR("%s: invalid seq-id count %u\n", __func__, n_seq_id);
+            return false;
+        }
+        if (has_cell_ext()) {
+            io.read(&saved[i].ext, sizeof(saved[i].ext));
+            saved[i].has_ext = true;
+        }
+        llama_seq_id ignored;
+        io.read(&ignored, sizeof(ignored));
+
+        if (saved[i].pos < prefix_pos) {
+            const uint32_t idx = cells.seq_pos_idx(dest_seq_id, saved[i].pos);
+            if (idx == UINT32_MAX) {
+                LLAMA_LOG_ERROR("%s: donor has no shared cell at position %d\n", __func__, saved[i].pos);
+                return false;
+            }
+            if (saved[i].has_ext && cells.ext_get(idx).tok != saved[i].ext.tok) {
+                LLAMA_LOG_ERROR("%s: donor token mismatch at position %d\n", __func__, saved[i].pos);
+                return false;
+            }
+            sinfo.idxs[0][i] = idx;
+        } else {
+            suffix_src.push_back(i);
+        }
+    }
+
+    if (!suffix_src.empty()) {
+        llama_batch_allocr balloc(hparams.n_pos_per_embd());
+        llama_ubatch ubatch = balloc.ubatch_reserve((uint32_t) suffix_src.size(), 1);
+        ubatch.seq_id_unq[0] = dest_seq_id;
+
+        for (uint32_t j = 0; j < suffix_src.size(); ++j) {
+            const uint32_t i = suffix_src[j];
+            ubatch.pos[j] = saved[i].pos;
+            ubatch.n_seq_id[j] = 1;
+            ubatch.seq_id[j] = &dest_seq_id;
+            if (saved[i].has_ext) {
+                if (hparams.n_pos_per_embd() > 1) {
+                    ubatch.pos[j + ubatch.n_tokens]     = saved[i].ext.y;
+                    ubatch.pos[j + ubatch.n_tokens * 2] = saved[i].ext.x;
+                }
+                ubatch.token[j] = saved[i].ext.tok;
+            }
+        }
+
+        slot_info suffix = find_slot(ubatch, false);
+        if (suffix.empty()) {
+            LLAMA_LOG_ERROR("%s: failed to find %zu suffix cells in kv cache\n", __func__, suffix_src.size());
+            return false;
+        }
+        apply_ubatch(suffix, ubatch);
+        for (uint32_t j = 0; j < suffix_src.size(); ++j) {
+            const uint32_t i = suffix_src[j];
+            const uint32_t idx = suffix.idxs[0][j];
+            sinfo.idxs[0][i] = idx;
+            if (saved[i].has_ext) {
+                cells.ext_set(idx, saved[i].ext);
+            }
+        }
+    }
+
+    for (uint32_t idx : sinfo.idxs[0]) {
+        if (idx == UINT32_MAX) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool llama_kv_cache::state_read_meta(llama_io_read_i & io, uint32_t strm, uint32_t cell_count, slot_info & sinfo, llama_seq_id dest_seq_id, const slot_info * sinfo_in) {

@@ -1155,6 +1155,8 @@ In *router mode* the query param `?model={model_id}` has to be set. This endpoin
 
 `filename`: Name of the file to save the slot's prompt cache. The file will be saved in the directory specified by the `--slot-save-path` server parameter.
 
+When speculative decoding has its own draft context, the server also writes `<filename>.draft` for the draft sequence state and, when available, `<filename>.spec` for the small per-sequence speculative carry. These companions are optional and backward-compatible: restoring an older slot file without them falls back to rebuilding draft state.
+
 **Response format**
 
 ```json
@@ -1173,7 +1175,7 @@ In *router mode* the query param `?model={model_id}` has to be set. This endpoin
 
 *Options:*
 
-`filename`: Name of the file to restore the slot's prompt cache from. The file should be located in the directory specified by the `--slot-save-path` server parameter.
+`filename`: Name of the file to restore the slot's prompt cache from. The file should be located in the directory specified by the `--slot-save-path` server parameter. If matching `.draft`/`.spec` companions exist, speculative state is restored as part of the slot operation. With `--slot-fork-prefix` and unified KV, restore can map a saved common prefix directly onto an already-restored donor so the temporary full duplicate does not need to fit.
 
 **Response format**
 
