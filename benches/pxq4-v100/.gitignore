@@ -1,0 +1,8 @@
+__pycache__/
+checkpoint-before.txt
+results/*-slot/
+results/*.bin
+results/*.nsys-rep
+results/*.sqlite
+results/*.patch
+results/code-prefix-101k.json

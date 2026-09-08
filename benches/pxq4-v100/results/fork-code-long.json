@@ -1,0 +1,193 @@
+{
+  "engine": "fork",
+  "fixture": "code",
+  "cmd": [
+    "/models/llama-pxq4-build/bin/llama-server",
+    "-m",
+    "/models/PXA-Fusion4-35B-GGUF/PXA-Fusion4-35B-PXQ4.gguf",
+    "-ngl",
+    "99",
+    "-c",
+    "131072",
+    "-np",
+    "1",
+    "-t",
+    "16",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "-fa",
+    "on",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-cram",
+    "0",
+    "--ctx-checkpoints",
+    "0",
+    "--slot-save-path",
+    "/workspace/llama-pxq4-v100/benches/pxq4-v100/results/fork-code-long-slot",
+    "--no-warmup",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "33457",
+    "--no-webui"
+  ],
+  "env": [],
+  "rows": [
+    {
+      "n": 64,
+      "rep": 0,
+      "warmup": true,
+      "pp": 943.045698108439,
+      "tg_steps_s": 84.37270235051635,
+      "wall_s": 1.8952437010011636,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1060.394,
+        "prompt_per_token_ms": 1.060394,
+        "prompt_per_second": 943.045698108439,
+        "predicted_n": 64,
+        "predicted_ms": 746.687,
+        "predicted_per_token_ms": 11.852174603174603,
+        "predicted_per_second": 84.37270235051635
+      },
+      "sha256": "ef86e058f4ce34a12a7a16d48247ea917bced1f452031103aead2c8522f90c39",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0,x} --> [^...]\n            // S{0}   --> [^...]\n            // S*      --> [^...]\n            // S?      --> [^...]\n            rule"
+    },
+    {
+      "n": 64,
+      "rep": 1,
+      "warmup": false,
+      "pp": 947.633758505013,
+      "tg_steps_s": 85.41955918084,
+      "wall_s": 1.8871946159997606,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1055.26,
+        "prompt_per_token_ms": 1.05526,
+        "prompt_per_second": 947.633758505013,
+        "predicted_n": 64,
+        "predicted_ms": 737.536,
+        "predicted_per_token_ms": 11.706920634920634,
+        "predicted_per_second": 85.41955918083998
+      },
+      "sha256": "ef86e058f4ce34a12a7a16d48247ea917bced1f452031103aead2c8522f90c39",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0,x} --> [^...]\n            // S{0}   --> [^...]\n            // S*      --> [^...]\n            // S?      --> [^...]\n            rule"
+    },
+    {
+      "n": 64,
+      "rep": 2,
+      "warmup": false,
+      "pp": 947.7343462718028,
+      "tg_steps_s": 84.1200112160015,
+      "wall_s": 1.888303239000379,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1055.148,
+        "prompt_per_token_ms": 1.055148,
+        "prompt_per_second": 947.7343462718028,
+        "predicted_n": 64,
+        "predicted_ms": 748.93,
+        "predicted_per_token_ms": 11.887777777777776,
+        "predicted_per_second": 84.1200112160015
+      },
+      "sha256": "ef86e058f4ce34a12a7a16d48247ea917bced1f452031103aead2c8522f90c39",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0,x} --> [^...]\n            // S{0}   --> [^...]\n            // S*      --> [^...]\n            // S?      --> [^...]\n            rule"
+    },
+    {
+      "n": 512,
+      "rep": 0,
+      "warmup": true,
+      "pp": 948.8953434858809,
+      "tg_steps_s": 86.02165018479505,
+      "wall_s": 7.059054371999082,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1053.857,
+        "prompt_per_token_ms": 1.053857,
+        "prompt_per_second": 948.8953434858809,
+        "predicted_n": 512,
+        "predicted_ms": 5940.365,
+        "predicted_per_token_ms": 11.624980430528375,
+        "predicted_per_second": 86.02165018479505
+      },
+      "sha256": "5b8a695e01dd0499b344b9dcd19232c7a39850859fa30274e001345948f666bf",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0,x} --> [^...]\n            // S{0}   --> [^...]\n            // S*      --> [^...]\n            // S?      --> [^...]\n            rule.push_back({LLAMA_GRETYPE_CHAR_ANY, 0});\n            rule.push_back({LLAMA_GRETYPE_CHAR_NOT, 0});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            return;\n        }\n\n        if (min_times > MAX_REPETITION_THRESHOLD) {\n            throw std::runtime_error(\"repetition limit exceeded: \" + std::to_string(min_times));\n        }\n\n        // add min_times repetitions\n        for (uint64_t i = 0; i < min_times; i++) {\n            rule.insert(rule.end(), prev_rule.begin(), prev_rule.end());\n        }\n\n        // add optional repetitions\n        if (no_max) {\n            // S{m,} --> S{m}S'\n            // S'    ::= S S' |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, generate_symbol_id(rule_name)});\n            n_prev_rules++;\n        } else if (max_times > min_times) {\n            // S{m,n} --> S{m}S'(n-m)\n            // S'(x)  ::= S S'(x-1) |\n            // (... n-m definitions of these S' rules ...)\n            // S'(1)  ::= S |\n            uint32_t prev_sym_id = generate_symbol_id(rule_name);\n            n_prev_rules += max_times - min_times;\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, prev_sym_id});\n            for (uint64_t i = 0; i < max_times - min_times; i++) {\n                rule.push_back({LLAMA_GRETYPE_RULE_REF, prev_sym_id});\n                rule.push_back({LLAMA_GRETYPE_ALT, 0});\n            }\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n        }\n    };\n\n    while (*pos != 0 && *pos != '|' && *pos != '}') {\n        last_sym_start = rule.size();\n        switch (*pos) {\n            case '(':\n                pos++;\n                pos ="
+    },
+    {
+      "n": 512,
+      "rep": 1,
+      "warmup": false,
+      "pp": 950.2469691872918,
+      "tg_steps_s": 85.93752627737472,
+      "wall_s": 7.098008001999915,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1052.358,
+        "prompt_per_token_ms": 1.052358,
+        "prompt_per_second": 950.2469691872918,
+        "predicted_n": 512,
+        "predicted_ms": 5946.18,
+        "predicted_per_token_ms": 11.636360078277887,
+        "predicted_per_second": 85.93752627737472
+      },
+      "sha256": "5b8a695e01dd0499b344b9dcd19232c7a39850859fa30274e001345948f666bf",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0,x} --> [^...]\n            // S{0}   --> [^...]\n            // S*      --> [^...]\n            // S?      --> [^...]\n            rule.push_back({LLAMA_GRETYPE_CHAR_ANY, 0});\n            rule.push_back({LLAMA_GRETYPE_CHAR_NOT, 0});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            return;\n        }\n\n        if (min_times > MAX_REPETITION_THRESHOLD) {\n            throw std::runtime_error(\"repetition limit exceeded: \" + std::to_string(min_times));\n        }\n\n        // add min_times repetitions\n        for (uint64_t i = 0; i < min_times; i++) {\n            rule.insert(rule.end(), prev_rule.begin(), prev_rule.end());\n        }\n\n        // add optional repetitions\n        if (no_max) {\n            // S{m,} --> S{m}S'\n            // S'    ::= S S' |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, generate_symbol_id(rule_name)});\n            n_prev_rules++;\n        } else if (max_times > min_times) {\n            // S{m,n} --> S{m}S'(n-m)\n            // S'(x)  ::= S S'(x-1) |\n            // (... n-m definitions of these S' rules ...)\n            // S'(1)  ::= S |\n            uint32_t prev_sym_id = generate_symbol_id(rule_name);\n            n_prev_rules += max_times - min_times;\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, prev_sym_id});\n            for (uint64_t i = 0; i < max_times - min_times; i++) {\n                rule.push_back({LLAMA_GRETYPE_RULE_REF, prev_sym_id});\n                rule.push_back({LLAMA_GRETYPE_ALT, 0});\n            }\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n        }\n    };\n\n    while (*pos != 0 && *pos != '|' && *pos != '}') {\n        last_sym_start = rule.size();\n        switch (*pos) {\n            case '(':\n                pos++;\n                pos ="
+    },
+    {
+      "n": 512,
+      "rep": 2,
+      "warmup": false,
+      "pp": 948.8179152003477,
+      "tg_steps_s": 85.68855279747972,
+      "wall_s": 7.112678322000647,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1053.943,
+        "prompt_per_token_ms": 1.053943,
+        "prompt_per_second": 948.8179152003477,
+        "predicted_n": 512,
+        "predicted_ms": 5963.457,
+        "predicted_per_token_ms": 11.670170254403132,
+        "predicted_per_second": 85.68855279747972
+      },
+      "sha256": "5b8a695e01dd0499b344b9dcd19232c7a39850859fa30274e001345948f666bf",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0,x} --> [^...]\n            // S{0}   --> [^...]\n            // S*      --> [^...]\n            // S?      --> [^...]\n            rule.push_back({LLAMA_GRETYPE_CHAR_ANY, 0});\n            rule.push_back({LLAMA_GRETYPE_CHAR_NOT, 0});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            return;\n        }\n\n        if (min_times > MAX_REPETITION_THRESHOLD) {\n            throw std::runtime_error(\"repetition limit exceeded: \" + std::to_string(min_times));\n        }\n\n        // add min_times repetitions\n        for (uint64_t i = 0; i < min_times; i++) {\n            rule.insert(rule.end(), prev_rule.begin(), prev_rule.end());\n        }\n\n        // add optional repetitions\n        if (no_max) {\n            // S{m,} --> S{m}S'\n            // S'    ::= S S' |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, generate_symbol_id(rule_name)});\n            n_prev_rules++;\n        } else if (max_times > min_times) {\n            // S{m,n} --> S{m}S'(n-m)\n            // S'(x)  ::= S S'(x-1) |\n            // (... n-m definitions of these S' rules ...)\n            // S'(1)  ::= S |\n            uint32_t prev_sym_id = generate_symbol_id(rule_name);\n            n_prev_rules += max_times - min_times;\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, prev_sym_id});\n            for (uint64_t i = 0; i < max_times - min_times; i++) {\n                rule.push_back({LLAMA_GRETYPE_RULE_REF, prev_sym_id});\n                rule.push_back({LLAMA_GRETYPE_ALT, 0});\n            }\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n        }\n    };\n\n    while (*pos != 0 && *pos != '|' && *pos != '}') {\n        last_sym_start = rule.size();\n        switch (*pos) {\n            case '(':\n                pos++;\n                pos ="
+    }
+  ],
+  "token_ids_sha256": "7572a054780ded5e4c2d9b11aea848288718d36d3d94d7fb8f6b98ff3b185c25",
+  "distinct_tokens": 3868,
+  "cold": {
+    "wall_s": 60.27794354999969,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 100000,
+      "prompt_ms": 60210.137,
+      "prompt_per_token_ms": 0.60210137,
+      "prompt_per_second": 1660.849899743626,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_per_token_ms": 0.0,
+      "predicted_per_second": 0.0
+    }
+  },
+  "save": {
+    "id_slot": 0,
+    "filename": "prefix.bin",
+    "n_saved": 100000,
+    "n_written": 2116664704,
+    "timings": {
+      "save_ms": 619.09
+    }
+  }
+}

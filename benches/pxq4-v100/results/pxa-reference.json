@@ -1,0 +1,118 @@
+[
+  {
+    "label": "pxa-reference",
+    "rpb": 2,
+    "cmd": [
+      "/workspace/pxa-release-0908/unpacked/pxa-v2026.09.07-rc1/bin/llama-server",
+      "-m",
+      "/models/PXA-Fusion4-35B-GGUF/PXA-Fusion4-35B-PXQ4.gguf",
+      "-ngl",
+      "99",
+      "-c",
+      "8192",
+      "-b",
+      "512",
+      "-ub",
+      "512",
+      "-fa",
+      "on",
+      "-ctk",
+      "f16",
+      "-ctv",
+      "f16",
+      "-np",
+      "1",
+      "-t",
+      "16",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "34415"
+    ],
+    "overrides": [],
+    "rows": [
+      {
+        "i": 0,
+        "wall_s": 2.1460562180000124,
+        "tg_steps_s": 120.07956330594577,
+        "timings": {
+          "prompt_n": 5,
+          "prompt_ms": 19.438,
+          "prompt_per_token_ms": 3.8876,
+          "prompt_per_second": 257.2281098878486,
+          "predicted_n": 256,
+          "predicted_ms": 2123.592,
+          "predicted_per_token_ms": 8.29528125,
+          "predicted_per_second": 120.55046355420438,
+          "n_ctx": 8192,
+          "n_past": 260
+        },
+        "sha256": "686127ad8c0103c297f7316fe74f79aa73f101da15210411cf0628a0c37c780a",
+        "content": " Paris, a city renowned for its iconic landmarks such as the Eiffel Tower, the Louvre Museum, and the Notre-Dame Cathedral. Paris is also famous for its culinary scene, with many Michelin-starred restaurants and traditional French cuisine. The city is a major hub for fashion, art, and culture, and is home to many museums, galleries, and theaters.\nThe capital of Germany is Berlin, a city known for its vibrant cultural scene, including numerous museums, galleries, and theaters. Berlin is also famous for its nightlife, with many bars, clubs, and live music venues. The city is home to many historical landmarks, including the Brandenburg Gate, the Reichstag Building, and the Berlin Wall.\nThe capital of Italy is Rome, a city with a rich history and culture, including many ancient ruins, museums, and churches. Rome is also famous for its cuisine, with many traditional Italian dishes and wines. The city is home to many landmarks, including the Colosseum, the Vatican City, and the Trevi Fountain.\nThe capital of Spain is Madrid, a city known for its vibrant cultural scene, including many museums, galleries, and theaters. Madrid is also famous for its nightlife, with many bars, clubs, and live music venues. The",
+        "tokens": null
+      },
+      {
+        "i": 1,
+        "wall_s": 2.1766452510000818,
+        "tg_steps_s": 120.46297464183523,
+        "timings": {
+          "prompt_n": 5,
+          "prompt_ms": 19.655,
+          "prompt_per_token_ms": 3.931,
+          "prompt_per_second": 254.3881963876876,
+          "predicted_n": 256,
+          "predicted_ms": 2116.833,
+          "predicted_per_token_ms": 8.26887890625,
+          "predicted_per_second": 120.93537846396008,
+          "n_ctx": 8192,
+          "n_past": 260
+        },
+        "sha256": "686127ad8c0103c297f7316fe74f79aa73f101da15210411cf0628a0c37c780a",
+        "content": " Paris, a city renowned for its iconic landmarks such as the Eiffel Tower, the Louvre Museum, and the Notre-Dame Cathedral. Paris is also famous for its culinary scene, with many Michelin-starred restaurants and traditional French cuisine. The city is a major hub for fashion, art, and culture, and is home to many museums, galleries, and theaters.\nThe capital of Germany is Berlin, a city known for its vibrant cultural scene, including numerous museums, galleries, and theaters. Berlin is also famous for its nightlife, with many bars, clubs, and live music venues. The city is home to many historical landmarks, including the Brandenburg Gate, the Reichstag Building, and the Berlin Wall.\nThe capital of Italy is Rome, a city with a rich history and culture, including many ancient ruins, museums, and churches. Rome is also famous for its cuisine, with many traditional Italian dishes and wines. The city is home to many landmarks, including the Colosseum, the Vatican City, and the Trevi Fountain.\nThe capital of Spain is Madrid, a city known for its vibrant cultural scene, including many museums, galleries, and theaters. Madrid is also famous for its nightlife, with many bars, clubs, and live music venues. The",
+        "tokens": null
+      },
+      {
+        "i": 2,
+        "wall_s": 2.1526490629985346,
+        "tg_steps_s": 120.41513471856386,
+        "timings": {
+          "prompt_n": 5,
+          "prompt_ms": 19.698,
+          "prompt_per_token_ms": 3.9396,
+          "prompt_per_second": 253.83287643415574,
+          "predicted_n": 256,
+          "predicted_ms": 2117.674,
+          "predicted_per_token_ms": 8.2721640625,
+          "predicted_per_second": 120.88735093314646,
+          "n_ctx": 8192,
+          "n_past": 260
+        },
+        "sha256": "686127ad8c0103c297f7316fe74f79aa73f101da15210411cf0628a0c37c780a",
+        "content": " Paris, a city renowned for its iconic landmarks such as the Eiffel Tower, the Louvre Museum, and the Notre-Dame Cathedral. Paris is also famous for its culinary scene, with many Michelin-starred restaurants and traditional French cuisine. The city is a major hub for fashion, art, and culture, and is home to many museums, galleries, and theaters.\nThe capital of Germany is Berlin, a city known for its vibrant cultural scene, including numerous museums, galleries, and theaters. Berlin is also famous for its nightlife, with many bars, clubs, and live music venues. The city is home to many historical landmarks, including the Brandenburg Gate, the Reichstag Building, and the Berlin Wall.\nThe capital of Italy is Rome, a city with a rich history and culture, including many ancient ruins, museums, and churches. Rome is also famous for its cuisine, with many traditional Italian dishes and wines. The city is home to many landmarks, including the Colosseum, the Vatican City, and the Trevi Fountain.\nThe capital of Spain is Madrid, a city known for its vibrant cultural scene, including many museums, galleries, and theaters. Madrid is also famous for its nightlife, with many bars, clubs, and live music venues. The",
+        "tokens": null
+      },
+      {
+        "i": 3,
+        "wall_s": 2.1535650540008646,
+        "tg_steps_s": 120.37983378141382,
+        "timings": {
+          "prompt_n": 5,
+          "prompt_ms": 19.566,
+          "prompt_per_token_ms": 3.9132,
+          "prompt_per_second": 255.5453337422059,
+          "predicted_n": 256,
+          "predicted_ms": 2118.295,
+          "predicted_per_token_ms": 8.27458984375,
+          "predicted_per_second": 120.85191156094878,
+          "n_ctx": 8192,
+          "n_past": 260
+        },
+        "sha256": "686127ad8c0103c297f7316fe74f79aa73f101da15210411cf0628a0c37c780a",
+        "content": " Paris, a city renowned for its iconic landmarks such as the Eiffel Tower, the Louvre Museum, and the Notre-Dame Cathedral. Paris is also famous for its culinary scene, with many Michelin-starred restaurants and traditional French cuisine. The city is a major hub for fashion, art, and culture, and is home to many museums, galleries, and theaters.\nThe capital of Germany is Berlin, a city known for its vibrant cultural scene, including numerous museums, galleries, and theaters. Berlin is also famous for its nightlife, with many bars, clubs, and live music venues. The city is home to many historical landmarks, including the Brandenburg Gate, the Reichstag Building, and the Berlin Wall.\nThe capital of Italy is Rome, a city with a rich history and culture, including many ancient ruins, museums, and churches. Rome is also famous for its cuisine, with many traditional Italian dishes and wines. The city is home to many landmarks, including the Colosseum, the Vatican City, and the Trevi Fountain.\nThe capital of Spain is Madrid, a city known for its vibrant cultural scene, including many museums, galleries, and theaters. Madrid is also famous for its nightlife, with many bars, clubs, and live music venues. The",
+        "tokens": null
+      }
+    ],
+    "median_tg_steps_s": 120.41513471856386,
+    "median_wall_s": 2.1535650540008646
+  }
+]

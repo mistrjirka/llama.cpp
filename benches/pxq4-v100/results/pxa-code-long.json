@@ -1,0 +1,199 @@
+{
+  "engine": "pxa",
+  "fixture": "code",
+  "cmd": [
+    "/workspace/pxa-release-0908/unpacked/pxa-v2026.09.07-rc1/bin/llama-server",
+    "-m",
+    "/models/PXA-Fusion4-35B-GGUF/PXA-Fusion4-35B-PXQ4.gguf",
+    "-ngl",
+    "99",
+    "-c",
+    "131072",
+    "-np",
+    "1",
+    "-t",
+    "16",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "-fa",
+    "on",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-cram",
+    "0",
+    "--ctx-checkpoints",
+    "0",
+    "--slot-save-path",
+    "/workspace/llama-pxq4-v100/benches/pxq4-v100/results/pxa-code-long-slot",
+    "--no-warmup",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "48221"
+  ],
+  "env": [],
+  "rows": [
+    {
+      "n": 64,
+      "rep": 0,
+      "warmup": true,
+      "pp": 805.3715057950507,
+      "tg_steps_s": 51.672253558208794,
+      "wall_s": 2.576366361001419,
+      "timings": {
+        "prompt_n": 1000,
+        "prompt_ms": 1241.663,
+        "prompt_per_token_ms": 1.241663,
+        "prompt_per_second": 805.3715057950507,
+        "predicted_n": 64,
+        "predicted_ms": 1219.223,
+        "predicted_per_token_ms": 19.050359375,
+        "predicted_per_second": 52.49244805913275,
+        "n_ctx": 131072,
+        "n_past": 101063
+      },
+      "sha256": "b4d00c611136ef7348eabca6bef1b2bfd32e3fd317b1cb79e25fc7dacf7ecbd0",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0} is equivalent to S{0,0}\n            // S{0,0} is equivalent to S{0,1}\n            // S{0,1} is equivalent to S"
+    },
+    {
+      "n": 64,
+      "rep": 1,
+      "warmup": false,
+      "pp": 803.8791994649379,
+      "tg_steps_s": 51.862992791044,
+      "wall_s": 2.593491613999504,
+      "timings": {
+        "prompt_n": 1000,
+        "prompt_ms": 1243.968,
+        "prompt_per_token_ms": 1.2439680000000002,
+        "prompt_per_second": 803.8791994649379,
+        "predicted_n": 64,
+        "predicted_ms": 1214.739,
+        "predicted_per_token_ms": 18.980296875,
+        "predicted_per_second": 52.68621489883835,
+        "n_ctx": 131072,
+        "n_past": 101063
+      },
+      "sha256": "b4d00c611136ef7348eabca6bef1b2bfd32e3fd317b1cb79e25fc7dacf7ecbd0",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0} is equivalent to S{0,0}\n            // S{0,0} is equivalent to S{0,1}\n            // S{0,1} is equivalent to S"
+    },
+    {
+      "n": 64,
+      "rep": 2,
+      "warmup": false,
+      "pp": 802.7125261684283,
+      "tg_steps_s": 51.83308102415586,
+      "wall_s": 2.5637328810007602,
+      "timings": {
+        "prompt_n": 1000,
+        "prompt_ms": 1245.776,
+        "prompt_per_token_ms": 1.245776,
+        "prompt_per_second": 802.7125261684283,
+        "predicted_n": 64,
+        "predicted_ms": 1215.44,
+        "predicted_per_token_ms": 18.99125,
+        "predicted_per_second": 52.6558283419996,
+        "n_ctx": 131072,
+        "n_past": 101063
+      },
+      "sha256": "b4d00c611136ef7348eabca6bef1b2bfd32e3fd317b1cb79e25fc7dacf7ecbd0",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0} is equivalent to S{0,0}\n            // S{0,0} is equivalent to S{0,1}\n            // S{0,1} is equivalent to S"
+    },
+    {
+      "n": 512,
+      "rep": 0,
+      "warmup": true,
+      "pp": 805.1147328750084,
+      "tg_steps_s": 51.51156711896712,
+      "wall_s": 11.257146064999688,
+      "timings": {
+        "prompt_n": 1000,
+        "prompt_ms": 1242.059,
+        "prompt_per_token_ms": 1.242059,
+        "prompt_per_second": 805.1147328750084,
+        "predicted_n": 512,
+        "predicted_ms": 9920.102,
+        "predicted_per_token_ms": 19.37519921875,
+        "predicted_per_second": 51.61237253407273,
+        "n_ctx": 131072,
+        "n_past": 101511
+      },
+      "sha256": "a8fe379dec1ce25adbe161a709337e433fe36b417076f142d79c868331a17de6",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0} is equivalent to S{0,0}\n            // S{0,0} is equivalent to S{0,1}\n            // S{0,1} is equivalent to S?\n            // S? is equivalent to S'\n            // S' ::= |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(rule_id, rule);\n            rule.clear();\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(generate_symbol_id(rule_name), rule);\n            rule.clear();\n            return;\n        }\n\n        if (min_times > 0) {\n            // S{m,n} --> S S S (m times) S'(n-m)\n            // S{m,} --> S S S (m times) S'\n            for (size_t i = 0; i < min_times; i++) {\n                rule.insert(rule.end(), prev_rule.begin(), prev_rule.end());\n            }\n        }\n\n        if (no_max) {\n            // S{m,} --> S S S (m times) S'\n            // S'     ::= S S' |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(rule_id, rule);\n            rule.clear();\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(generate_symbol_id(rule_name), rule);\n            rule.clear();\n        } else {\n            // S{m,n} --> S S S (m times) S'(n-m)\n            // S'(x)  ::= S S'(x-1) |\n            // (... n-m definitions of these S' rules ...)\n            // S'(1)  ::= S |\n            for (size_t i = 0; i < max_times - min_times; i++) {\n                rule"
+    },
+    {
+      "n": 512,
+      "rep": 1,
+      "warmup": false,
+      "pp": 805.1309384445192,
+      "tg_steps_s": 51.30527754598926,
+      "wall_s": 11.334612859998742,
+      "timings": {
+        "prompt_n": 1000,
+        "prompt_ms": 1242.034,
+        "prompt_per_token_ms": 1.242034,
+        "prompt_per_second": 805.1309384445192,
+        "predicted_n": 512,
+        "predicted_ms": 9959.989,
+        "predicted_per_token_ms": 19.453103515625,
+        "predicted_per_second": 51.40567926330039,
+        "n_ctx": 131072,
+        "n_past": 101511
+      },
+      "sha256": "a8fe379dec1ce25adbe161a709337e433fe36b417076f142d79c868331a17de6",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0} is equivalent to S{0,0}\n            // S{0,0} is equivalent to S{0,1}\n            // S{0,1} is equivalent to S?\n            // S? is equivalent to S'\n            // S' ::= |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(rule_id, rule);\n            rule.clear();\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(generate_symbol_id(rule_name), rule);\n            rule.clear();\n            return;\n        }\n\n        if (min_times > 0) {\n            // S{m,n} --> S S S (m times) S'(n-m)\n            // S{m,} --> S S S (m times) S'\n            for (size_t i = 0; i < min_times; i++) {\n                rule.insert(rule.end(), prev_rule.begin(), prev_rule.end());\n            }\n        }\n\n        if (no_max) {\n            // S{m,} --> S S S (m times) S'\n            // S'     ::= S S' |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(rule_id, rule);\n            rule.clear();\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(generate_symbol_id(rule_name), rule);\n            rule.clear();\n        } else {\n            // S{m,n} --> S S S (m times) S'(n-m)\n            // S'(x)  ::= S S'(x-1) |\n            // (... n-m definitions of these S' rules ...)\n            // S'(1)  ::= S |\n            for (size_t i = 0; i < max_times - min_times; i++) {\n                rule"
+    },
+    {
+      "n": 512,
+      "rep": 2,
+      "warmup": false,
+      "pp": 800.3880281160306,
+      "tg_steps_s": 51.370754699720344,
+      "wall_s": 11.314821347999896,
+      "timings": {
+        "prompt_n": 1000,
+        "prompt_ms": 1249.394,
+        "prompt_per_token_ms": 1.2493940000000001,
+        "prompt_per_second": 800.3880281160306,
+        "predicted_n": 512,
+        "predicted_ms": 9947.294,
+        "predicted_per_token_ms": 19.42830859375,
+        "predicted_per_second": 51.47128455236168,
+        "n_ctx": 131072,
+        "n_past": 101511
+      },
+      "sha256": "a8fe379dec1ce25adbe161a709337e433fe36b417076f142d79c868331a17de6",
+      "content": " rule.resize(last_sym_start);\n\n        if (max_times == 0) {\n            // S{0} is equivalent to S{0,0}\n            // S{0,0} is equivalent to S{0,1}\n            // S{0,1} is equivalent to S?\n            // S? is equivalent to S'\n            // S' ::= |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(rule_id, rule);\n            rule.clear();\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(generate_symbol_id(rule_name), rule);\n            rule.clear();\n            return;\n        }\n\n        if (min_times > 0) {\n            // S{m,n} --> S S S (m times) S'(n-m)\n            // S{m,} --> S S S (m times) S'\n            for (size_t i = 0; i < min_times; i++) {\n                rule.insert(rule.end(), prev_rule.begin(), prev_rule.end());\n            }\n        }\n\n        if (no_max) {\n            // S{m,} --> S S S (m times) S'\n            // S'     ::= S S' |\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(rule_id, rule);\n            rule.clear();\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_RULE_REF, rule_id});\n            rule.push_back({LLAMA_GRETYPE_END, 0});\n            add_rule(generate_symbol_id(rule_name), rule);\n            rule.clear();\n        } else {\n            // S{m,n} --> S S S (m times) S'(n-m)\n            // S'(x)  ::= S S'(x-1) |\n            // (... n-m definitions of these S' rules ...)\n            // S'(1)  ::= S |\n            for (size_t i = 0; i < max_times - min_times; i++) {\n                rule"
+    }
+  ],
+  "token_ids_sha256": "7572a054780ded5e4c2d9b11aea848288718d36d3d94d7fb8f6b98ff3b185c25",
+  "distinct_tokens": 3868,
+  "cold": {
+    "wall_s": 68.99033032900115,
+    "timings": {
+      "prompt_n": 100000,
+      "prompt_ms": 68893.444,
+      "prompt_per_token_ms": 0.68893444,
+      "prompt_per_second": 1451.5169251808632,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_per_token_ms": 0.001,
+      "predicted_per_second": 1000000.0,
+      "n_ctx": 131072,
+      "n_past": 100000
+    }
+  },
+  "save": {
+    "id_slot": 0,
+    "filename": "prefix.bin",
+    "n_saved": 100000,
+    "n_written": 2115065312,
+    "timings": {
+      "save_ms": 635.081
+    }
+  }
+}

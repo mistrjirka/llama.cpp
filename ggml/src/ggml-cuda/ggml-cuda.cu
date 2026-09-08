@@ -30,6 +30,8 @@
 #include "ggml-cuda/im2col.cuh"
 #include "ggml-cuda/mmf.cuh"
 #include "ggml-cuda/mmq.cuh"
+#include "ggml-cuda/pxq4-port.cuh"
+#include "ggml-cuda/pxq4.cuh"
 #include "ggml-cuda/mmvf.cuh"
 #include "ggml-cuda/mmvq.cuh"
 #include "ggml-cuda/moe-weighted-reduction.cuh"
@@ -1453,7 +1455,19 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
     } else {
         src0_alloc.alloc(ggml_nelements(src0));
 
-        if (ggml_is_contiguously_allocated(src0)) {
+        if constexpr (compute_type == GGML_TYPE_F16) {
+            if (src0->type == GGML_TYPE_PXQ4) {
+                // MUL_MAT_ID passes one expert as a VIEW; its data is still one complete PXQ4 panel run.
+                GGML_ASSERT(src0->ne[0] % 32 == 0 && ggml_nrows(src0) % 64 == 0);
+                pxq4_port_dequant_f16(src0->data, (half *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
+                s01 = ne00;
+                s02 = ne01*s01;
+                s03 = ne02*s02;
+                is_src0_cont_2 = true;
+                src0_ptr = src0_alloc.get();
+            }
+        }
+        if (src0_ptr == nullptr && ggml_is_contiguously_allocated(src0)) {
             const auto convert_func = traits::convert(src0->type);
             GGML_ASSERT(convert_func != nullptr);
             convert_func(src0->data, src0_alloc.get(), ggml_nelements(src0), main_stream);
@@ -1461,7 +1475,7 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
             s01 *= src0_bs;
             s02 *= src0_bs;
             s03 *= src0_bs;
-        } else {
+        } else if (src0_ptr == nullptr) {
             const auto convert_func = traits::convert_nc(src0->type);
             GGML_ASSERT(convert_func != nullptr);
             convert_func(src0->data, src0_alloc.get(), ne00, ne01, ne02, ne03, s01, s02, s03, main_stream);
@@ -1816,10 +1830,20 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_f(const ggml_tensor * tensor) {
     return use_mul_mat_vec_f;
 }
 
-static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
+static bool ggml_cuda_pxq4_native_enabled() {
+    const char * e = std::getenv("GGML_CUDA_PXQ4_NATIVE");
+    return !e || std::atoi(e) != 0;
+}
+
+static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor, bool pxq4_plain_glu = false) {
     ggml_tensor *       src0 = tensor->src[0];
     ggml_tensor *       src1 = tensor->src[1];
     const ggml_tensor * dst  = tensor;
+
+    // The PXQ4 native fusion implements unbiased/unscaled up+gate+GLU only.
+    if (src0->type == GGML_TYPE_PXQ4 && (!pxq4_plain_glu || !ggml_cuda_pxq4_native_enabled())) {
+        return false;
+    }
 
     const bool bad_padding_clear = ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
                                    ggml_nbytes(src0) != ggml_backend_buffer_get_alloc_size(src0->buffer, src0) &&
@@ -1901,18 +1925,21 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst);
 }
 
+
 // returns true when ggml_cuda_mul_mat_id takes the fallback path that requires stream synchronization
 // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
 static bool ggml_cuda_mul_mat_id_needs_sync(const ggml_tensor * dst, const int cc) {
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
 
+    if (ggml_cuda_pxq4_prefill_supported(dst,cc)) return false;
+
     if (src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
         return true;
     }
 
     if (dst->ne[2] <= MMVQ_MAX_BATCH_SIZE) {
-        if (ggml_is_quantized(src0->type)) {
+        if (ggml_is_quantized(src0->type) && (src0->type != GGML_TYPE_PXQ4 || ggml_cuda_pxq4_native_enabled())) {
             if (dst->ne[2] <= get_mmvq_mmid_max_batch(src0->type, cc)) {
                 return false;
             }
@@ -1944,11 +1971,16 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
 
+    if (ggml_cuda_pxq4_prefill_supported(dst,cc)) {
+        ggml_cuda_pxq4_prefill(ctx,dst);
+        return;
+    }
+
     // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
     if (src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
         static_assert(MMVQ_MAX_BATCH_SIZE == MMVF_MAX_BATCH_SIZE);
         if (ne2 <= MMVQ_MAX_BATCH_SIZE) {
-            if (ggml_is_quantized(src0->type)) {
+            if (ggml_is_quantized(src0->type) && (src0->type != GGML_TYPE_PXQ4 || ggml_cuda_pxq4_native_enabled())) {
                 const int mmvq_mmid_max = get_mmvq_mmid_max_batch(src0->type, cc);
                 if (ne2 <= mmvq_mmid_max) {
                     ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
@@ -4021,7 +4053,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
                 break;
             }
 
-            if (ggml_cuda_should_fuse_mul_mat_vec_q(up)) {
+            if (ggml_cuda_should_fuse_mul_mat_vec_q(up, true)) {
                 ggml_cuda_mm_fusion_args_host fusion_data{};
                 fusion_data.gate      = gate->src[0];
                 fusion_data.glu_op    = ggml_get_glu_op(glu);
@@ -5208,6 +5240,10 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                     }
                 }
 #endif // GGML_USE_MUSA
+                if (a->type == GGML_TYPE_PXQ4) {
+                    return a->ne[0] % 32 == 0 && a->ne[1] % 64 == 0 &&
+                        a->nb[1] == ggml_row_size(GGML_TYPE_PXQ4, a->ne[0]);
+                }
                 switch (a->type) {
                     case GGML_TYPE_F32:
                     case GGML_TYPE_F16:

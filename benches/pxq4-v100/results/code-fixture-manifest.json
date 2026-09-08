@@ -1,0 +1,62 @@
+[
+  {
+    "path": "src/llama-adapter.cpp",
+    "sha256": "e0abe8c4905db55c5ba4e75012798551e95d93bc5b697cba25d8e3cc86175d3b"
+  },
+  {
+    "path": "src/llama-arch.cpp",
+    "sha256": "e0a2a7108b7e49f3ab8c8d0f261b8bf573aee45e21b971c6896ea2c50dac9895"
+  },
+  {
+    "path": "src/llama-batch.cpp",
+    "sha256": "484607d92fb08d510727e0c4b01139e27a40137ef03e74e1dbea4aac3965e328"
+  },
+  {
+    "path": "src/llama-chat.cpp",
+    "sha256": "0029616465e6d641c1e75a0e0e6e132f3ea6177593735d7f16c89e7edfbbe9a8"
+  },
+  {
+    "path": "src/llama-context.cpp",
+    "sha256": "073b625829964dfb21035e1fb47d5fd841d7f51356557a2e6c5213e579dc4679"
+  },
+  {
+    "path": "src/llama-cparams.cpp",
+    "sha256": "95ab4b7b72851eb381a3d2ff2e9f18731103ba5f9f5f216882a034319e709297"
+  },
+  {
+    "path": "src/llama-grammar.cpp",
+    "sha256": "8a8450e410f318d90b353c7a67e7a788a921a06e687ca3e02eff49380d83c5c7"
+  },
+  {
+    "path": "src/llama-graph.cpp",
+    "sha256": "abd687697512b6829ce7652d9ec5d3a899ac1a091656fa75c3e4312d5a1708a4"
+  },
+  {
+    "path": "src/llama-hparams.cpp",
+    "sha256": "ef6fbef7d12a23441b42cfac8e3a3a3045c7d3123402351ba98e69702e193301"
+  },
+  {
+    "path": "src/llama-impl.cpp",
+    "sha256": "b01ad5b5ec7b314a73205ff7a7168769d72bb2e200b87bc39c48dcb9dc712ee8"
+  },
+  {
+    "path": "src/llama-io.cpp",
+    "sha256": "4ed1a8b75a4e82dd765f7b6ca8970bb8a2ae371c56c833af0355231072e70045"
+  },
+  {
+    "path": "src/llama-kv-cache-dsa-iswa.cpp",
+    "sha256": "5130c25e719a546d876496760b3a301b1a2392968072402bc5f97bd42c5b89e7"
+  },
+  {
+    "path": "src/llama-kv-cache-dsa.cpp",
+    "sha256": "85d76ec2cf3f796aaed04557bdccc9fa151b84128046d48ba1017696e7801eef"
+  },
+  {
+    "path": "src/llama-kv-cache-dsv4.cpp",
+    "sha256": "b6511a46469c631852c613ca26b76e8b1c87c3498c101e2bc6c0659cd3a43e9c"
+  },
+  {
+    "path": "src/llama-kv-cache-iswa.cpp",
+    "sha256": "567fe836543e1dd9cdd5b7cb3a91afd049c17c7010f0bddf9fe149b02b5243cb"
+  }
+]

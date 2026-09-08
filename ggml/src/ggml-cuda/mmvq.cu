@@ -1,4 +1,5 @@
 #include "mmvq.cuh"
+#include "pxq4.cuh"
 #include "quantize.cuh"
 #include "unary.cuh"
 #include "vecdotq.cuh"
@@ -39,6 +40,7 @@ static __device__ __forceinline__ void mmvq_prefetch_l2(const void * p) {
     asm volatile("prefetch.global.L2 [%0];" :: "l"(p));
 }
 #endif
+
 
 typedef float (*vec_dot_q_cuda_t)(const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs);
 
@@ -321,6 +323,11 @@ int get_mmvq_mmid_max_batch(ggml_type type, int cc) {
 }
 
 bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
+    if (type == GGML_TYPE_PXQ4) {
+        const char * e = getenv("GGML_CUDA_PXQ4_NATIVE");
+        if (e && atoi(e) == 0) return false;
+        return GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_VOLTA && ne11 <= MMVQ_MAX_BATCH_SIZE;
+    }
     if (!ggml_is_quantized(type)) {
         return false;
     }
@@ -1823,6 +1830,11 @@ void ggml_cuda_mul_mat_vec_q(
         const int64_t s12 = src1->nb[2] / ts_src1;
         const int64_t s13 = src1->nb[3] / ts_src1;
         quantize_row_q8_1_cuda(src1_d, nullptr, src1_q8_1.get(), src0->type, ne10, s11, s12, s13, ne10_padded, ne11, ne12, ne13, stream);
+    }
+
+    if (src0->type == GGML_TYPE_PXQ4) {
+        ggml_cuda_pxq4_mmvq_launch(src0, src1, ids, dst, (const block_q8_1 *)src1_q8_1.get(), ne10_padded, fusion, stream);
+        return;
     }
 
     const int64_t s01 = src0->nb[1] / ts_src0;

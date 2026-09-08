@@ -1,0 +1,193 @@
+{
+  "engine": "fork",
+  "fixture": "synthetic",
+  "cmd": [
+    "/models/llama-pxq4-build/bin/llama-server",
+    "-m",
+    "/models/PXA-Fusion4-35B-GGUF/PXA-Fusion4-35B-PXQ4.gguf",
+    "-ngl",
+    "99",
+    "-c",
+    "131072",
+    "-np",
+    "1",
+    "-t",
+    "16",
+    "-b",
+    "2048",
+    "-ub",
+    "2048",
+    "-fa",
+    "on",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-cram",
+    "0",
+    "--ctx-checkpoints",
+    "0",
+    "--slot-save-path",
+    "/workspace/llama-pxq4-v100/benches/pxq4-v100/results/wmma-long-slot",
+    "--no-warmup",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "54789",
+    "--no-webui"
+  ],
+  "env": [],
+  "rows": [
+    {
+      "n": 64,
+      "rep": 0,
+      "warmup": true,
+      "pp": 992.5903133111324,
+      "tg_steps_s": 84.0210612793607,
+      "wall_s": 1.8575370679991465,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1007.465,
+        "prompt_per_token_ms": 1.007465,
+        "prompt_per_second": 992.5903133111324,
+        "predicted_n": 64,
+        "predicted_ms": 749.812,
+        "predicted_per_token_ms": 11.901777777777777,
+        "predicted_per_second": 84.0210612793607
+      },
+      "sha256": "601b61ad251ab5b5c2b6b4fcee1d26335c310e10ac52e4d9997dcff71288ce76",
+      "content": " quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps"
+    },
+    {
+      "n": 64,
+      "rep": 1,
+      "warmup": false,
+      "pp": 998.4404360389073,
+      "tg_steps_s": 85.21136476144876,
+      "wall_s": 1.8296842580002703,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1001.562,
+        "prompt_per_token_ms": 1.001562,
+        "prompt_per_second": 998.4404360389073,
+        "predicted_n": 64,
+        "predicted_ms": 739.338,
+        "predicted_per_token_ms": 11.735523809523809,
+        "predicted_per_second": 85.21136476144876
+      },
+      "sha256": "601b61ad251ab5b5c2b6b4fcee1d26335c310e10ac52e4d9997dcff71288ce76",
+      "content": " quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps"
+    },
+    {
+      "n": 64,
+      "rep": 2,
+      "warmup": false,
+      "pp": 997.1431847756178,
+      "tg_steps_s": 85.13847164280762,
+      "wall_s": 1.8453276380005263,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1002.865,
+        "prompt_per_token_ms": 1.0028650000000001,
+        "prompt_per_second": 997.1431847756178,
+        "predicted_n": 64,
+        "predicted_ms": 739.971,
+        "predicted_per_token_ms": 11.745571428571429,
+        "predicted_per_second": 85.13847164280762
+      },
+      "sha256": "601b61ad251ab5b5c2b6b4fcee1d26335c310e10ac52e4d9997dcff71288ce76",
+      "content": " quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps"
+    },
+    {
+      "n": 512,
+      "rep": 0,
+      "warmup": true,
+      "pp": 999.1247667043671,
+      "tg_steps_s": 85.6048923782329,
+      "wall_s": 7.031941180999638,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1000.876,
+        "prompt_per_token_ms": 1.0008759999999999,
+        "prompt_per_second": 999.1247667043671,
+        "predicted_n": 512,
+        "predicted_ms": 5969.285,
+        "predicted_per_token_ms": 11.681575342465754,
+        "predicted_per_second": 85.6048923782329
+      },
+      "sha256": "5028c6d58b84ea4de3e9c1025f098ba61614c53241d2b533f6e4e35d20bb2f3a",
+      "content": " quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown"
+    },
+    {
+      "n": 512,
+      "rep": 1,
+      "warmup": false,
+      "pp": 996.4446853626262,
+      "tg_steps_s": 85.43800352619863,
+      "wall_s": 7.0864686660006555,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1003.568,
+        "prompt_per_token_ms": 1.003568,
+        "prompt_per_second": 996.4446853626262,
+        "predicted_n": 512,
+        "predicted_ms": 5980.945,
+        "predicted_per_token_ms": 11.704393346379646,
+        "predicted_per_second": 85.43800352619861
+      },
+      "sha256": "5028c6d58b84ea4de3e9c1025f098ba61614c53241d2b533f6e4e35d20bb2f3a",
+      "content": " quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown"
+    },
+    {
+      "n": 512,
+      "rep": 2,
+      "warmup": false,
+      "pp": 993.1344614678726,
+      "tg_steps_s": 85.73041559119174,
+      "wall_s": 7.070637545999489,
+      "timings": {
+        "cache_n": 100000,
+        "prompt_n": 1000,
+        "prompt_ms": 1006.913,
+        "prompt_per_token_ms": 1.006913,
+        "prompt_per_second": 993.1344614678726,
+        "predicted_n": 512,
+        "predicted_ms": 5960.545,
+        "predicted_per_token_ms": 11.664471624266145,
+        "predicted_per_second": 85.73041559119174
+      },
+      "sha256": "5028c6d58b84ea4de3e9c1025f098ba61614c53241d2b533f6e4e35d20bb2f3a",
+      "content": " quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown"
+    }
+  ],
+  "token_ids_sha256": "004074ff050e740612be5cbf2fb7728c0e233a7d27e7c62857c17fd0e93ed34d",
+  "distinct_tokens": 12,
+  "cold": {
+    "wall_s": 57.82704075100082,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 100000,
+      "prompt_ms": 57730.195,
+      "prompt_per_token_ms": 0.57730195,
+      "prompt_per_second": 1732.1957772704563,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_per_token_ms": 0.0,
+      "predicted_per_second": 0.0
+    }
+  },
+  "save": {
+    "id_slot": 0,
+    "filename": "prefix.bin",
+    "n_saved": 100000,
+    "n_written": 2116664704,
+    "timings": {
+      "save_ms": 624.72
+    }
+  }
+}

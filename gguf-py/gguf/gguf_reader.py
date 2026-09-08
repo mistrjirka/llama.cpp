@@ -350,6 +350,8 @@ class GGUFReader:
             np_dims = tuple(reversed(dims.tolist()))
             block_size, type_size = GGML_QUANT_SIZES[ggml_type]
             n_bytes = n_elems * type_size // block_size
+            if int(ggml_type) == 252 and int(dims[0]) != 0:
+                n_bytes += (n_elems // int(dims[0])) * 2
             data_offs = int(start_offs + offset_tensor[0])
             item_type: npt.DTypeLike
             if ggml_type == GGMLQuantizationType.F16:
@@ -376,7 +378,9 @@ class GGUFReader:
             else:
                 item_count = n_bytes
                 item_type = np.uint8
-                np_dims = quant_shape_to_byte_shape(np_dims, ggml_type)
+                # PXQ4 is panel-interleaved, not independently decodable logical rows.
+                # Expose its full payload as opaque bytes, including the row anchors.
+                np_dims = (n_bytes,) if ggml_type == GGMLQuantizationType.PXQ4 else quant_shape_to_byte_shape(np_dims, ggml_type)
             tensors.append(ReaderTensor(
                 name = tensor_name,
                 tensor_type = ggml_type,

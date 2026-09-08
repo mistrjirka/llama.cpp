@@ -1,0 +1,216 @@
+ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected
+
+gguf_init_from_reader: invalid magic characters: 'FUGG', expected 'GGUF'
+gguf_init_from_reader: bad GGUF version: 0
+gguf_init_from_reader: failed to read header
+gguf_init_from_reader: GGUFv1 is no longer supported, please use a more up-to-date version
+gguf_init_from_reader: failed to read header
+gguf_init_from_reader: this GGUF file is version 4 but this software only supports up to version 3
+gguf_init_from_reader: failed to read header
+gguf_init_from_reader: number of key value pairs is -1 but must be in [0, 209622091746699450]
+gguf_init_from_reader: failed to read header
+gguf_init_from_reader: number of tensors is -1 but must be in [0, 53624256028225440]
+gguf_init_from_reader: failed to read header
+read: string length 18446744073709551615 exceeds maximum 1073741824
+gguf_init_from_reader: failed to read key-value pairs
+gguf_init_from_reader: key 0 is empty
+gguf_init_from_reader: failed to read key-value pairs
+gguf_init_from_reader: key 'my_key_0' has invalid GGUF type 13
+gguf_init_from_reader: failed to read key-value pairs
+gguf_init_from_reader: duplicate key 'my_key_0' for tensors 0 and 1
+gguf_init_from_reader: failed to read key-value pairs
+gguf_init_from_reader: alignment 13 is not a power of 2
+gguf_init_from_reader: key 'general.alignment' must be of type u32 but is i32
+gguf_init_from_reader: tensor name 0 is too long: 87 >= 64
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: tensor 'my_tensor_0' has invalid number of dimensions: 5 > 4
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: tensor 'my_tensor_0' dimension 0 has invalid number of elements: -1 < 0
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: tensor 'my_tensor_0' with shape (8589934588, 8589934588, 8589934588, 8589934588) has a size in bytes > 18446744073709551615
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: tensor 'my_tensor_0' with shape (39358, 39358, 39358, 39358) has a size in bytes > 18446744073709551615
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: tensor 'my_tensor_0' has invalid ggml type 253. should be in [0, 253)
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: tensor 'my_tensor_0' has offset 18446744073709551615, expected 0
+gguf_init_from_reader: failed to read tensor data
+gguf_init_from_reader: duplicate tensor name 'my_tensor' for tensors 0 and 1
+gguf_init_from_reader: failed to read tensor info
+gguf_init_from_reader: alignment 13 is not a power of 2
+gguf_init_from_reader: failed to seek to beginning of data section
+gguf_init_from_reader: failed to read tensor data binary blob
+gguf_init_from_reader: alignment 13 is not a power of 2
+test_handcrafted_file: handcrafted_file_type=HEADER_BAD_MAGIC
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=HEADER_BAD_VERSION_0
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=HEADER_BAD_VERSION_1
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=HEADER_BAD_VERSION_FUTURE
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=HEADER_BAD_N_KV
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=HEADER_BAD_N_TENSORS
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=HEADER_EMPTY
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_BAD_KEY_SIZE
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_EMPTY_KEY
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_BAD_TYPE
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_DUPLICATE_KEY
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_BAD_ALIGN
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_WRONG_TYPE_ALIGN
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=KV_RANDOM_KV
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+test_handcrafted_file:   - check_kv: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_BAD_NAME_SIZE
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_BAD_N_DIMS
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_BAD_SHAPE
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_ZERO_DIM
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+test_handcrafted_file:   - check_kv: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_NE_TOO_BIG
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_NBYTES_TOO_BIG
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_BAD_TYPE
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_BAD_OFFSET
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_DUPLICATE_NAME
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_BAD_ALIGN
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_INCONSISTENT_ALIGN
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_SUCCESS
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+test_handcrafted_file:   - check_kv: [1;32mOK[0m
+test_handcrafted_file:   - check_tensors: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=TENSORS_CUSTOM_ALIGN
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+test_handcrafted_file:   - check_kv: [1;32mOK[0m
+test_handcrafted_file:   - check_tensors: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=DATA_NOT_ENOUGH_DATA
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+test_handcrafted_file:   - no_dangling_ggml_context_pointer: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=DATA_BAD_ALIGN
+tesgguf_init_from_reader: tensor 'my_tensor_1' has offset 2800, expected 2816
+gguf_init_from_reader: failed to read tensor data
+gguf_init_from_reader: memory size overflow while allocating ggml context
+t_handcrafted_file:   - context_null: [1;32mOK[0m
+test_handcrafted_file:   - no_dangling_ggml_context_pointer: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=DATA_INCONSISTENT_ALIGN
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+test_handcrafted_file:   - no_dangling_ggml_context_pointer: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=DATA_MEM_SIZE_OVERFLOW
+test_handcrafted_file:   - context_null: [1;32mOK[0m
+test_handcrafted_file:   - no_dangling_ggml_context_pointer: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=DATA_SUCCESS
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+test_handcrafted_file:   - check_kv: [1;32mOK[0m
+test_handcrafted_file:   - check_tensors: [1;32mOK[0m
+test_handcrafted_file:   - check_tensor_data: [1;32mOK[0m
+
+test_handcrafted_file: handcrafted_file_type=DATA_CUSTOM_ALIGN
+test_handcrafted_file:   - context_not_null: [1;32mOK[0m
+test_handcrafted_file:   - check_header: [1;32mOK[0m
+test_handcrafted_file:   - check_kv: [1;32mOK[0m
+test_handcrafted_file:   - check_tensors: [1;32mOK[0m
+test_handcrafted_file:   - check_tensor_data: [1;32mOK[0m
+
+test_roundtrip: device=AMD EPYC 7352 24-Core Processor, backend=CPU, only_meta=yes, read_mode=file
+test_roundtrip: same_version: [1;32mOK[0m
+test_roundtrip: same_n_kv: [1;32mOK[0m
+test_roundtrip: same_n_tensors: [1;32mOK[0m
+test_roundtrip: all_orig_kv_in_read: [1;32mOK[0m
+test_roundtrip: all_read_kv_in_orig: [1;32mOK[0m
+test_roundtrip: all_orig_tensors_in_read: [1;32mOK[0m
+test_roundtrip: all_read_tensors_in_orig: [1;32mOK[0m
+
+test_roundtrip: device=AMD EPYC 7352 24-Core Processor, backend=CPU, only_meta=no, read_mode=file
+test_roundtrip: same_version: [1;32mOK[0m
+test_roundtrip: same_n_kv: [1;32mOK[0m
+test_roundtrip: same_n_tensors: [1;32mOK[0m
+test_roundtrip: all_orig_kv_in_read: [1;32mOK[0m
+test_roundtrip: all_read_kv_in_orig: [1;32mOK[0m
+test_roundtrip: all_orig_tensors_in_read: [1;32mOK[0m
+test_roundtrip: all_read_tensors_in_orig: [1;32mOK[0m
+test_roundtrip: same_tensor_data: [1;32mOK[0m
+
+test_roundtrip: device=AMD EPYC 7352 24-Core Processor, backend=CPU, only_meta=no, read_mode=buffer
+test_roundtrip: same_version: [1;32mOK[0m
+test_roundtrip: same_n_kv: [1;32mOK[0m
+test_roundtrip: same_n_tensors: [1;32mOK[0m
+test_roundtrip: all_orig_kv_in_read: [1;32mOK[0m
+test_roundtrip: all_read_kv_in_orig: [1;32mOK[0m
+test_roundtrip: all_orig_tensors_in_read: [1;32mOK[0m
+test_roundtrip: all_read_tensors_in_orig: [1;32mOK[0m
+test_roundtrip: same_tensor_data: [1;32mOK[0m
+
+test_roundtrip: device=AMD EPYC 7352 24-Core Processor, backend=CPU, only_meta=no, read_mode=callback
+test_roundtrip: same_version: [1;32mOK[0m
+test_roundtrip: same_n_kv: [1;32mOK[0m
+test_roundtrip: same_n_tensors: [1;32mOK[0m
+test_roundtrip: all_orig_kv_in_read: [1;32mOK[0m
+test_roundtrip: all_read_kv_in_orig: [1;32mOK[0m
+test_roundtrip: all_orig_tensors_in_read: [1;32mOK[0m
+test_roundtrip: all_read_tensors_in_orig: [1;32mOK[0m
+test_roundtrip: same_tensor_data: [1;32mOK[0m
+
+test_gguf_set_kv: device=AMD EPYC 7352 24-Core Processor, backend=CPU
+test_gguf_set_kv: same_n_kv: [1;32mOK[0m
+test_gguf_set_kv: all_kv_0_in_1: [1;32mOK[0m
+test_gguf_set_kv: all_kv_0_in_2: [1;32mOK[0m
+test_gguf_set_kv: same_n_kv_after_double_copy: [1;32mOK[0m
+test_gguf_set_kv: all_kv_1_in_0_after_double_copy: [1;32mOK[0m
+
+92/92 tests passed
+[1;32mOK[0m

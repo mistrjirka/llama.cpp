@@ -1,0 +1,13 @@
+{
+  "ggml/include/ggml.h": "44df6de637d7f1f5309c1651a3c04f460853e2f3dfa457e14f1242241060bb28",
+  "ggml/src/ggml.c": "5c04d764701b8cf3546988a7ef66e945e1408c87eca7522b723626760a39135b",
+  "ggml/src/gguf.cpp": "493e1455f65b4778e998225c8c70e75bfd7dacf23444832cdbefa5da3967fb35",
+  "ggml/src/ggml-cuda/ggml-cuda.cu": "effb2a7d6910a201eb981b7a4ed807b05559e9947dc58a2be30db642978670a1",
+  "ggml/src/ggml-cuda/mmvq.cu": "a0c9d227ae6ed5438bd34c7d3adc96acb8bc7b7ae40a6353ad89fd3033b76bbd",
+  "ggml/src/ggml-cuda/pxq4.cu": "62be9ac9f48455463d1b9c5e3ab699aaeff1dc8bebbefb31b3fb8b63f4271f12",
+  "ggml/src/ggml-cuda/pxq4.cuh": "43ced4bcc5120e0a0a710c3fa7ed27d61d88413c183c6c60a8cfffb0b4e66c02",
+  "ggml/src/ggml-cuda/pxq4-port.cuh": "2d2d3ca9d2707ae037c3ed1193a26fd5022fb5b866c61dc6d28b2331817d6db1",
+  "ggml/src/ggml-cuda/pxq4-mmvq.cuh": "53fd445f85f4e99bf05ccb590fe86560dec1dff9170e66894163a67df22cf008",
+  "ggml/src/ggml-cuda/pxq4-wmma.cuh": "23762a8d5e64da9c23da3499cb5d98e79b08bbe0389ec59f3f3254e8b971b6f9",
+  "ggml/src/ggml-cpu/ggml-cpu.cpp": "1bcd6f5489889d215b6ae2e7e728c11d08b0552b15c1057ec9300d95ef45da4a"
+}
