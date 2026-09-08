@@ -3,6 +3,15 @@
 Experimental branch: `exp/pxq4-v100`, based on `4154e79f7`.
 Implementation/measurements: 2026-09-08. Not merged into `v100-optimized`.
 
+## Validation update
+
+The follow-up validation reproduced and fixed repeated-expert prefill omissions,
+unaligned-panel view acceptance and the explicit FP32 fallback crash. Independent
+CPU decode references, expanded prefill checks, all four CUDA sanitizers and 128/128
+GGUF regression tests pass. Full-logit teacher-forced probes quantify the intentional
+native/reference numerical differences; this is not a claim of bit-exact model quality.
+See [the validation report](validation/VALIDATION.md) for results and limitations.
+
 ## Measured results
 
 Both engines load the **same Fusion4 PXQ4 GGUF file**. One V100-SXM2-32GB,
@@ -84,7 +93,8 @@ The GGUF regression suite passed **92/92** after hardening, stock quantization
 regression exited successfully, and the dedicated tensor-layout/CPU guard test
 passed. The Python reader read all **120 PXQ4 tensors / 17175674880 payload bytes**.
 A single deterministic text match is a smoke test, not proof of model-quality parity;
-perplexity/teacher-forced full-logit and downstream task-quality gates remain open.
+teacher-forced full-logit/perplexity probes are now recorded in the validation report.
+Broader downstream task-quality gates remain open.
 
 ## Reproduce
 
@@ -132,11 +142,10 @@ Validated end-to-end model: Fusion4 PXQ4, fully GPU-resident on **one V100**.
 This is not yet a production-complete quantization ecosystem port. CPU PXQ4 execution
 is explicitly declined rather than being falsely routed through a row-dot callback.
 The port does not yet implement PXQ quantization/export, CPU fallback, PXQ4HQ or
-PXQ1/2/3/6/PXQU, arbitrary panel-slicing views, embedding GET_ROWS, distributed
-execution, or a model-quality regression suite. Native dense broadcast paths and
-MTP need broader end-to-end coverage. Non-FP16 cuBLAS fallback overrides are not
-validated. Routed prefill assumes unique top-k expert IDs per token, as produced
-by the tested model's router.
+PXQ1/2/3/6/PXQU, arbitrary unaligned panel-slicing views, embedding GET_ROWS, distributed
+execution, or a broad downstream task-quality suite. Dense broadcasts now have independent
+kernel coverage; MTP still needs end-to-end validation. FP32 cuBLAS fallback is tested;
+BF16 overrides are not validated. Routed prefill now handles repeated expert IDs too.
 
 The short-context profile now spends more GPU kernel time in the stock **MXFP4
 backbone** than in the PXQ4 expert kernels. That and router/activation overhead are

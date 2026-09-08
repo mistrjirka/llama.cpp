@@ -1455,11 +1455,15 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
     } else {
         src0_alloc.alloc(ggml_nelements(src0));
 
-        if constexpr (compute_type == GGML_TYPE_F16) {
+        if constexpr (compute_type == GGML_TYPE_F16 || compute_type == GGML_TYPE_F32) {
             if (src0->type == GGML_TYPE_PXQ4) {
                 // MUL_MAT_ID passes one expert as a VIEW; its data is still one complete PXQ4 panel run.
                 GGML_ASSERT(src0->ne[0] % 32 == 0 && ggml_nrows(src0) % 64 == 0);
-                pxq4_port_dequant_f16(src0->data, (half *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
+                if constexpr (compute_type == GGML_TYPE_F16) {
+                    pxq4_port_dequant_f16(src0->data, (half *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
+                } else {
+                    pxq4_port_dequant_f32(src0->data, (float *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
+                }
                 s01 = ne00;
                 s02 = ne01*s01;
                 s03 = ne02*s02;
@@ -5241,8 +5245,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                 }
 #endif // GGML_USE_MUSA
                 if (a->type == GGML_TYPE_PXQ4) {
-                    return a->ne[0] % 32 == 0 && a->ne[1] % 64 == 0 &&
-                        a->nb[1] == ggml_row_size(GGML_TYPE_PXQ4, a->ne[0]);
+                    return ggml_cuda_pxq4_layout_supported(a) && b->type==GGML_TYPE_F32 && op->type==GGML_TYPE_F32;
                 }
                 switch (a->type) {
                     case GGML_TYPE_F32:

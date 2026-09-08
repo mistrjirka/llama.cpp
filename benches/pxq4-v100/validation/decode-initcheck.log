@@ -1,0 +1,3 @@
+========= COMPUTE-SANITIZER
+INDEPENDENT_CPU_PASS cases=20 max_peak_relative_error=2.07466054e-07
+========= ERROR SUMMARY: 0 errors

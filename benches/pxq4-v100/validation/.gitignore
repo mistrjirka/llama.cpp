@@ -1,0 +1,4 @@
+__pycache__/
+fixtures.json
+fixture-long.json
+*.f32

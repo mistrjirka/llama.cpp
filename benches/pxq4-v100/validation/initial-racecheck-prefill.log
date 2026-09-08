@@ -1,0 +1,27 @@
+========= COMPUTE-SANITIZER
+K=64 T=9 AC=1 peak_rel=3.58e-07 rms_rel=2.3e-07
+K=64 T=9 AC=2 peak_rel=6.57e-07 rms_rel=2.67e-07
+K=64 T=17 AC=1 peak_rel=4.83e-07 rms_rel=2.38e-07
+K=64 T=17 AC=2 peak_rel=4.66e-07 rms_rel=2.4e-07
+K=64 T=65 AC=1 peak_rel=7.33e-07 rms_rel=2.42e-07
+K=64 T=65 AC=2 peak_rel=4.94e-07 rms_rel=2.42e-07
+K=64 T=259 AC=1 peak_rel=6.37e-07 rms_rel=2.4e-07
+K=64 T=259 AC=2 peak_rel=5.04e-07 rms_rel=2.43e-07
+K=512 T=9 AC=1 peak_rel=1.73e-06 rms_rel=8.36e-07
+K=512 T=9 AC=2 peak_rel=1.65e-06 rms_rel=7.75e-07
+K=512 T=17 AC=1 peak_rel=1.74e-06 rms_rel=8.25e-07
+K=512 T=17 AC=2 peak_rel=1.16e-06 rms_rel=7.93e-07
+K=512 T=65 AC=1 peak_rel=1.77e-06 rms_rel=8.23e-07
+K=512 T=65 AC=2 peak_rel=1.8e-06 rms_rel=8.02e-07
+K=512 T=259 AC=1 peak_rel=1.57e-06 rms_rel=8.13e-07
+K=512 T=259 AC=2 peak_rel=2e-06 rms_rel=8.15e-07
+K=2048 T=9 AC=1 peak_rel=3.76e-06 rms_rel=1.71e-06
+K=2048 T=9 AC=2 peak_rel=3.49e-06 rms_rel=1.77e-06
+K=2048 T=17 AC=1 peak_rel=4.68e-06 rms_rel=1.75e-06
+K=2048 T=17 AC=2 peak_rel=3.63e-06 rms_rel=1.73e-06
+K=2048 T=65 AC=1 peak_rel=5.59e-06 rms_rel=1.76e-06
+K=2048 T=65 AC=2 peak_rel=5.44e-06 rms_rel=1.75e-06
+K=2048 T=259 AC=1 peak_rel=4.01e-06 rms_rel=1.76e-06
+K=2048 T=259 AC=2 peak_rel=3.12e-06 rms_rel=1.75e-06
+PREFILL_PARITY_PASS
+========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)

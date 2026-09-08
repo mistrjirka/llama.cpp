@@ -6,3 +6,5 @@ results/*.nsys-rep
 results/*.sqlite
 results/*.patch
 results/code-prefix-101k.json
+
+*.f32

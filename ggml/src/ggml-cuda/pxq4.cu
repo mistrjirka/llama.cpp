@@ -133,6 +133,26 @@ static __global__ void pxq4_mmvq_kernel(
     }
 }
 
+bool ggml_cuda_pxq4_layout_supported(const ggml_tensor * w) {
+    if (!w || w->type != GGML_TYPE_PXQ4 || w->ne[0] <= 0 || w->ne[1] <= 0 ||
+            w->ne[0]%32 || w->ne[1]%64 || w->ne[2]<=0 || w->ne[3]<=0 || w->nb[0]!=17) return false;
+    const size_t row=ggml_row_size(GGML_TYPE_PXQ4,w->ne[0]);
+    // The FP16/FP32 fallback decodes complete contiguous matrices.
+    if(w->nb[1]!=row || w->nb[2]!=row*w->ne[1] || w->nb[3]!=w->nb[2]*w->ne[2])return false;
+    if(w->view_src) {
+        const ggml_tensor * root=w->view_src;
+        if(root->type!=GGML_TYPE_PXQ4 || root->ne[0]!=w->ne[0] || !root->nb[2] || !root->nb[3])return false;
+        size_t offset=w->view_offs;
+        const size_t sample=offset/root->nb[3];offset%=root->nb[3];
+        const size_t expert=offset/root->nb[2];offset%=root->nb[2];
+        if(sample>=(size_t)root->ne[3] || expert>=(size_t)root->ne[2] || offset%(row*64))return false;
+        const size_t first_row=offset/row;
+        if(first_row+w->ne[1]>(size_t)root->ne[1])return false;
+        if((w->ne[2]>1 || w->ne[3]>1) && (first_row!=0 || w->ne[1]!=root->ne[1]))return false;
+    }
+    return true;
+}
+
 void ggml_cuda_pxq4_mmvq_launch(
         const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
         const block_q8_1 * acts, int64_t ne10_padded, const ggml_cuda_mm_fusion_args_host * fusion, cudaStream_t stream) {
@@ -231,7 +251,7 @@ bool ggml_cuda_pxq4_prefill_supported(const ggml_tensor * dst, int cc) {
     const ggml_tensor * w=dst->src[0], *x=dst->src[1], *ids=dst->src[2];
     const char * e=std::getenv("GGML_CUDA_PXQ4_PREFILL");
     return (!e || std::atoi(e)!=0) && cc==GGML_CUDA_CC_VOLTA && dst->op==GGML_OP_MUL_MAT_ID &&
-        w->type==GGML_TYPE_PXQ4 && x->type==GGML_TYPE_F32 && dst->type==GGML_TYPE_F32 &&
+        ggml_cuda_pxq4_layout_supported(w) && x->type==GGML_TYPE_F32 && dst->type==GGML_TYPE_F32 &&
         w->ne[0]%32==0 && w->ne[1]%64==0 && w->ne[2]<=512 && w->ne[3]==1 &&
         ids && ids->type==GGML_TYPE_I32 && ids->nb[0]==4 && x->ne[2]>8 &&
         x->nb[0]==4 && dst->nb[0]==4 && x->ne[3]==1 && dst->ne[3]==1;
@@ -242,7 +262,7 @@ void ggml_cuda_pxq4_prefill(ggml_backend_cuda_context & ctx, ggml_tensor * dst) 
     const int E=w->ne[2],T=x->ne[2],U=ids->ne[0];
     GGML_ASSERT(ggml_cuda_pxq4_prefill_supported(dst,ggml_cuda_info().devices[ctx.device].cc));
     const int max_tiles=(T*U+31)/32+E;
-    ggml_cuda_pool_alloc<int> map(ctx.pool(),(size_t)E*T);
+    ggml_cuda_pool_alloc<int> map(ctx.pool(),(size_t)E*T*U);
     ggml_cuda_pool_alloc<int> counts(ctx.pool(),E),ntiles(ctx.pool(),1);
     ggml_cuda_pool_alloc<pxq4_tile> tiles(ctx.pool(),max_tiles);
     cudaStream_t stream=ctx.stream();

@@ -1,0 +1,6 @@
+567fc9d6ffa7ca882803aff38fb4ff622db3454a0ee3d1a44a9c7b48a5d1ea4c  ggml/src/ggml-cuda/pxq4.cu
+df5e77e0c9f95544a00da04a211c74d415e81099079862db770db815ff24f49b  ggml/src/ggml-cuda/pxq4.cuh
+3e16b8459177483ca384ddf377e8233671c117199bd9eace35f04e8ccfec2bae  ggml/src/ggml-cuda/pxq4-port.cuh
+679cca1a8d554f1c77243077f35f85925c8729a4343f0f67f0c73a7b039a67f4  ggml/src/ggml-cuda/pxq4-wmma.cuh
+53fd445f85f4e99bf05ccb590fe86560dec1dff9170e66894163a67df22cf008  ggml/src/ggml-cuda/pxq4-mmvq.cuh
+22e5b54b197e2481cfd8b3e765c85252cf606fa2682c05604d12649e6197bbaf  ggml/src/ggml-cuda/ggml-cuda.cu

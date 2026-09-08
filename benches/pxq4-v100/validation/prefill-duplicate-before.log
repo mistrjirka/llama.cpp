@@ -1,0 +1,13 @@
+K=32 T=9 AC=1 peak_rel=1.83e-07 rms_rel=-nan
+K=32 T=9 AC=2 peak_rel=1.83e-07 rms_rel=-nan
+K=32 T=33 AC=1 peak_rel=3.15e-07 rms_rel=-nan
+K=32 T=33 AC=2 peak_rel=4.63e-07 rms_rel=-nan
+K=32 T=257 AC=1 peak_rel=2.65e-07 rms_rel=-nan
+K=32 T=257 AC=2 peak_rel=2.96e-07 rms_rel=-nan
+K=96 T=9 AC=1 peak_rel=4.59e-07 rms_rel=-nan
+K=96 T=9 AC=2 peak_rel=4.89e-07 rms_rel=-nan
+K=96 T=33 AC=1 peak_rel=7.8e-07 rms_rel=-nan
+K=96 T=33 AC=2 peak_rel=4.41e-07 rms_rel=-nan
+K=96 T=257 AC=1 peak_rel=9.92e-07 rms_rel=-nan
+K=96 T=257 AC=2 peak_rel=6.43e-07 rms_rel=-nan
+PREFILL_EDGE_FAIL

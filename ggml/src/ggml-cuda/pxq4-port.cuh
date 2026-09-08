@@ -9,6 +9,7 @@
 
 #include <cuda_fp16.h>
 #include <cstdint>
+#include <type_traits>
 
 static constexpr int PXQ4_PORT_QK = 32;
 static constexpr int PXQ4_PORT_BM = 64;
@@ -31,8 +32,9 @@ static __device__ __constant__ float pxq4_port_sub[16] = {
     0x1.8880000000000p-1f, 0x1.a640000000000p-1f, 0x1.cac0000000000p-1f, 0x1.f9c0000000000p-1f,
 };
 
-static __global__ void pxq4_port_dequant_f16_kernel(
-        const uint8_t * __restrict__ src, half * __restrict__ dst,
+template<typename T>
+static __global__ void pxq4_port_dequant_kernel(
+        const uint8_t * __restrict__ src, T * __restrict__ dst,
         int kslabs, int64_t k, int64_t nrows) {
     const int64_t row = (int64_t) blockIdx.y * PXQ4_PORT_BM + threadIdx.x;
     const int kb = blockIdx.x;
@@ -48,13 +50,20 @@ static __global__ void pxq4_port_dequant_f16_kernel(
     const float eff0 = anchor * pxq4_port_sub[sc & 0x0f];
     const float eff1 = anchor * pxq4_port_sub[sc >> 4];
     const uint8_t * q = slab + PXQ4_PORT_CODE_OFF + 16*r;
-    half * out = dst + row*k + (int64_t)kb*PXQ4_PORT_QK;
+    T * out = dst + row*k + (int64_t)kb*PXQ4_PORT_QK;
 #pragma unroll
     for (int b = 0; b < 16; ++b) {
         const float eff = b < 8 ? eff0 : eff1;
         const uint8_t c = q[b];
-        out[2*b + 0] = __float2half_rn(eff * pxq4_port_book[c & 0x0f]);
-        out[2*b + 1] = __float2half_rn(eff * pxq4_port_book[c >> 4]);
+        const float lo=eff * pxq4_port_book[c & 0x0f];
+        const float hi=eff * pxq4_port_book[c >> 4];
+        if constexpr(std::is_same<T,half>::value) {
+            out[2*b + 0] = __float2half_rn(lo);
+            out[2*b + 1] = __float2half_rn(hi);
+        } else {
+            out[2*b + 0] = lo;
+            out[2*b + 1] = hi;
+        }
     }
 }
 
@@ -64,6 +73,16 @@ static inline void pxq4_port_dequant_f16(
     GGML_ASSERT(k % PXQ4_PORT_QK == 0);
     const int kslabs = (int)(k / PXQ4_PORT_QK);
     dim3 grid((unsigned)kslabs, (unsigned)(nrows / PXQ4_PORT_BM), 1);
-    pxq4_port_dequant_f16_kernel<<<grid, PXQ4_PORT_BM, 0, stream>>>((const uint8_t *)src, dst, kslabs, k, nrows);
+    pxq4_port_dequant_kernel<half><<<grid, PXQ4_PORT_BM, 0, stream>>>((const uint8_t *)src, dst, kslabs, k, nrows);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+// Honor GGML_PREC_F32 / the explicit cuBLAS FP32 diagnostic override.
+static inline void pxq4_port_dequant_f32(
+        const void * src, float * dst, int64_t nrows, int64_t k, cudaStream_t stream) {
+    GGML_ASSERT(nrows % PXQ4_PORT_BM == 0 && k % PXQ4_PORT_QK == 0);
+    const int kslabs=(int)(k/PXQ4_PORT_QK);
+    pxq4_port_dequant_kernel<float><<<dim3(kslabs,nrows/PXQ4_PORT_BM),PXQ4_PORT_BM,0,stream>>>(
+        (const uint8_t*)src,dst,kslabs,k,nrows);
     CUDA_CHECK(cudaGetLastError());
 }

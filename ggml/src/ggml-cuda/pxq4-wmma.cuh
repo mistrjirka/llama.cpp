@@ -7,7 +7,8 @@
 
 struct pxq4_tile { int expert, start, count; };
 
-// Stable compaction: unique top-k experts per token; retains token/slot order.
+// Stable compaction over all (token, slot) occurrences, including repeated IDs.
+// Each expert owns T*U map entries; normal unique top-k routes use only T of them.
 static __global__ void pxq4_build_map(const int32_t * ids, int ids_stride,
         int tokens, int used, int * map, int * counts) {
     const int e=blockIdx.x, tid=threadIdx.x, lane=tid&31, warp=tid>>5;
@@ -15,17 +16,23 @@ static __global__ void pxq4_build_map(const int32_t * ids, int ids_stride,
     if(tid==0)total=0;
     __syncthreads();
     for(int base=0;base<tokens;base+=256) {
-        int token=base+tid, slot=-1;
-        if(token<tokens) for(int u=0;u<used;++u) if(ids[token*ids_stride+u]==e) { slot=u;break; }
-        unsigned ballot=__ballot_sync(0xffffffff,slot>=0);
-        if(lane==0)wc[warp]=__popc(ballot);
+        const int token=base+tid;
+        int matches=0;
+        if(token<tokens)for(int u=0;u<used;++u)matches+=ids[token*ids_stride+u]==e;
+        int prefix=matches;
+#pragma unroll
+        for(int d=1;d<32;d*=2) {
+            const int previous=__shfl_up_sync(0xffffffff,prefix,d);
+            if(lane>=d)prefix+=previous;
+        }
+        if(lane==31)wc[warp]=prefix;
         __syncthreads();
-        int off=total;
+        int off=total+prefix-matches;
         for(int w=0;w<warp;++w)off+=wc[w];
-        off+=__popc(ballot&((1u<<lane)-1));
-        if(slot>=0)map[e*tokens+off]=token*used+slot;
+        if(matches)for(int u=0;u<used;++u)if(ids[token*ids_stride+u]==e)
+            map[(size_t)e*tokens*used+off++]=token*used+u;
         __syncthreads();
-        if(tid==0) for(int w=0;w<8;++w)total+=wc[w];
+        if(tid==0)for(int w=0;w<8;++w)total+=wc[w];
         __syncthreads();
     }
     if(tid==0)counts[e]=total;
@@ -62,7 +69,7 @@ static __global__ __launch_bounds__(256,2) void pxq4_grouped_wmma(
     if(tid<16){book[tid]=pxq4_port_book[tid];sub[tid]=pxq4_port_sub[tid];}
     const int row=tid/4,seg=tid%4;
     const int xt=tid/8,xk=(tid%8)*4;
-    const int mapval=xt<tile.count?map[tile.expert*T+tile.start+xt]:0;
+    const int mapval=xt<tile.count?map[(size_t)tile.expert*T*U+tile.start+xt]:0;
     const char * xv=x+(size_t)(mapval/U)*xnb2+(size_t)((mapval%U)%AC)*xnb1;
     const uint8_t * panel=w+(size_t)tile.expert*wnb2+(size_t)blockIdx.x*(128u+(size_t)(K/32)*1088u);
     const float anchor=__half2float(((const half*)panel)[row]);
@@ -97,7 +104,7 @@ static __global__ __launch_bounds__(256,2) void pxq4_grouped_wmma(
     __syncthreads();
     for(int i=tid;i<64*tile.count;i+=256) {
         const int rr=i%64,tt=i/64;
-        const int flat=map[tile.expert*T+tile.start+tt];
+        const int flat=map[(size_t)tile.expert*T*U+tile.start+tt];
         float * dst=(float *)((char*)out+(size_t)(flat/U)*dnb2+(size_t)(flat%U)*dnb1);
         dst[blockIdx.x*64+rr]=so[i];
     }

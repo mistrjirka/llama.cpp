@@ -1,0 +1,9 @@
+{
+  "tokens": 101065,
+  "sha256": "6bad98b209f7cf599b87505610566a63a0d72b19f451854412dada25c753a2d0",
+  "prefix": "../results/code-prefix-101k.json",
+  "suffix": "reference cpp-grammar tokens[100:165]",
+  "cache_n": 100000,
+  "fresh_pp": 1000,
+  "forced_tokens": 64
+}

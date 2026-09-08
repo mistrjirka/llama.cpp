@@ -1,0 +1,25 @@
+model has unused tensor blk.40.attn_norm.weight (size = 8192 bytes) -- ignoring
+model has unused tensor blk.40.post_attention_norm.weight (size = 8192 bytes) -- ignoring
+model has unused tensor blk.40.attn_q.weight (size = 8912896 bytes) -- ignoring
+model has unused tensor blk.40.attn_k.weight (size = 1114112 bytes) -- ignoring
+model has unused tensor blk.40.attn_v.weight (size = 1114112 bytes) -- ignoring
+model has unused tensor blk.40.attn_output.weight (size = 4456448 bytes) -- ignoring
+model has unused tensor blk.40.attn_q_norm.weight (size = 1024 bytes) -- ignoring
+model has unused tensor blk.40.attn_k_norm.weight (size = 1024 bytes) -- ignoring
+model has unused tensor blk.40.ffn_gate_inp.weight (size = 1048576 bytes) -- ignoring
+model has unused tensor blk.40.ffn_down_exps.weight (size = 142606336 bytes) -- ignoring
+model has unused tensor blk.40.ffn_gate_exps.weight (size = 142606336 bytes) -- ignoring
+model has unused tensor blk.40.ffn_up_exps.weight (size = 142606336 bytes) -- ignoring
+model has unused tensor blk.40.ffn_gate_inp_shexp.weight (size = 4096 bytes) -- ignoring
+model has unused tensor blk.40.ffn_gate_shexp.weight (size = 557056 bytes) -- ignoring
+model has unused tensor blk.40.ffn_up_shexp.weight (size = 557056 bytes) -- ignoring
+model has unused tensor blk.40.ffn_down_shexp.weight (size = 557056 bytes) -- ignoring
+model has unused tensor blk.40.nextn.eh_proj.weight (size = 4456448 bytes) -- ignoring
+model has unused tensor blk.40.nextn.enorm.weight (size = 8192 bytes) -- ignoring
+model has unused tensor blk.40.nextn.hnorm.weight (size = 8192 bytes) -- ignoring
+model has unused tensor blk.40.nextn.shared_head_norm.weight (size = 8192 bytes) -- ignoring
+..................................................................................................
+prose-1 rows=128 nll=2.40547 ppl=11.0837
+prose-2 rows=128 nll=2.49186 ppl=12.0837
+cpp-grammar rows=128 nll=0.833605 ppl=2.3016
+python-gguf-reader rows=128 nll=1.43488 ppl=4.19913

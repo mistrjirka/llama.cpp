@@ -1,0 +1,30 @@
+{
+  "git_base": "4154e79f7",
+  "wikitext_sha256": "173c87a53759e0201f33e0ccf978e510c2042d7f2cb78229d9a50d79b9e7dd08",
+  "samples": [
+    {
+      "name": "prose-1",
+      "total": 512,
+      "scores": 128,
+      "sha256": "9d281604ddfb531118fb495c995dcf5ade71961aae02487c269aedf276abf873"
+    },
+    {
+      "name": "prose-2",
+      "total": 512,
+      "scores": 128,
+      "sha256": "71fb7fdbf7904c9ed3e05e057dd06734683f31c6bc3272144320477803d4d282"
+    },
+    {
+      "name": "cpp-grammar",
+      "total": 512,
+      "scores": 128,
+      "sha256": "8a8450e410f318d90b353c7a67e7a788a921a06e687ca3e02eff49380d83c5c7"
+    },
+    {
+      "name": "python-gguf-reader",
+      "total": 512,
+      "scores": 128,
+      "sha256": "d0ea743200e19d7ef0a4c969edcc4a6dba8e3656a790b217e3bdc7b31170718e"
+    }
+  ]
+}
