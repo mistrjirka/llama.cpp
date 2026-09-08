@@ -1,0 +1,5 @@
+f9bd9cd0be0cd01c15d63a3ca2d5f299e842ea132b0c62e70ccb40710493c761  ggml/src/ggml-cuda/pxq4.cu
+6523b6718cfe50ce38f35371cf4a60b8684d8307e88f94d9a81e29e3cc0a1625  ggml/src/ggml-cuda/pxq4-mmvf.cuh
+510545d1a1d52dfb18737e29d30c7ecdb5e6f36ac4df083c154745f0fcbbff7a  ggml/src/ggml-cuda/mmvq.cu
+bfa5da006fddcf25ecbb6c278b41df35344fff2721f314fbc3855924c8e3e91f  /models/llama-pxq4-build/bin/libggml-cuda.so
+b4bd5b005002773f6c0dee175fd2b14af21c1b95c0786a84521e3dc54e2cf96f  /models/pxa-fullprobs-build/ggml/src/libggml.so

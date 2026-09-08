@@ -245,6 +245,7 @@ void ggml_cuda_pxq4_mmvq_launch(
 
 
 #include "pxq4-port.cuh"
+#include "pxq4-mmvf.cuh"
 #include "pxq4-wmma.cuh"
 
 bool ggml_cuda_pxq4_prefill_supported(const ggml_tensor * dst, int cc) {

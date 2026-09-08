@@ -159,3 +159,31 @@ source at `6d7dbfff653288e5f83fad5f7ee443329b77ebfc`, especially
 and the grouped-WMMA layout described in `pxq6.cuh`. See repository `LICENSE-PXA`
 for the preserved license/copyright notices. The experimental dense `pxq4-v70.cuh`
 path was not transplanted: its own notes report regressions.
+
+
+## Numerical divergence investigation (2026-09-08)
+
+The matched raw-logit comparison and layer-level evidence are in
+[`validation/divergence-0908/README.md`](validation/divergence-0908/README.md).
+PXA commit `896c189` was rebuilt **with CUDA enabled** in
+`/models/pxa-fullprobs-build`; its separate `pxa-server-host-build` is CPU-only.
+The new comparison uses identical token IDs and decode schedules on one V100.
+
+`GGML_CUDA_PXQ4_MMV_F32=1` is an **opt-in decode accuracy/diagnostic control**.
+It directly evaluates the original PXQ4 floating-point codebook and FP32
+activations, avoiding the extra S8-codebook/Q8-activation approximation of the
+fast DP4A path. It retains compressed PXQ4 weights and fused gate/up support.
+It does not change prefill, attention, non-PXQ tensors, or model weights.
+It requires native PXQ4 decode to be enabled (the default).
+
+Default: unset/0, preserving the existing fast DP4A implementation. In the
+recorded short-context test it measured 112.83 TG/s versus 100.28 TG/s for the
+floating-point control. The control is not a universal quality improvement:
+it did not improve the independent 100k-prefix comparison with PXA. Do not
+enable it as a production fix solely to chase agreement with another engine.
+
+Reproduction: `bash validation/divergence-0908/run_matched.sh` from this
+benchmark directory, or invoke that script by its repository-root path.
+Set `PXQ_VALIDATE_LONG=1` for independently computed 101k-prefix comparisons.
+Run these scripts under the sandbox `gpu:all` lock. Model-distribution metrics
+are diagnostics, not an invented universal quality pass/fail threshold.

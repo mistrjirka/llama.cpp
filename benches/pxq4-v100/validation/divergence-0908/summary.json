@@ -1,0 +1,307 @@
+{
+  "base_commit": "dbda2562a2ac835b0b4556aee31e670af210f99f",
+  "pxa_commit": "896c18919ebcfa4724d9df5eaa7feb92e017c563",
+  "hardware": "Tesla V100-SXM2-32GB",
+  "vocab": 248320,
+  "kv": "f16",
+  "speculation": false,
+  "comparisons": {
+    "pxa-native-vs-port": {
+      "positions": 512,
+      "top1_agreement": 0.97265625,
+      "kl": {
+        "mean": 0.0025081370420385963,
+        "p99": 0.02890260413597463,
+        "max": 0.05341071663369763
+      },
+      "tv": {
+        "mean": 0.01723711967874908,
+        "p99": 0.08971100989572305,
+        "max": 0.11667330445550292
+      },
+      "logit_rmse": {
+        "mean": 0.10890360036317068,
+        "p99": 0.36598708105231814,
+        "max": 0.5568601216750149
+      },
+      "logit_maxerr": {
+        "mean": 0.6457057145269789,
+        "p99": 2.40227514399462,
+        "max": 4.170892627049416
+      },
+      "nll_reference": 1.7940774060225189,
+      "nll_candidate": 1.7914539845485469,
+      "delta_nll": -0.0026234214739719874,
+      "ppl_ratio": 0.9973800166889024,
+      "ppl_reference": 6.013923751720835,
+      "ppl_candidate": 5.998167371857114,
+      "mismatch_reference_margin_max": 0.1762075424194336
+    },
+    "pxa-native-vs-mmvf": {
+      "positions": 512,
+      "top1_agreement": 0.974609375,
+      "kl": {
+        "mean": 0.0022077290543595835,
+        "p99": 0.02551209170891501,
+        "max": 0.0949498207634426
+      },
+      "tv": {
+        "mean": 0.016086149789801864,
+        "p99": 0.07611336796593307,
+        "max": 0.19571896837543054
+      },
+      "logit_rmse": {
+        "mean": 0.1056935814545372,
+        "p99": 0.3267826088984631,
+        "max": 1.0093264319383948
+      },
+      "logit_maxerr": {
+        "mean": 0.6331529274939786,
+        "p99": 2.415639053142195,
+        "max": 6.391990028234281
+      },
+      "nll_reference": 1.7940774060225189,
+      "nll_candidate": 1.7911262627501205,
+      "delta_nll": -0.0029511432723983155,
+      "ppl_ratio": 0.9970532070703616,
+      "ppl_reference": 6.013923751720835,
+      "ppl_candidate": 5.99620196372988,
+      "mismatch_reference_margin_max": 0.215911865234375
+    },
+    "pxa-native-vs-fallback": {
+      "positions": 512,
+      "top1_agreement": 0.9765625,
+      "kl": {
+        "mean": 0.002160005578382454,
+        "p99": 0.018386124608568234,
+        "max": 0.05741192867629974
+      },
+      "tv": {
+        "mean": 0.01647115134659648,
+        "p99": 0.07681113727094109,
+        "max": 0.1487311614804561
+      },
+      "logit_rmse": {
+        "mean": 0.10306013002460308,
+        "p99": 0.3244743101025972,
+        "max": 0.3723814320797787
+      },
+      "logit_maxerr": {
+        "mean": 0.6062537988293895,
+        "p99": 1.9869929189048272,
+        "max": 3.069159508307198
+      },
+      "nll_reference": 1.7940774060225189,
+      "nll_candidate": 1.7949333878289186,
+      "delta_nll": 0.0008559818063997859,
+      "ppl_ratio": 1.000856348263379,
+      "ppl_reference": 6.013923751720835,
+      "ppl_candidate": 6.019073764881715,
+      "mismatch_reference_margin_max": 0.17172622680664062
+    },
+    "pxa-reference-vs-pxa-native": {
+      "positions": 512,
+      "top1_agreement": 0.96484375,
+      "kl": {
+        "mean": 0.0032377912737530604,
+        "p99": 0.038833173727351705,
+        "max": 0.14154458415377483
+      },
+      "tv": {
+        "mean": 0.01970854084111574,
+        "p99": 0.10736392028355876,
+        "max": 0.20738031747099087
+      },
+      "logit_rmse": {
+        "mean": 0.12225880501598285,
+        "p99": 0.45599213053030724,
+        "max": 0.8804186036430383
+      },
+      "logit_maxerr": {
+        "mean": 0.7362315492812672,
+        "p99": 3.015019665557657,
+        "max": 7.885070717270194
+      },
+      "nll_reference": 1.7940774060225189,
+      "nll_candidate": 1.7919509195620695,
+      "delta_nll": -0.0021264864604493283,
+      "ppl_ratio": 0.9978757729100932,
+      "ppl_reference": 6.013923751720835,
+      "ppl_candidate": 6.001148811970796,
+      "mismatch_reference_margin_max": 0.2618722915649414
+    },
+    "long-independent-pxa-vs-integer": {
+      "positions": 64,
+      "top1_agreement": 0.984375,
+      "kl": {
+        "mean": 0.0007606309581244847,
+        "p99": 0.012273942068375126,
+        "max": 0.020607755358235266
+      },
+      "tv": {
+        "mean": 0.005012481532189842,
+        "p99": 0.06806984488367639,
+        "max": 0.0920780746994868
+      },
+      "logit_rmse": {
+        "mean": 0.16715400375198622,
+        "p99": 0.5234839184992504,
+        "max": 0.7592174021632612
+      },
+      "logit_maxerr": {
+        "mean": 1.0186818598169074,
+        "p99": 4.302272775579513,
+        "max": 5.461312294966354
+      },
+      "nll_reference": 0.5009760565971637,
+      "nll_candidate": 0.5041963140518283,
+      "delta_nll": 0.003220257454664588,
+      "ppl_ratio": 1.003225448053895,
+      "ppl_reference": 1.6503313015860919,
+      "ppl_candidate": 1.6556543594710744,
+      "mismatch_reference_margin_max": 0.20687484741210938
+    },
+    "long-independent-pxa-vs-direct-f32": {
+      "positions": 64,
+      "top1_agreement": 0.984375,
+      "kl": {
+        "mean": 0.0010092323933775086,
+        "p99": 0.01846663151366285,
+        "max": 0.01856122192839277
+      },
+      "tv": {
+        "mean": 0.00577208820898022,
+        "p99": 0.07785205775644491,
+        "max": 0.08362536967790786
+      },
+      "logit_rmse": {
+        "mean": 0.17136493840355554,
+        "p99": 0.5850297437803177,
+        "max": 0.7904542131158492
+      },
+      "logit_maxerr": {
+        "mean": 1.0319785057074302,
+        "p99": 4.485812942066266,
+        "max": 5.706428869100307
+      },
+      "nll_reference": 0.5009760565971637,
+      "nll_candidate": 0.506118037526639,
+      "delta_nll": 0.005141980929475265,
+      "ppl_ratio": 1.0051552236015413,
+      "ppl_reference": 1.6503313015860919,
+      "ppl_candidate": 1.6588391284623907,
+      "mismatch_reference_margin_max": 0.20687484741210938
+    }
+  },
+  "api": {
+    "binary": "/models/pxa-fullprobs-build/bin/llama-server",
+    "binary_sha256": "4cc9239d35f6285b508941d0d53ce6889be4c7a7f7f7334279af4aff5ccd64fd",
+    "argv": [
+      "/models/pxa-fullprobs-build/bin/llama-server",
+      "-m",
+      "/models/PXA-Fusion4-35B-GGUF/PXA-Fusion4-35B-PXQ4.gguf",
+      "-ngl",
+      "99",
+      "-c",
+      "2048",
+      "-np",
+      "1",
+      "-b",
+      "256",
+      "-ub",
+      "256",
+      "-fa",
+      "on",
+      "-ctk",
+      "f16",
+      "-ctv",
+      "f16",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "53293",
+      "--ctx-checkpoints",
+      "0"
+    ],
+    "rows": [
+      {
+        "sample": "prose-1",
+        "http_status": 200,
+        "entries": 248320,
+        "has_token_ids": false,
+        "entry_keys": [
+          "prob",
+          "tok_str"
+        ],
+        "probability_sum": 1.000823672903595,
+        "zero_probabilities": 0,
+        "prompt_n": 401
+      },
+      {
+        "sample": "prose-2",
+        "http_status": 200,
+        "entries": 248320,
+        "has_token_ids": false,
+        "entry_keys": [
+          "prob",
+          "tok_str"
+        ],
+        "probability_sum": 1.000008245968607,
+        "zero_probabilities": 0,
+        "prompt_n": 401
+      }
+    ]
+  },
+  "throughput": {
+    "divergence-mmvf-0": {
+      "median_tg": 112.8308842003994,
+      "samples": [
+        111.89908545535688,
+        112.98844239007333,
+        112.7393722141217,
+        112.9223961866771
+      ]
+    },
+    "divergence-mmvf-1": {
+      "median_tg": 100.28178322380955,
+      "samples": [
+        99.86907360272396,
+        100.09542430450362,
+        100.46814214311549,
+        100.72466458686692
+      ]
+    }
+  },
+  "fixtures": {
+    "benches/pxq4-v100/validation/divergence-0908/tokens.json": "f3d3b94c2a60cea1f1dda631415afedf5f9de88247c90eca3c802c0494abfa52",
+    "benches/pxq4-v100/validation/divergence-0908/long-independent.json": "8fb9cf67dc57d31c034108941c996dc6891db49b4c3e89efe6e981d5c29ceca3",
+    "benches/pxq4-v100/validation/divergence-0908/shadow-input.json": "d81206eb666e6a861f28031917f69da1c48534d2153e7366eeb3e2ec944172cb"
+  },
+  "validation": {
+    "direct_f32": "DIRECT_F32_CPU_PASS cases=320 max_peak_relative_error=1.4073461e-06",
+    "f32_dispatch": "ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32494 MiB):\n  Device 0: Tesla V100-SXM2-32GB, compute capability 7.0, VMM: yes, VRAM: 32494 MiB\nrouted=0 T=1 expected=4.832828522 actual=4.832828522 max_error=0\nrouted=0 T=8 expected=4.832828522 actual=4.832828522 max_error=0\nrouted=1 T=1 expected=4.832828522 actual=4.832828522 max_error=0\nrouted=1 T=8 expected=4.832828522 actual=4.832828522 max_error=0\nREFERENCE_DISPATCH_PASS cases=4 approximate_control=0 max_abs_error=0",
+    "default_logits_byte_identical": true,
+    "default_logits_count": 127139840,
+    "final_memcheck": "========= COMPUTE-SANITIZER\nDIRECT_F32_CPU_PASS cases=20 max_peak_relative_error=3.14542134e-07\n========= ERROR SUMMARY: 0 errors\n"
+  },
+  "same_state_final": {
+    "restore-control": {
+      "positions": 128,
+      "exact_positions": 128,
+      "top1_agreement": 1,
+      "mean_kl": 0.0
+    },
+    "integer": {
+      "positions": 128,
+      "exact_positions": 0,
+      "top1_agreement": 0.984375,
+      "mean_kl": 0.0009649333058292451
+    },
+    "direct-f32": {
+      "positions": 128,
+      "exact_positions": 0,
+      "top1_agreement": 0.984375,
+      "mean_kl": 0.0005607152903387072
+    }
+  }
+}

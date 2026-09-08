@@ -1823,6 +1823,14 @@ void ggml_cuda_mul_mat_vec_q(
         }
     }
 
+    // Integer PXQ4 snaps the codebook to s8 and activations to Q8_1.
+    // This direct floating-point control isolates those two approximations.
+    const char * pxq_mmv_f32 = std::getenv("GGML_CUDA_PXQ4_MMV_F32");
+    if (src0->type == GGML_TYPE_PXQ4 && pxq_mmv_f32 && std::atoi(pxq_mmv_f32) != 0) {
+        ggml_cuda_pxq4_mmvf_launch(src0, src1, ids, dst, fusion, stream);
+        return;
+    }
+
     const int64_t ne10_padded = GGML_PAD(ne10, MATRIX_ROW_PADDING);
     ggml_cuda_pool_alloc<char> src1_q8_1(ctx.pool(), ne13*ne12 * ne11*ne10_padded * sizeof(block_q8_1)/QK8_1);
     {

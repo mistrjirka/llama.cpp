@@ -10,3 +10,7 @@ void ggml_cuda_pxq4_prefill(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 
 // True only for complete, correctly aligned PXQ4 panels. No device access.
 bool ggml_cuda_pxq4_layout_supported(const ggml_tensor * tensor);
+// Direct decoded-weight/F32-activation control; no additional Q8 or s8 snapping.
+void ggml_cuda_pxq4_mmvf_launch(const ggml_tensor * w, const ggml_tensor * x,
+        const ggml_tensor * ids, ggml_tensor * dst,
+        const ggml_cuda_mm_fusion_args_host * fusion, cudaStream_t stream);
