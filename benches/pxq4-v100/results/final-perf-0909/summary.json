@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-09",
+  "base_commit": "ff1b46c9a93b3b2dda2740f620f1b339e09006d2",
+  "binary_sha256": {
+    "llama-server": "df07acd938fa03d3c5b8fbd1dcdf790a22f0b9ad56bd78b0183e58763b64c66e",
+    "libggml-cuda.so": "9617ef7e1e2de8288cceec93c73449815fd1b595cb263397b7a35f3366ee6b19"
+  },
+  "short_tg_tokens_per_s": {
+    "established_port": 113.13140634316704,
+    "exact_pair_soak20": 116.67137929183022,
+    "exact_pair_plus_qknorm": 118.67729270567472,
+    "pxa": 120.93263246154342
+  },
+  "short_exact_pair": {
+    "env": [
+      "GGML_CUDA_GDN_INDEXED_STATE=1",
+      "GGML_CUDA_MXFP4_LEAN=4"
+    ],
+    "speedup_vs_established_pct": 3.1290806532760618,
+    "below_pxa_pct": 3.523658654390305,
+    "retained_runs": 20,
+    "unique_output_hashes": 1,
+    "full_vocab_probe": {
+      "positions": 512,
+      "vocab": 248320,
+      "raw_bytes": 508559360,
+      "binary_cmp": 0,
+      "top1": 1.0,
+      "mean_kl": 0.0,
+      "logit_rmse": 0.0
+    },
+    "backend_gdn": "40/40 passed",
+    "compute_sanitizer_memcheck": "clean with GGML_CUDA_DISABLE_GRAPHS=1"
+  },
+  "optional_qknorm": {
+    "env": "GGML_CUDA_GDN_QKNORM_FUSE=1",
+    "below_pxa_pct": 1.8649554797262047,
+    "probe_vs_established": {
+      "positions": 512,
+      "top1": 0.974609375,
+      "mean_kl": 0.0022727810387538983,
+      "ppl_ratio": 1.0013942664497626
+    }
+  },
+  "long_code_100k_plus_1k": {
+    "exact_pair": {
+      "pp_64": 945.8772836014546,
+      "tg_64": 86.59159624420215,
+      "pp_512": 945.8925924090074,
+      "tg_512": 87.49926782725306,
+      "cold_pp": 1660.6882443433058
+    },
+    "pxa": {
+      "pp_64": 803.2958628166831,
+      "tg_64": 51.84803690759993,
+      "pp_512": 802.7594832802749,
+      "tg_512": 51.3380161228548,
+      "cold_pp": 1451.5169251808632
+    }
+  },
+  "validated_source_patch_sha256": "77f2c3be686628e313b3746f7d955f8005ab959e1f4301b08e87d5773a94bca2"
+}

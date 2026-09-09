@@ -1108,6 +1108,81 @@ static void mul_mat_vec_q_switch_fusion(
         sample_ratio, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride);
 }
 
+
+// Lean Volta MXFP4, N=1 path. This keeps the same vec_dot_mxfp4_q8_1 arithmetic
+// and the same fixed warp-fold order as the generic MMVQ kernel, but strips the
+// IDs/fusion/multi-column prologue from a very hot backbone shape. Opt-in while
+// tuning. Only the validated four-warp specialization is exposed.
+template <int nwarps>
+__global__ void __launch_bounds__(32*nwarps, 1) mxfp4_mmvq_lean_v100(
+        const void * __restrict__ vx, const block_q8_1 * __restrict__ vy, float * __restrict__ dst,
+        const uint32_t ncols_x, const uint32_t stride_row_x,
+        const uint32_t stride_channel_x, const uint32_t stride_channel_y, const uint32_t stride_channel_dst,
+        const uint32_t stride_sample_x, const uint32_t stride_sample_y, const uint32_t stride_sample_dst,
+        const uint3 channel_ratio, const uint3 sample_ratio) {
+    constexpr int qk = QK_MXFP4;
+    constexpr int qi = QI_MXFP4;
+    constexpr int vdr = VDR_MXFP4_Q8_1_MMVQ;
+    constexpr int warp_size = 32;
+    constexpr int blocks_per_iter = vdr*nwarps*warp_size/qi;
+
+    const int row = blockIdx.x;
+    const uint32_t channel_dst = blockIdx.y;
+    const uint32_t sample_dst  = blockIdx.z;
+    const uint32_t channel_x = fastdiv(channel_dst, channel_ratio);
+    const uint32_t sample_x  = fastdiv(sample_dst, sample_ratio);
+
+    const block_q8_1 * y = vy + sample_dst*stride_sample_y + channel_dst*stride_channel_y;
+    const int kbx_offset = sample_x*stride_sample_x + channel_x*stride_channel_x + row*stride_row_x;
+    const int blocks_per_row_x = ncols_x/qk;
+    const int tid = warp_size*threadIdx.y + threadIdx.x;
+
+    float tmp = 0.0f;
+    for (int kbx = tid/(qi/vdr); kbx < blocks_per_row_x; kbx += blocks_per_iter) {
+        const int kby = kbx*(qk/QK8_1);
+        const int kqs = vdr*(tid % (qi/vdr));
+        tmp += vec_dot_mxfp4_q8_1(vx, &y[kby], kbx_offset + kbx, kqs);
+    }
+
+    __shared__ float partial[nwarps > 1 ? nwarps-1 : 1][warp_size];
+    if (threadIdx.y > 0) {
+        partial[threadIdx.y-1][threadIdx.x] = tmp;
+    }
+    __syncthreads();
+    if (threadIdx.y > 0) return;
+#pragma unroll
+    for (int w = 0; w < nwarps-1; ++w) {
+        tmp += partial[w][threadIdx.x];
+    }
+    tmp = warp_reduce_sum<warp_size>(tmp);
+    if (threadIdx.x == 0) {
+        dst[sample_dst*stride_sample_dst + channel_dst*stride_channel_dst + row] = tmp;
+    }
+}
+
+template <int nwarps>
+static void launch_mxfp4_mmvq_lean_v100(
+        const void * vx, const void * vy, float * dst,
+        int ncols_x, int nrows_x,
+        int stride_row_x, int nchannels_x, int nchannels_dst,
+        int stride_channel_x, int stride_channel_y, int stride_channel_dst,
+        int nsamples_x, int nsamples_dst,
+        int stride_sample_x, int stride_sample_y, int stride_sample_dst,
+        cudaStream_t stream) {
+    GGML_ASSERT(nchannels_dst % nchannels_x == 0);
+    GGML_ASSERT(nsamples_dst % nsamples_x == 0);
+    const uint3 channel_ratio = init_fastdiv_values(nchannels_dst/nchannels_x);
+    const uint3 sample_ratio  = init_fastdiv_values(nsamples_dst/nsamples_x);
+    const dim3 grid(nrows_x, nchannels_dst, nsamples_dst);
+    const dim3 block(32, nwarps, 1);
+    const ggml_cuda_kernel_launch_params lp(grid, block, 0, stream);
+    ggml_cuda_kernel_launch(mxfp4_mmvq_lean_v100<nwarps>, lp,
+        vx, (const block_q8_1 *)vy, dst, (uint32_t)ncols_x, (uint32_t)stride_row_x,
+        (uint32_t)stride_channel_x, (uint32_t)stride_channel_y, (uint32_t)stride_channel_dst,
+        (uint32_t)stride_sample_x, (uint32_t)stride_sample_y, (uint32_t)stride_sample_dst,
+        channel_ratio, sample_ratio);
+}
+
 template <ggml_type type>
 static void mul_mat_vec_q_moe_launch(
         const void * vx, const void * vy, const int32_t * ids, const ggml_cuda_mm_fusion_args_device fusion, float * dst,
@@ -1245,6 +1320,19 @@ static void mul_mat_vec_q_switch_ncols_dst(
         case 1: {
             // static, else MSVC lambda capture breaks the constexpr uses below
             static constexpr int c_ncols_dst = 1;
+
+            if constexpr (type == GGML_TYPE_MXFP4) {
+                const bool has_fusion = fusion.gate != nullptr || fusion.x_bias != nullptr || fusion.gate_bias != nullptr ||
+                                        fusion.x_scale != nullptr || fusion.gate_scale != nullptr;
+                const char * e = std::getenv("GGML_CUDA_MXFP4_LEAN");
+                const bool enabled = e != nullptr && std::atoi(e) == 4;
+                if (!has_ids && !has_fusion && cc == GGML_CUDA_CC_VOLTA && enabled) {
+                    launch_mxfp4_mmvq_lean_v100<4>(vx, vy, dst, ncols_x, nrows_x, stride_row_x,
+                        nchannels_x, nchannels_dst, stride_channel_x, stride_channel_y, stride_channel_dst,
+                        nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst, stream);
+                    return;
+                }
+            }
 
             // Tag types keep the flags compile-time, so __launch_bounds__ matches what is launched.
             const auto launch = [&](auto small_k_tag, auto halve_iters_tag) {

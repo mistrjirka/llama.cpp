@@ -9770,6 +9770,7 @@ void ggml_compute_forward_flash_attn_back(
 
 // ggml_compute_forward_ssm_conv
 
+
 static void ggml_compute_forward_ssm_conv_f32(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
@@ -10972,8 +10973,9 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     ggml_tensor * src_k     = dst->src[1];
     ggml_tensor * src_v     = dst->src[2];
     ggml_tensor * src_g     = dst->src[3];
-    ggml_tensor * src_beta  = dst->src[4];
-    ggml_tensor * src_state = dst->src[5];
+    ggml_tensor * src_beta      = dst->src[4];
+    ggml_tensor * src_state     = dst->src[5];
+    ggml_tensor * src_state_idx = dst->src[6];
 
     const int64_t S_v      = src_v->ne[0];
     const int64_t H        = src_v->ne[1];
@@ -10985,7 +10987,14 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     GGML_ASSERT(ggml_is_contiguous_rows(src_v));
     GGML_ASSERT(ggml_is_contiguous(src_g));
     GGML_ASSERT(ggml_is_contiguous(src_beta));
-    GGML_ASSERT(ggml_is_contiguous(src_state));
+    if (src_state_idx) {
+        GGML_ASSERT(src_state_idx->type == GGML_TYPE_I32 && ggml_is_contiguous(src_state_idx));
+        GGML_ASSERT(src_state_idx->ne[0] == n_seqs);
+        GGML_ASSERT(src_state->type == GGML_TYPE_F32 && ggml_is_contiguous_rows(src_state));
+        GGML_ASSERT(src_state->ne[0] == S_v*S_v*H);
+    } else {
+        GGML_ASSERT(ggml_is_contiguous(src_state));
+    }
 
     GGML_ASSERT(src_g->ne[0] == 1 || src_g->ne[0] == S_v);
     GGML_ASSERT(src_beta->ne[0] == 1);
@@ -11004,9 +11013,12 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
 
     // K (snapshot slot count) is an op param; state holds s0 only [S_v, S_v, H, n_seqs].
     const int64_t K = ggml_get_op_params_i32(dst, 0);
+    const float qk_norm_eps = ggml_get_op_params_f32(dst, 1);
     GGML_ASSERT(K >= 1);
-    // per-seq stride in floats (seq s starts at state + s * seq_stride)
-    const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
+    // Packed mode strides by sequence in dim 3. Indexed mode selects one persistent row.
+    const int64_t state_seq_stride = src_state_idx
+        ? (int64_t)(src_state->nb[1] / sizeof(float))
+        : (int64_t)(src_state->nb[3] / sizeof(float));
 
     const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
     const int ith = params->ith;
@@ -11050,9 +11062,14 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
             ? state_work
             : state_out_base + (iv3 * H + iv1) * S_v * S_v;
 
-        // copy input state into the working buffer and operate in-place
-        // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
-        const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
+        // Copy the selected input state into the working buffer and operate in-place.
+        int64_t state_row = iv3;
+        if (src_state_idx) {
+            const int32_t * idx = (const int32_t *) src_state_idx->data;
+            state_row = idx[iv3];
+            GGML_ASSERT(state_row >= 0 && state_row < src_state->ne[1]);
+        }
+        const float * s_in = state_in_base + state_row * state_seq_stride + iv1 * S_v * S_v;
         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
 
         // attn output pointer for first token of this (head, seq)
@@ -11065,6 +11082,21 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
 
             const float beta_val = *(const float *)((const char *)src_beta->data + iv3 * nbb3 + t * nbb2 + iv1 * nbb1);
             const float * g_d    =  (const float *)((const char *)src_g->data    + iv3 * nbg3 + t * nbg2 + iv1 * nbg1);
+
+            float q_norm_scale = 1.0f;
+            float k_norm_scale = 1.0f;
+            if (qk_norm_eps >= 0.0f) {
+                float q_ss = 0.0f;
+                float k_ss = 0.0f;
+                for (int64_t i = 0; i < S_v; ++i) {
+                    q_ss += q_d[i] * q_d[i];
+                    k_ss += k_d[i] * k_d[i];
+                }
+                const float inv_n = 1.0f / (float) S_v;
+                const float post  = 1.0f / sqrtf((float) S_v);
+                q_norm_scale = (1.0f/sqrtf(q_ss * inv_n + qk_norm_eps * inv_n)) * post;
+                k_norm_scale = (1.0f/sqrtf(k_ss * inv_n + qk_norm_eps * inv_n)) * post;
+            }
 
             // state is stored transposed: s_out[j*S_v + i] = S[i][j]
             // so row j of s_out = column j of S (contiguous access)
@@ -11086,19 +11118,19 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
             for (int64_t j = 0; j < S_v; ++j) {
                 float sum = 0.0f;
                 ggml_vec_dot_f32(S_v, &sum, 0, &s_out[j * S_v], 0, k_d, 0, 1);
-                delta[j] = (v_d[j] - sum) * beta_val;
+                delta[j] = (v_d[j] - sum * k_norm_scale) * beta_val;
             }
 
             // outer product: S[i][j] += k[i] * delta[j] => M[j][i] += delta[j] * k[i]
             for (int64_t j = 0; j < S_v; ++j) {
-                ggml_vec_mad_f32(S_v, &s_out[j * S_v], k_d, delta[j]);
+                ggml_vec_mad_f32(S_v, &s_out[j * S_v], k_d, delta[j] * k_norm_scale);
             }
 
             // attn_out[j] = sum_i S[i][j] * q[i] = dot(row j of M, q)
             for (int64_t j = 0; j < S_v; ++j) {
                 float sum = 0.0f;
                 ggml_vec_dot_f32(S_v, &sum, 0, &s_out[j * S_v], 0, q_d, 0, 1);
-                attn_data[j] = sum * scale;
+                attn_data[j] = sum * q_norm_scale * scale;
             }
 
             attn_data += S_v * H; // advance to next token

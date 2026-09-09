@@ -2614,6 +2614,33 @@ extern "C" {
             struct ggml_tensor  * state,
             int64_t               K);
 
+    // Same operation, but optionally performs the Q/K L2 normalization internally.
+    // qk_norm_eps < 0 keeps the established behavior (Q/K are already normalized).
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_ext(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * q,
+            struct ggml_tensor  * k,
+            struct ggml_tensor  * v,
+            struct ggml_tensor  * g,
+            struct ggml_tensor  * beta,
+            struct ggml_tensor  * state,
+            int64_t               K,
+            float                 qk_norm_eps);
+
+    // Indexed-state form: state_rows is [S_v*S_v*H_v, n_state_rows] and state_idx
+    // selects one persistent row per sequence. This avoids materializing a GET_ROWS copy.
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_indexed_ext(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * q,
+            struct ggml_tensor  * k,
+            struct ggml_tensor  * v,
+            struct ggml_tensor  * g,
+            struct ggml_tensor  * beta,
+            struct ggml_tensor  * state_rows,
+            struct ggml_tensor  * state_idx,
+            int64_t               K,
+            float                 qk_norm_eps);
+
     // DSA lightning indexer
     //
     // q:       [n_embd_idx, n_head_idx, n_batch, ne3 ]

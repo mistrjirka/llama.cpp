@@ -32,6 +32,7 @@ latencies are also retained, excluding slot restore and initial cold prefill.
 | synthetic | fork | 997.8 | 85.17 | 994.8 | 85.58 |
 | synthetic | pxa | 840.0 | 51.77 | 837.4 | 51.43 |
 | code | fork | 947.7 | 84.77 | 949.5 | 85.81 |
+| code | fork exact pair | 945.9 | 86.59 | 945.9 | 87.50 |
 | code | pxa | 803.3 | 51.85 | 802.8 | 51.34 |
 
 The synthetic prefix is the earlier repeated pangram (12 distinct token IDs).
@@ -40,15 +41,33 @@ source contents; both engines use identical token arrays and prefix hashes.
 `results/code-fixture-manifest.json` records the exact source files and content hashes.
 The code corpus is more varied, but is not a general model-quality evaluation.
 
-Short prompt + 256 output tokens, batch/ubatch=512, median of three retained runs:
-original two-row native kernel **101.66 TG/s**; coalesced native kernel **112.84 TG/s**;
-PXA **120.42 TG/s**. The final hardened build recheck measured **113.06 TG/s**. Common normalized timing is used throughout. Coalesced/PXA
-256-token continuations match on this smoke prompt. The synthetic long continuations
-also match, but the code-prefix continuations diverge between engines (first differing
-character at index 79 in the recorded outputs). The code-prefix TG tests therefore use
-identical inputs/lengths, not identical generated-token routing. This is a performance
-comparison, not proof of model-output parity. Long-context speed gains do not
-imply that the port wins at every context length or on every model.
+Short prompt + 256 output tokens, batch/ubatch=512, one V100. A fresh post-validation
+comparison measured **113.13 TG/s** for the established port and **120.93 TG/s** for PXA.
+Two additional V100 optimizations were then tested together: direct indexed reads of the
+recurrent GDN state (avoiding its GET_ROWS materialization) and a four-warp N=1 MXFP4
+MMVQ specialization. This **exact pair** is opt-in and measured **116.67 TG/s** over a
+20-run retained soak: +3.13% over the established port and 3.52% below PXA. All 20 runs
+produced the same 256-token output hash. A 512-position/full-vocabulary teacher-forced
+probe produced a **508,559,360-byte logit file byte-for-byte identical** to the established
+path (top-1 100%, KL 0, RMSE 0). The GATED_DELTA_NET backend suite passed 40/40, and
+Compute Sanitizer memcheck completed cleanly with CUDA graphs disabled.
+
+An additional Q/K-normalization-in-GDN option reaches **118.68 TG/s** (+4.90% over the
+established port, 1.86% below PXA), but it deliberately changes floating-point reduction
+order. On the 512-position probe it measured mean KL **0.00227**, 97.46% top-1 agreement,
+and about +0.14% sample perplexity versus the established path. It therefore remains a
+separate non-bit-exact option rather than part of the exact configuration.
+
+The final clean varied-code 100k-cache + 1k prompt benchmark with the exact pair measured
+**945.88 PP / 86.59 TG** for the 64-token arm and **945.89 PP / 87.50 TG** for the
+512-token arm. The matching PXA runs were **803.30 / 51.85** and **802.76 / 51.34**.
+That leaves the fork about **17.75–17.83% faster in PP** and **67.01–70.44% faster in TG**
+at 100k context.
+
+The original two-row native PXQ4 kernel was 101.66 TG/s and the first coalesced version
+112.84 TG/s. Common normalized timing is used throughout. PXA and the port need not
+generate identical continuations on varied prompts; performance tests use identical inputs
+and lengths rather than claiming model-output equivalence.
 
 ## What changed
 
@@ -130,6 +149,13 @@ and generated token arrays are not committed.
 | `GGML_CUDA_PXQ4_RPB` | 2 | Legacy-only 2/4/8-row tile |
 | `GGML_CUDA_PXQ4_WARP_ROWS` | Auto | Experimental 2/4 rows per warp override |
 | `GGML_CUDA_PXQ4_VDR` | 4 | Experimental 2/4 code words per lane |
+| `GGML_CUDA_GDN_INDEXED_STATE` | 0 | Opt-in exact single-sequence/no-rollback GDN state read; avoids GET_ROWS |
+| `GGML_CUDA_MXFP4_LEAN` | 0 | Opt-in Volta N=1 MXFP4 kernel; `4` is the validated winner |
+| `GGML_CUDA_GDN_QKNORM_FUSE` | 0 | Opt-in Q/K normalization inside GDN; faster but not bit-exact |
+
+The validated exact performance pair is `GGML_CUDA_GDN_INDEXED_STATE=1` plus
+`GGML_CUDA_MXFP4_LEAN=4`. These controls are still opt-in because only the Fusion4
+single-V100 workload has received the full model-level validation described above.
 
 Set both NATIVE=0 and PREFILL=0 for the reference dequantize-to-FP16/cuBLAS control.
 The optimized defaults need no environment overrides. Final reference-control smoke
@@ -147,9 +173,13 @@ execution, or a broad downstream task-quality suite. Dense broadcasts now have i
 kernel coverage; MTP still needs end-to-end validation. FP32 cuBLAS fallback is tested;
 BF16 overrides are not validated. Routed prefill now handles repeated expert IDs too.
 
-The short-context profile now spends more GPU kernel time in the stock **MXFP4
-backbone** than in the PXQ4 expert kernels. That and router/activation overhead are
-better next profiling targets than further blind PXQ row-tile expansion.
+The short-context profile showed that the PXQ4 expert kernels were no longer the main
+gap to PXA. The validated exact gains came instead from the stock **MXFP4 backbone**
+and recurrent GDN state plumbing. After those changes the exact configuration is about
+3.5% below PXA at short decode while retaining the large 100k-context lead. Remaining
+profiled overhead is concentrated in recurrent convolution-state gather/concat/copy and
+small activation/routing kernels; a direct in-place convolution-state experiment was
+rejected after its smoke test corrupted recurrent behavior and is not present in the code.
 
 ## Provenance
 

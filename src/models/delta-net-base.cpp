@@ -377,7 +377,9 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
         ggml_tensor * g,
         ggml_tensor * b,
         ggml_tensor * s,
-        int           il) {
+        int           il,
+        float         qk_norm_eps,
+        ggml_tensor * state_idx) {
     const int64_t S_k      = q->ne[0];
     const int64_t H_k      = q->ne[1];
     const int64_t n_tokens = q->ne[2];
@@ -396,10 +398,17 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
     GGML_ASSERT(g->ne[0] == 1   || g->ne[0] == S_v);
     GGML_ASSERT(                   g->ne[1] == H_v && g->ne[2] == n_tokens && g->ne[3] == n_seqs);
     GGML_ASSERT(b->ne[0] == 1   && b->ne[1] == H_v && b->ne[2] == n_tokens && b->ne[3] == n_seqs);
-    GGML_ASSERT(s->ne[0] == S_v && s->ne[1] == S_v && s->ne[2] == H_v      && s->ne[3] == n_seqs);
+    if (state_idx) {
+        GGML_ASSERT(s->type == GGML_TYPE_F32 && s->ne[0] == S_v*S_v*H_v);
+        GGML_ASSERT(state_idx->type == GGML_TYPE_I32 && state_idx->ne[0] == n_seqs);
+    } else {
+        GGML_ASSERT(s->ne[0] == S_v && s->ne[1] == S_v && s->ne[2] == H_v && s->ne[3] == n_seqs);
+    }
 
-    // K=1: output carries the final state only. state s is 4D [S_v, S_v, H_v, n_seqs].
-    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, /*K=*/1);
+    // K=1: output carries the final state only. Indexed mode reads s0 directly from persistent rows.
+    ggml_tensor * result = state_idx
+        ? ggml_gated_delta_net_indexed_ext(ctx0, q, k, v, g, b, s, state_idx, /*K=*/1, qk_norm_eps)
+        : ggml_gated_delta_net_ext        (ctx0, q, k, v, g, b, s,            /*K=*/1, qk_norm_eps);
     if (n_tokens == 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_AR, result, il});
     } else {
@@ -429,20 +438,24 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
         ggml_tensor * g,
         ggml_tensor * b,
         ggml_tensor * s,
-        int           il) {
+        int           il,
+        float         qk_norm_eps,
+        ggml_tensor * state_idx) {
     const int64_t n_seq_tokens = q->ne[2];
 
     if (n_seq_tokens == 1) {
         if (cparams.fused_gdn_ar) {
-            return build_delta_net_fused(q, k, v, g, b, s, il);
+            return build_delta_net_fused(q, k, v, g, b, s, il, qk_norm_eps, state_idx);
         }
+        GGML_ASSERT(qk_norm_eps < 0.0f && state_idx == nullptr);
         return build_delta_net_autoregressive(q, k, v, g, b, s, il);
     }
 
     if (cparams.fused_gdn_ch) {
-        return build_delta_net_fused(q, k, v, g, b, s, il);
+        return build_delta_net_fused(q, k, v, g, b, s, il, qk_norm_eps, state_idx);
     }
 
+    GGML_ASSERT(qk_norm_eps < 0.0f && state_idx == nullptr);
     return build_delta_net_chunking(q, k, v, g, b, s, il);
 }
 
@@ -536,21 +549,23 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         ggml_tensor *        g,
         ggml_tensor *        b,
         ggml_tensor *        s,
-        int                  il) {
+        int                  il,
+        float                qk_norm_eps,
+        ggml_tensor *        state_idx) {
     const auto * mctx_cur   = inp->mctx;
     const auto   kv_head    = mctx_cur->get_head();
     const uint32_t mem_size = mctx_cur->get_size();
 
-    const int64_t S_v          = s->ne[0];
-    const int64_t H_v          = s->ne[2];
-    const int64_t n_seqs       = s->ne[3];
+    const int64_t S_v          = v->ne[0];
+    const int64_t H_v          = v->ne[1];
+    const int64_t n_seqs       = v->ne[3];
     const int64_t n_seq_tokens = q->ne[2];
 
     const bool keep = cparams.n_rs_seq > 0 &&
             !(cparams.rs_rollback_prompt_only && n_seq_tokens == 1);
 
     if (!keep) {
-        auto attn_out = build_delta_net(q, k, v, g, b, s, il);
+        auto attn_out = build_delta_net(q, k, v, g, b, s, il, qk_norm_eps, state_idx);
         ggml_tensor * output    = attn_out.first;
         ggml_tensor * new_state = attn_out.second;
         cb(output, "attn_output", il);
@@ -568,7 +583,9 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     const int64_t K = cparams.n_rs_seq + 1;
 
     // state s is 4D [S_v, S_v, H_v, n_seqs]; K snapshot slots are written into the output.
-    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, K);
+    ggml_tensor * gdn_out = state_idx
+        ? ggml_gated_delta_net_indexed_ext(ctx0, q, k, v, g, b, s, state_idx, K, qk_norm_eps)
+        : ggml_gated_delta_net_ext        (ctx0, q, k, v, g, b, s,            K, qk_norm_eps);
     if (n_seq_tokens > 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
     } else {
