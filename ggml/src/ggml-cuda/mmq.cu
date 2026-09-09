@@ -310,17 +310,26 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
     }
 
     if (turing_mma_available(cc)) {
-        // Turing has fast FP16 tensor cores. For dense large-N quantized matmuls,
-        // dequantize->FP16 + cuBLAS crosses over well before prompt-sized batches;
-        // keeping all of them on DP4A MMQ leaves substantial SM75 prefill performance
-        // on the table. Keep routed-MoE on MMQ, and keep small-N/decode on MMQ.
-        if (n_experts == 0) {
-            int64_t threshold = MMQ_DP4A_MAX_BATCH_SIZE;
+        // On physical sm_75, dense large-N quantized matmuls cross over to
+        // dequantize->FP16 + cuBLAS. A matched sweep on RTX 2080 Ti puts the best
+        // default around N=256; lower thresholds convert too many medium-size ops.
+        // Keep routed-MoE and small-N/decode on MMQ. Do not change Ampere+ policy.
+        if (cc == GGML_CUDA_CC_TURING && n_experts == 0) {
+            int64_t threshold = 256;
             if (const char * env = getenv("GGML_CUDA_TURING_CUBLAS_MIN_BATCH")) {
                 threshold = std::max<int64_t>(1, atoll(env));
             }
             if (ne11 >= threshold) {
                 return false;
+            }
+        } else if (n_experts == 0 && (type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K)) {
+            // Preserve the pre-existing opt-in crossover experiment on non-Turing
+            // tensor-core NVIDIA devices.
+            if (const char * env = getenv("GGML_CUDA_TURING_CUBLAS_MIN_BATCH")) {
+                const int64_t threshold = std::max<int64_t>(1, atoll(env));
+                if (ne11 >= threshold) {
+                    return false;
+                }
             }
         }
         return true;
