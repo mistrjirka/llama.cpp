@@ -171,7 +171,7 @@ measured 113.06 TG/s on the short benchmark. Final GPU kernel tests also passed.
 Validated end-to-end model: Fusion4 PXQ4, fully GPU-resident on **one V100**.
 This is not yet a production-complete quantization ecosystem port. CPU execution of the PXQ
 slab family is explicitly declined rather than being falsely routed through stock row-dot callbacks.
-CUDA runtime support now covers PXQ1/2/3/4/4-HQ/6 and mixed PXQU. Remaining ecosystem work
+CUDA runtime support now covers PXQ1/2/3/4/4-HQ/6 and mixed PXQU on validated sm_70 and sm_75 CUDA paths. Remaining ecosystem work
 includes PXQ quantization/export inside this fork, CPU fallback, arbitrary unaligned panel-slicing
 views, embedding GET_ROWS, distributed execution, and a broad downstream task-quality suite.
 Dense broadcasts have independent fallback/native coverage; MTP still needs end-to-end validation.

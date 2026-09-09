@@ -86,3 +86,49 @@ Compute Sanitizer memcheck with CUDA graphs disabled completed on both the unifo
 ## Regression note
 
 A broad stock CUDA `MUL_MAT`/`MUL_MAT_ID` sweep produced one Q5_1 tolerance outlier once (`ERR=0.000590638` at a `0.0005` threshold). The exact stock operator immediately passed when isolated and then passed 20/20 repeated runs. It does not touch PXQ dispatch. A final post-HQ full sweep is recorded separately in `pxq-all-backend-matmul-final2.log`.
+
+
+## RTX 2080 Ti / sm_75 validation
+
+A separate native `CMAKE_CUDA_ARCHITECTURES=75` build was tested on the 22 GiB RTX 2080 Ti
+(`GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29`). PXA commit `896c189` was independently rebuilt
+from a clean build directory for sm_75, so the comparison does not rely on sm_70/PTX JIT.
+Both engines use one GPU, FP16 K/V, FA on, batch 2048, ubatch 512, PP512 and TG128, two retained reps.
+
+The grouped routed-PXQ WMMA prefill path now explicitly supports both sm_70 and sm_75. A direct
+three-repetition Turing A/B measured **1906.69 vs 1176.56 PP/s (1.621x)** on the mixed-PXQU
+stress model and **2410.76 vs 1155.25 PP/s (2.087x)** on the PXQ1 stress model relative to the
+full-dequant fallback. The dense 2D experimental WMMA path remains default-off; dense prefill uses
+coalesced exact dequant + cuBLAS.
+
+| model/tier | ours PP | PXA sm75 PP | ours/PXA | ours TG | PXA sm75 TG | ours/PXA |
+|---|---:|---:|---:|---:|---:|---:|
+| PXQ1 format-stress | 2363.67 | 1509.83 | **1.566x** | 123.80 | 120.58 | **1.027x** |
+| PXQ2 9B | 2722.03 | 2955.76 | 0.921x | 85.00 | 85.63 | 0.993x |
+| PXQ3 9B | 2678.22 | 2901.18 | 0.923x | 78.61 | 78.64 | 1.000x |
+| PXQ4 9B uploaded | 2582.28 | 2889.22 | 0.894x | 81.87 | 85.18 | 0.961x |
+| PXQ4-HQ 9B uploaded | 2535.57 | 2872.22 | 0.883x | **81.03** | 76.36 | **1.061x** |
+| PXQ6 9B uploaded | 2525.17 | 2782.56 | 0.907x | 64.36 | 68.53 | 0.939x |
+| mixed PXQU 35B format-stress | **1829.54** | 1290.96 | **1.417x** | **110.43** | 70.03 | **1.577x** |
+
+`PXQ1 format-stress` and `mixed PXQU format-stress` were deliberately requantized from an existing
+PXQ model to exercise wire formats and mixed dispatch; they are performance/correctness fixtures,
+not quality benchmarks. PXQ4/PXQ4-HQ/PXQ6 use the uploaded/hash-checked 9B artifacts; PXQ2/PXQ3 use
+local 9B test artifacts from the same source family.
+
+Turing full-vocabulary probes retained 16/16 top-1 against PXA for PXQ4-HQ, PXQ6 and mixed PXQU.
+After enabling grouped sm_75 prefill, PXQ1 and mixed PXQU were also 16/16 against the existing PXA
+reference run (mean KL 0.00184 and 0.00243 respectively). Uniform PXQ2 and PXQ3 were 16/16 versus
+exact dequant fallback. On the deliberately double-lossy PXQ1 stress artifact, direct native-sm75
+fork-vs-PXA was 15/16 top-1 (mean KL 0.00489, PPL ratio 1.0038); PXA itself and the fork each showed
+14/16 top-1 versus exact fallback in the corresponding stress comparison. That sensitivity is not
+unique to the fork and is treated as expected 1-bit/router-boundary numerical amplification rather
+than evidence of a codec-layout bug.
+
+Compute Sanitizer memcheck with CUDA graphs disabled reported **0 errors and 0 leaked bytes** for
+uniform PXQ4-HQ, grouped PXQ1, and mixed PXQU on sm_75.
+
+The first broad sm_75 stock `MUL_MAT`/`MUL_MAT_ID` sweep had one unrelated Q5_1 tolerance-edge
+failure (`0.000506183` vs a `0.000500000` threshold); the exact case then passed 20/20 immediate
+reruns. No PXQ case failed. A second full stock sweep after all Turing changes passed **2170/2170** CUDA
+matrix tests; the log is `/models/llama-pxq-all-sm75-backend-final2.log`.

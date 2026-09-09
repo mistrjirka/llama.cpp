@@ -422,7 +422,7 @@ void ggml_cuda_pxq_mmvf_launch(const ggml_tensor * src0,const ggml_tensor * src1
 bool ggml_cuda_pxq4_prefill_supported(const ggml_tensor * dst, int cc) {
     const ggml_tensor * w=dst->src[0], *x=dst->src[1], *ids=dst->src[2];
     const char * e=std::getenv("GGML_CUDA_PXQ4_PREFILL");
-    return (!e || std::atoi(e)!=0) && cc==GGML_CUDA_CC_VOLTA && dst->op==GGML_OP_MUL_MAT_ID &&
+    return (!e || std::atoi(e)!=0) && (cc==GGML_CUDA_CC_VOLTA || cc==GGML_CUDA_CC_TURING) && dst->op==GGML_OP_MUL_MAT_ID &&
         ggml_cuda_pxq4_layout_supported(w) && x->type==GGML_TYPE_F32 && dst->type==GGML_TYPE_F32 &&
         w->ne[0]%32==0 && w->ne[1]%64==0 && w->ne[2]<=512 && w->ne[3]==1 &&
         ids && ids->type==GGML_TYPE_I32 && ids->nb[0]==4 && x->ne[2]>8 &&
@@ -455,7 +455,7 @@ bool ggml_cuda_pxq_prefill_supported(const ggml_tensor * dst, int cc) {
     const char * all=std::getenv("GGML_CUDA_PXQ_NATIVE");
     if (all && std::atoi(all)==0) return false;
     const char * e=std::getenv("GGML_CUDA_PXQ_PREFILL");
-    return (!e || std::atoi(e)!=0) && cc==GGML_CUDA_CC_VOLTA && dst->op==GGML_OP_MUL_MAT_ID &&
+    return (!e || std::atoi(e)!=0) && (cc==GGML_CUDA_CC_VOLTA || cc==GGML_CUDA_CC_TURING) && dst->op==GGML_OP_MUL_MAT_ID &&
         ggml_cuda_pxq_layout_supported(w) && x->type==GGML_TYPE_F32 && dst->type==GGML_TYPE_F32 &&
         w->ne[0]%32==0 && w->ne[1]%64==0 && w->ne[2]<=512 && w->ne[3]==1 &&
         ids && ids->type==GGML_TYPE_I32 && ids->nb[0]==4 && x->ne[2]>8 &&
