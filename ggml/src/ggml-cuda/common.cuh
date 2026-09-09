@@ -1462,6 +1462,14 @@ struct ggml_backend_cuda_context {
     // while submitting independent output-column tiles of this size to cuBLAS.
     uint32_t prefill_reuse = 0;
 
+    // Opt-in SM75 prompt activation conversion reuse. A fixed FP16 scratch buffer may be
+    // shared by serial cuBLAS matmuls that consume the same logical F32 activation tensor.
+    void * turing_src1_f16_cache = nullptr;
+    size_t turing_src1_f16_cache_bytes = 0;
+    const ggml_tensor * turing_src1_f16_cache_tensor = nullptr;
+    uint64_t turing_src1_f16_cache_hits = 0;
+    uint64_t turing_src1_f16_cache_misses = 0;
+
 #ifdef USE_CUDA_GRAPH
     // Map from first_node_ptr to cuda_graph - allows multiple graphs per context
     // when the computation is split across CPU/GPU (e.g., with --n-cpu-moe)

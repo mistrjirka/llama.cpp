@@ -708,6 +708,10 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     std::unique_lock<std::mutex> lock(ggml_cuda_lock);
     ggml_cuda_lock_cv.wait(lock, []{ return ggml_cuda_lock_counter.load(std::memory_order_relaxed) == 0; });
 
+    if (turing_src1_f16_cache != nullptr) {
+        CUDA_CHECK(cudaFree(turing_src1_f16_cache));
+        turing_src1_f16_cache = nullptr;
+    }
     if (copy_event != nullptr) {
         CUDA_CHECK(cudaEventDestroy(copy_event));
     }
@@ -1411,6 +1415,50 @@ struct batched_mul_mat_traits<GGML_TYPE_F16> {
     static inline auto convert_nc(ggml_type src_type) { return ggml_get_to_fp16_nc_cuda(src_type); }
 };
 
+static bool ggml_cuda_turing_src1_reuse_enabled() {
+    static const bool enabled = [] {
+        const char * env = getenv("GGML_CUDA_TURING_SRC1_REUSE");
+        // Exact conversion reuse is enabled by default only on the guarded physical-sm75
+        // PXQ path below. Set GGML_CUDA_TURING_SRC1_REUSE=0 to disable it.
+        return env == nullptr || atoi(env) != 0;
+    }();
+    return enabled;
+}
+
+static size_t ggml_cuda_turing_src1_reuse_bytes() {
+    static const size_t bytes = [] {
+        const char * env = getenv("GGML_CUDA_TURING_SRC1_REUSE_MB");
+        const long long mb = env ? atoll(env) : 32;
+        return mb > 0 ? (size_t) mb * 1024ull * 1024ull : 0;
+    }();
+    return bytes;
+}
+
+static bool ggml_cuda_turing_src1_reuse_ensure(ggml_backend_cuda_context & ctx, size_t needed) {
+    const size_t ceiling = ggml_cuda_turing_src1_reuse_bytes();
+    needed = (needed + 255) & ~(size_t) 255;
+    if (needed == 0 || needed > ceiling) {
+        return false;
+    }
+    if (ctx.turing_src1_f16_cache != nullptr && ctx.turing_src1_f16_cache_bytes >= needed) {
+        return true;
+    }
+    if (ctx.turing_src1_f16_cache != nullptr) {
+        CUDA_CHECK(cudaFree(ctx.turing_src1_f16_cache));
+        ctx.turing_src1_f16_cache = nullptr;
+        ctx.turing_src1_f16_cache_bytes = 0;
+        ctx.turing_src1_f16_cache_tensor = nullptr;
+    }
+    cudaError_t err = cudaMalloc(&ctx.turing_src1_f16_cache, needed);
+    if (err != cudaSuccess) {
+        (void) cudaGetLastError();
+        ctx.turing_src1_f16_cache = nullptr;
+        return false;
+    }
+    ctx.turing_src1_f16_cache_bytes = needed;
+    return true;
+}
+
 template<ggml_type compute_type>
 static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     using traits = batched_mul_mat_traits<compute_type>;
@@ -1496,26 +1544,53 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
     if (src1->type == compute_type) {
         src1_ptr = (const cuda_t *) src1->data;
     } else {
-        src1_alloc.alloc(ggml_nelements(src1));
-
-        if (ggml_is_contiguously_allocated(src1)) {
-            const auto convert_func = traits::convert(src1->type);
-            GGML_ASSERT(convert_func != nullptr);
-            convert_func(src1->data, src1_alloc.get(), ggml_nelements(src1), main_stream);
-            const size_t src1_bs = ggml_blck_size(src1->type);
-            s11 *= src1_bs;
-            s12 *= src1_bs;
-            s13 *= src1_bs;
-        } else {
-            const auto convert_func = traits::convert_nc(src1->type);
-            GGML_ASSERT(convert_func != nullptr);
-            convert_func(src1->data, src1_alloc.get(), ne10, ne11, ne12, ne13, s11, s12, s13, main_stream);
-            s11 = ne10;
-            s12 = ne11*s11;
-            s13 = ne12*s12;
-            is_src1_cont_2 = true;
+        bool used_turing_src1_cache = false;
+        if constexpr (compute_type == GGML_TYPE_F16) {
+            const int cc = ggml_cuda_info().devices[ctx.device].cc;
+            const size_t bytes = (size_t) ggml_nelements(src1) * sizeof(half);
+            const bool safe_serial_graph = ctx.stream_context().concurrent_events.empty();
+            if (ggml_cuda_turing_src1_reuse_enabled() && cc == GGML_CUDA_CC_TURING &&
+                    ctx.curr_stream_no == 0 && safe_serial_graph && ggml_cuda_is_pxq_type(src0->type) &&
+                    src1->type == GGML_TYPE_F32 && src1->view_src == nullptr && src1->ne[1] >= 256 &&
+                    ggml_is_contiguously_allocated(src1) &&
+                    ggml_cuda_turing_src1_reuse_ensure(ctx, bytes)) {
+                half * cache = (half *) ctx.turing_src1_f16_cache;
+                if (ctx.turing_src1_f16_cache_tensor != src1) {
+                    const auto convert_func = traits::convert(src1->type);
+                    GGML_ASSERT(convert_func != nullptr);
+                    convert_func(src1->data, cache, ggml_nelements(src1), main_stream);
+                    ctx.turing_src1_f16_cache_tensor = src1;
+                    ++ctx.turing_src1_f16_cache_misses;
+                } else {
+                    ++ctx.turing_src1_f16_cache_hits;
+                }
+                src1_ptr = (const cuda_t *) cache;
+                used_turing_src1_cache = true;
+            }
         }
-        src1_ptr = src1_alloc.get();
+
+        if (!used_turing_src1_cache) {
+            src1_alloc.alloc(ggml_nelements(src1));
+
+            if (ggml_is_contiguously_allocated(src1)) {
+                const auto convert_func = traits::convert(src1->type);
+                GGML_ASSERT(convert_func != nullptr);
+                convert_func(src1->data, src1_alloc.get(), ggml_nelements(src1), main_stream);
+                const size_t src1_bs = ggml_blck_size(src1->type);
+                s11 *= src1_bs;
+                s12 *= src1_bs;
+                s13 *= src1_bs;
+            } else {
+                const auto convert_func = traits::convert_nc(src1->type);
+                GGML_ASSERT(convert_func != nullptr);
+                convert_func(src1->data, src1_alloc.get(), ne10, ne11, ne12, ne13, s11, s12, s13, main_stream);
+                s11 = ne10;
+                s12 = ne11*s11;
+                s13 = ne12*s12;
+                is_src1_cont_2 = true;
+            }
+            src1_ptr = src1_alloc.get();
+        }
     }
 
     ggml_cuda_pool_alloc<cuda_t> dst_temp(ctx.pool());
@@ -4587,6 +4662,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
 
     ggml_cuda_set_device(cuda_ctx->device);
+    cuda_ctx->turing_src1_f16_cache_tensor = nullptr;
 
     bool use_cuda_graph             = false;
     bool cuda_graph_update_required = false;
