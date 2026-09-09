@@ -71,8 +71,8 @@ Compute Sanitizer memcheck with CUDA graphs disabled completed on both the unifo
 - PXQ4 keeps the previously validated V100-specific coalesced Q8_1/DP4A kernel and grouped Volta WMMA prefill.
 - PXQ4-HQ has a dedicated PXQ4-style DP4A kernel adapted to its two scale bytes/row and 128-byte code offset. A floating-book control remains available.
 - PXQ1/PXQ2/PXQ3/PXQ6 default to a 256-thread direct panel decode that reads FP32 activations and the original stored floating codebooks. A generic Q8_1/s8 path is retained as an A/B control but is not the default.
-- Dense prefill defaults to exact coalesced dequant-to-F16 + cuBLAS on V100. The experimental direct dense WMMA path remains opt-in because it was slower.
-- Routed MoE prefill uses the shared grouped WMMA path on V100.
+- Dense prefill defaults to exact coalesced dequant-to-F16 + cuBLAS. The experimental direct dense WMMA path remains opt-in on V100 and is not offered on Turing because it was much slower.
+- Routed MoE prefill uses the shared grouped WMMA path on both V100 (sm_70) and RTX 2080 Ti/Turing (sm_75).
 - PXQU fused gate/up accepts different PXQ codecs and physical strides for the two tensors after validating each slab layout independently.
 
 ## Diagnostic controls
@@ -98,8 +98,7 @@ Both engines use one GPU, FP16 K/V, FA on, batch 2048, ubatch 512, PP512 and TG1
 The grouped routed-PXQ WMMA prefill path now explicitly supports both sm_70 and sm_75. A direct
 three-repetition Turing A/B measured **1906.69 vs 1176.56 PP/s (1.621x)** on the mixed-PXQU
 stress model and **2410.76 vs 1155.25 PP/s (2.087x)** on the PXQ1 stress model relative to the
-full-dequant fallback. The dense 2D experimental WMMA path remains default-off; dense prefill uses
-coalesced exact dequant + cuBLAS.
+full-dequant fallback. The dense 2D experimental WMMA path was separately A/B tested on Turing and rejected: PXQ4/PXQ4-HQ/PXQ6 measured **562.91/492.83/406.54 PP/s** versus **2620.63/2570.88/2558.51 PP/s** with coalesced exact dequant + cuBLAS. It therefore remains unavailable on sm_75 by default and by the opt-in gate.
 
 | model/tier | ours PP | PXA sm75 PP | ours/PXA | ours TG | PXA sm75 TG | ours/PXA |
 |---|---:|---:|---:|---:|---:|---:|
@@ -132,3 +131,5 @@ The first broad sm_75 stock `MUL_MAT`/`MUL_MAT_ID` sweep had one unrelated Q5_1 
 failure (`0.000506183` vs a `0.000500000` threshold); the exact case then passed 20/20 immediate
 reruns. No PXQ case failed. A second full stock sweep after all Turing changes passed **2170/2170** CUDA
 matrix tests; the log is `/models/llama-pxq-all-sm75-backend-final2.log`.
+
+A final rebuild from clean HEAD `e4f6decb3` reproduced **2568.85 PP / 81.59 TG** on uploaded PXQ4-HQ and **1869.46 PP / 111.40 TG** on the mixed-PXQU stress model.
