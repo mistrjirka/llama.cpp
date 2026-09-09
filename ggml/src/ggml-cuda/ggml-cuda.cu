@@ -1456,13 +1456,15 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
         src0_alloc.alloc(ggml_nelements(src0));
 
         if constexpr (compute_type == GGML_TYPE_F16 || compute_type == GGML_TYPE_F32) {
-            if (src0->type == GGML_TYPE_PXQ4) {
-                // MUL_MAT_ID passes one expert as a VIEW; its data is still one complete PXQ4 panel run.
+            if (ggml_cuda_is_pxq_type(src0->type)) {
+                // MUL_MAT_ID can pass one expert as a VIEW. PXQ views are accepted only when
+                // they still describe complete aligned 64-row panel runs.
+                GGML_ASSERT(ggml_cuda_pxq_layout_supported(src0));
                 GGML_ASSERT(src0->ne[0] % 32 == 0 && ggml_nrows(src0) % 64 == 0);
                 if constexpr (compute_type == GGML_TYPE_F16) {
-                    pxq4_port_dequant_f16(src0->data, (half *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
+                    ggml_cuda_pxq_dequant_f16(src0->type, src0->data, (half *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
                 } else {
-                    pxq4_port_dequant_f32(src0->data, (float *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
+                    ggml_cuda_pxq_dequant_f32(src0->type, src0->data, (float *) src0_alloc.get(), ggml_nrows(src0), ne00, main_stream);
                 }
                 s01 = ne00;
                 s02 = ne01*s01;
@@ -1781,8 +1783,14 @@ static bool ggml_cuda_should_fuse_mul_mat(const ggml_tensor * ffn_up,
         }
     }
 
-    if (ffn_up->src[0]->type != ffn_gate->src[0]->type || !ggml_are_same_shape(ffn_up->src[0], ffn_gate->src[0]) ||
-        !ggml_are_same_stride(ffn_up->src[0], ffn_gate->src[0])) {
+    const bool pxq_pair = ggml_cuda_is_pxq_type(ffn_up->src[0]->type) && ggml_cuda_is_pxq_type(ffn_gate->src[0]->type);
+    if ((!pxq_pair && ffn_up->src[0]->type != ffn_gate->src[0]->type) ||
+            !ggml_are_same_shape(ffn_up->src[0], ffn_gate->src[0]) ||
+            (!pxq_pair && !ggml_are_same_stride(ffn_up->src[0], ffn_gate->src[0]))) {
+        return false;
+    }
+    if (pxq_pair && (!ggml_cuda_pxq_layout_supported(ffn_up->src[0]) ||
+                     !ggml_cuda_pxq_layout_supported(ffn_gate->src[0]))) {
         return false;
     }
 
@@ -1834,9 +1842,14 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_f(const ggml_tensor * tensor) {
     return use_mul_mat_vec_f;
 }
 
-static bool ggml_cuda_pxq4_native_enabled() {
-    const char * e = std::getenv("GGML_CUDA_PXQ4_NATIVE");
-    return !e || std::atoi(e) != 0;
+static bool ggml_cuda_pxq_native_enabled(ggml_type type) {
+    const char * all = std::getenv("GGML_CUDA_PXQ_NATIVE");
+    if (all && std::atoi(all) == 0) return false;
+    if (type == GGML_TYPE_PXQ4) {
+        const char * e = std::getenv("GGML_CUDA_PXQ4_NATIVE");
+        if (e && std::atoi(e) == 0) return false;
+    }
+    return ggml_cuda_is_pxq_type(type);
 }
 
 static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor, bool pxq4_plain_glu = false) {
@@ -1844,8 +1857,8 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor, bool
     ggml_tensor *       src1 = tensor->src[1];
     const ggml_tensor * dst  = tensor;
 
-    // The PXQ4 native fusion implements unbiased/unscaled up+gate+GLU only.
-    if (src0->type == GGML_TYPE_PXQ4 && (!pxq4_plain_glu || !ggml_cuda_pxq4_native_enabled())) {
+    // PXQ native fusion implements unbiased/unscaled up+gate+GLU only.
+    if (ggml_cuda_is_pxq_type(src0->type) && (!pxq4_plain_glu || !ggml_cuda_pxq_native_enabled(src0->type))) {
         return false;
     }
 
@@ -1894,6 +1907,11 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     const int cc        = ggml_cuda_info().devices[ctx.device].cc;
     const int warp_size = ggml_cuda_info().devices[ctx.device].warp_size;
 
+    if (ggml_cuda_pxq_dense_prefill_supported(dst, cc)) {
+        ggml_cuda_pxq_dense_prefill(ctx, dst);
+        return;
+    }
+
     if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11)) {
         // The custom F16 vector kernel can be used over batched cuBLAS GEMM.
         // But this is only faster for GPUs without tensor cores or with a thin src0 matrix (particularly KQV in attention)
@@ -1936,14 +1954,14 @@ static bool ggml_cuda_mul_mat_id_needs_sync(const ggml_tensor * dst, const int c
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
 
-    if (ggml_cuda_pxq4_prefill_supported(dst,cc)) return false;
+    if (ggml_cuda_pxq_prefill_supported(dst,cc)) return false;
 
     if (src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
         return true;
     }
 
     if (dst->ne[2] <= MMVQ_MAX_BATCH_SIZE) {
-        if (ggml_is_quantized(src0->type) && (src0->type != GGML_TYPE_PXQ4 || ggml_cuda_pxq4_native_enabled())) {
+        if (ggml_is_quantized(src0->type) && (!ggml_cuda_is_pxq_type(src0->type) || ggml_cuda_pxq_native_enabled(src0->type))) {
             if (dst->ne[2] <= get_mmvq_mmid_max_batch(src0->type, cc)) {
                 return false;
             }
@@ -1975,8 +1993,8 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
 
-    if (ggml_cuda_pxq4_prefill_supported(dst,cc)) {
-        ggml_cuda_pxq4_prefill(ctx,dst);
+    if (ggml_cuda_pxq_prefill_supported(dst,cc)) {
+        ggml_cuda_pxq_prefill(ctx,dst);
         return;
     }
 
@@ -1984,7 +2002,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     if (src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
         static_assert(MMVQ_MAX_BATCH_SIZE == MMVF_MAX_BATCH_SIZE);
         if (ne2 <= MMVQ_MAX_BATCH_SIZE) {
-            if (ggml_is_quantized(src0->type) && (src0->type != GGML_TYPE_PXQ4 || ggml_cuda_pxq4_native_enabled())) {
+            if (ggml_is_quantized(src0->type) && (!ggml_cuda_is_pxq_type(src0->type) || ggml_cuda_pxq_native_enabled(src0->type))) {
                 const int mmvq_mmid_max = get_mmvq_mmid_max_batch(src0->type, cc);
                 if (ne2 <= mmvq_mmid_max) {
                     ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
@@ -5244,8 +5262,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                     }
                 }
 #endif // GGML_USE_MUSA
-                if (a->type == GGML_TYPE_PXQ4) {
-                    return ggml_cuda_pxq4_layout_supported(a) && b->type==GGML_TYPE_F32 && op->type==GGML_TYPE_F32;
+                if (ggml_cuda_is_pxq_type(a->type)) {
+                    return ggml_cuda_pxq_layout_supported(a) && b->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32;
                 }
                 switch (a->type) {
                     case GGML_TYPE_F32:

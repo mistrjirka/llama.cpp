@@ -430,9 +430,15 @@ extern "C" {
         GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
         GGML_TYPE_Q1_0    = 41,
         GGML_TYPE_Q2_0    = 42,
-        // PXA PXQ4: 64-row panel-interleaved 4-bit codec. Keep the wire id for GGUF compatibility.
+        // PXA PXQ slab family. All formats are 64-row panel-interleaved and carry
+        // one fp16 anchor (2 B) per logical row. Wire IDs are kept for PXA GGUF compatibility.
+        GGML_TYPE_PXQ1    = 248,
         GGML_TYPE_PXQ4    = 252,
-        GGML_TYPE_COUNT   = 253,
+        GGML_TYPE_PXQ4HQ  = 253,
+        GGML_TYPE_PXQ2    = 254,
+        GGML_TYPE_PXQ3    = 255,
+        GGML_TYPE_PXQ6    = 256,
+        GGML_TYPE_COUNT   = 257,
     };
 
     // precision
@@ -2951,7 +2957,7 @@ extern "C" {
         int64_t                  blck_size_interleave; // interleave elements in blocks
         size_t                   type_size;
         // Extra bytes stored once per logical row before block payload. Zero for stock types.
-        // PXQ4 uses this to account for its 64-row panel anchor header (2 B/row).
+        // PXQ slab formats use this to account for their 64-row panel anchor header (2 B/row).
         int64_t                  row_meta_size;
         bool                     is_quantized;
         ggml_to_float_t          to_float;

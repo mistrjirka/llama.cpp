@@ -1,7 +1,11 @@
-# PXQ4 on v100-optimized: native CUDA port and benchmark
+# PXQ family on v100-optimized: native CUDA port and benchmark
 
 Experimental branch: `exp/pxq4-v100`, based on `4154e79f7`.
 Implementation/measurements: 2026-09-08. Not merged into `v100-optimized`.
+
+## PXQ family expansion (2026-09-09)
+
+The CUDA runtime now supports **PXQ1, PXQ2, PXQ3, PXQ4, PXQ4-HQ and PXQ6**, plus mixed per-tensor **PXQU/PXQ_UNIVERSAL** models. This includes panel-aware loading/GGUF reading, exact dequant fallback, native decode, mixed gate/up fusion and V100 grouped MoE prefill. PXQ quantization/export remains in the PXA quantizer. See [`results/PXQ-FAMILY-0909.md`](results/PXQ-FAMILY-0909.md) for the all-tier validation and performance table.
 
 ## Validation update
 
@@ -165,13 +169,14 @@ measured 113.06 TG/s on the short benchmark. Final GPU kernel tests also passed.
 ## Scope and remaining work
 
 Validated end-to-end model: Fusion4 PXQ4, fully GPU-resident on **one V100**.
-This is not yet a production-complete quantization ecosystem port. CPU PXQ4 execution
-is explicitly declined rather than being falsely routed through a row-dot callback.
-The port does not yet implement PXQ quantization/export, CPU fallback, PXQ4HQ or
-PXQ1/2/3/6/PXQU, arbitrary unaligned panel-slicing views, embedding GET_ROWS, distributed
-execution, or a broad downstream task-quality suite. Dense broadcasts now have independent
-kernel coverage; MTP still needs end-to-end validation. FP32 cuBLAS fallback is tested;
-BF16 overrides are not validated. Routed prefill now handles repeated expert IDs too.
+This is not yet a production-complete quantization ecosystem port. CPU execution of the PXQ
+slab family is explicitly declined rather than being falsely routed through stock row-dot callbacks.
+CUDA runtime support now covers PXQ1/2/3/4/4-HQ/6 and mixed PXQU. Remaining ecosystem work
+includes PXQ quantization/export inside this fork, CPU fallback, arbitrary unaligned panel-slicing
+views, embedding GET_ROWS, distributed execution, and a broad downstream task-quality suite.
+Dense broadcasts have independent fallback/native coverage; MTP still needs end-to-end validation.
+FP32 cuBLAS fallback is tested; BF16 overrides are not validated. Routed prefill handles repeated
+expert IDs and mixed per-tensor PXQ tiers.
 
 The short-context profile showed that the PXQ4 expert kernels were no longer the main
 gap to PXA. The validated exact gains came instead from the stock **MXFP4 backbone**

@@ -690,13 +690,23 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .to_float                 = (ggml_to_float_t) dequantize_row_q2_0,
         .from_float_ref           = (ggml_from_float_t) quantize_row_q2_0_ref,
     },
+    [GGML_TYPE_PXQ1] = {
+        .type_name = "pxq1", .blck_size = 32, .type_size = 5, .row_meta_size = 2, .is_quantized = true,
+    },
     [GGML_TYPE_PXQ4] = {
-        .type_name                = "pxq4",
-        .blck_size                = 32,
-        .type_size                = 17,
-        .row_meta_size            = 2,
-        .is_quantized             = true,
-        // Deliberately no per-row to_float: a logical row is scattered across a 64-row panel.
+        .type_name = "pxq4", .blck_size = 32, .type_size = 17, .row_meta_size = 2, .is_quantized = true,
+    },
+    [GGML_TYPE_PXQ4HQ] = {
+        .type_name = "pxq4hq", .blck_size = 32, .type_size = 18, .row_meta_size = 2, .is_quantized = true,
+    },
+    [GGML_TYPE_PXQ2] = {
+        .type_name = "pxq2", .blck_size = 32, .type_size = 9, .row_meta_size = 2, .is_quantized = true,
+    },
+    [GGML_TYPE_PXQ3] = {
+        .type_name = "pxq3", .blck_size = 32, .type_size = 13, .row_meta_size = 2, .is_quantized = true,
+    },
+    [GGML_TYPE_PXQ6] = {
+        .type_name = "pxq6", .blck_size = 32, .type_size = 21, .row_meta_size = 2, .is_quantized = true,
     },
     [GGML_TYPE_Q4_0] = {
         .type_name                = "q4_0",

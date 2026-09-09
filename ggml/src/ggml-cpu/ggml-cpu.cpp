@@ -429,11 +429,15 @@ static bool ggml_backend_cpu_device_supports_op(ggml_backend_dev_t dev, const st
         return true;
     }
 
-    // PXQ4 is currently CUDA-only: its rows are interleaved into 64-row panels.
+    // PXQ slab formats are CUDA-only here: logical rows are interleaved across 64-row panels.
     // The generic CPU row-dot/get-rows callbacks do not understand that layout.
-    if (op->type == GGML_TYPE_PXQ4) return false;
+    const auto is_pxq = [](ggml_type t) {
+        return t == GGML_TYPE_PXQ1 || t == GGML_TYPE_PXQ2 || t == GGML_TYPE_PXQ3 ||
+               t == GGML_TYPE_PXQ4 || t == GGML_TYPE_PXQ4HQ || t == GGML_TYPE_PXQ6;
+    };
+    if (is_pxq(op->type)) return false;
     for (int i = 0; i < GGML_MAX_SRC; ++i) {
-        if (op->src[i] && op->src[i]->type == GGML_TYPE_PXQ4) return false;
+        if (op->src[i] && is_pxq(op->src[i]->type)) return false;
     }
 
     // check extra buffer types

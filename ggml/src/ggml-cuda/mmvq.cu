@@ -323,9 +323,13 @@ int get_mmvq_mmid_max_batch(ggml_type type, int cc) {
 }
 
 bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
-    if (type == GGML_TYPE_PXQ4) {
-        const char * e = getenv("GGML_CUDA_PXQ4_NATIVE");
-        if (e && atoi(e) == 0) return false;
+    if (ggml_cuda_is_pxq_type(type)) {
+        const char * all = getenv("GGML_CUDA_PXQ_NATIVE");
+        if (all && atoi(all) == 0) return false;
+        if (type == GGML_TYPE_PXQ4) {
+            const char * e = getenv("GGML_CUDA_PXQ4_NATIVE");
+            if (e && atoi(e) == 0) return false;
+        }
         return GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_VOLTA && ne11 <= MMVQ_MAX_BATCH_SIZE;
     }
     if (!ggml_is_quantized(type)) {
@@ -1875,7 +1879,16 @@ void ggml_cuda_mul_mat_vec_q(
             fusion_local.x_bias = fusion->x_bias->data;
         }
         if (fusion->gate) {
-            GGML_ASSERT(fusion->gate->type == src0->type && ggml_are_same_stride(fusion->gate, src0));
+            const bool mixed_pxq = ggml_cuda_is_pxq_type(src0->type) && ggml_cuda_is_pxq_type(fusion->gate->type);
+            if (mixed_pxq) {
+                // PXQU can deliberately assign different slab tiers to gate and up. The PXQ
+                // kernels carry an independent policy/stride for each operand.
+                GGML_ASSERT(ggml_are_same_shape(fusion->gate, src0));
+                GGML_ASSERT(ggml_cuda_pxq_layout_supported(src0));
+                GGML_ASSERT(ggml_cuda_pxq_layout_supported(fusion->gate));
+            } else {
+                GGML_ASSERT(fusion->gate->type == src0->type && ggml_are_same_stride(fusion->gate, src0));
+            }
             fusion_local.gate = fusion->gate->data;
         }
         if (fusion->gate_bias) {
@@ -1911,11 +1924,28 @@ void ggml_cuda_mul_mat_vec_q(
         }
     }
 
+    // PXA's non-4-bit policy kernels decode the stored floating book directly. Preserve that
+    // fidelity by default for PXQ1/2/3/6; set GGML_CUDA_PXQ_FLOAT_DECODE=0 to benchmark the
+    // lower-precision Q8_1/s8 fast path. PXQ4/HQ retain their PXA-like integer MMVQ path.
+    if (src0->type == GGML_TYPE_PXQ1 || src0->type == GGML_TYPE_PXQ2 ||
+            src0->type == GGML_TYPE_PXQ3 || src0->type == GGML_TYPE_PXQ6) {
+        const char * e = std::getenv("GGML_CUDA_PXQ_FLOAT_DECODE");
+        if (!e || std::atoi(e) != 0) {
+            ggml_cuda_pxq_mmvf_launch(src0, src1, ids, dst, fusion, stream);
+            return;
+        }
+    }
+
     // Integer PXQ4 snaps the codebook to s8 and activations to Q8_1.
     // This direct floating-point control isolates those two approximations.
     const char * pxq_mmv_f32 = std::getenv("GGML_CUDA_PXQ4_MMV_F32");
     if (src0->type == GGML_TYPE_PXQ4 && pxq_mmv_f32 && std::atoi(pxq_mmv_f32) != 0) {
         ggml_cuda_pxq4_mmvf_launch(src0, src1, ids, dst, fusion, stream);
+        return;
+    }
+    const char * hq_f32 = std::getenv("GGML_CUDA_PXQ4HQ_MMV_F32");
+    if (src0->type == GGML_TYPE_PXQ4HQ && hq_f32 && std::atoi(hq_f32) != 0) {
+        ggml_cuda_pxq_mmvf_launch(src0, src1, ids, dst, fusion, stream);
         return;
     }
 
@@ -1928,8 +1958,20 @@ void ggml_cuda_mul_mat_vec_q(
         quantize_row_q8_1_cuda(src1_d, nullptr, src1_q8_1.get(), src0->type, ne10, s11, s12, s13, ne10_padded, ne11, ne12, ne13, stream);
     }
 
-    if (src0->type == GGML_TYPE_PXQ4) {
-        ggml_cuda_pxq4_mmvq_launch(src0, src1, ids, dst, (const block_q8_1 *)src1_q8_1.get(), ne10_padded, fusion, stream);
+    if (ggml_cuda_is_pxq_type(src0->type)) {
+        // Keep the heavily tuned/validated PXQ4 specialization for the uniform common case.
+        // Mixed PXQU up/gate pairs and every other tier use the shared policy kernel.
+        const bool uniform_pxq4 = src0->type == GGML_TYPE_PXQ4 &&
+            (!fusion || !fusion->gate || fusion->gate->type == GGML_TYPE_PXQ4);
+        const bool uniform_pxq4hq = src0->type == GGML_TYPE_PXQ4HQ &&
+            (!fusion || !fusion->gate || fusion->gate->type == GGML_TYPE_PXQ4HQ);
+        if (uniform_pxq4) {
+            ggml_cuda_pxq4_mmvq_launch(src0, src1, ids, dst, (const block_q8_1 *)src1_q8_1.get(), ne10_padded, fusion, stream);
+        } else if (uniform_pxq4hq) {
+            ggml_cuda_pxq4hq_mmvq_launch(src0, src1, ids, dst, (const block_q8_1 *)src1_q8_1.get(), ne10_padded, fusion, stream);
+        } else {
+            ggml_cuda_pxq_mmvq_launch(src0, src1, ids, dst, (const block_q8_1 *)src1_q8_1.get(), ne10_padded, fusion, stream);
+        }
         return;
     }
 

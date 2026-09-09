@@ -378,9 +378,11 @@ class GGUFReader:
             else:
                 item_count = n_bytes
                 item_type = np.uint8
-                # PXQ4 is panel-interleaved, not independently decodable logical rows.
-                # Expose its full payload as opaque bytes, including the row anchors.
-                np_dims = (n_bytes,) if ggml_type == GGMLQuantizationType.PXQ4 else quant_shape_to_byte_shape(np_dims, ggml_type)
+                # PXQ slab formats are panel-interleaved, not independently decodable logical rows.
+                # Expose their full payload as opaque bytes, including the row anchors.
+                pxq_types = {GGMLQuantizationType.PXQ1, GGMLQuantizationType.PXQ2, GGMLQuantizationType.PXQ3,
+                             GGMLQuantizationType.PXQ4, GGMLQuantizationType.PXQ4HQ, GGMLQuantizationType.PXQ6}
+                np_dims = (n_bytes,) if ggml_type in pxq_types else quant_shape_to_byte_shape(np_dims, ggml_type)
             tensors.append(ReaderTensor(
                 name = tensor_name,
                 tensor_type = ggml_type,

@@ -46,6 +46,13 @@ const char * llama_ftype_name(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_Q8_0:      name = LLAMA_FTYPE_PREFIX "Q8_0"; break;
         case LLAMA_FTYPE_MOSTLY_MXFP4_MOE: name = LLAMA_FTYPE_PREFIX "MXFP4 MoE"; break;
         case LLAMA_FTYPE_MOSTLY_NVFP4:     name = LLAMA_FTYPE_PREFIX "NVFP4"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ1:      name = LLAMA_FTYPE_PREFIX "PXQ1 - 1.26 bpw"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ2:      name = LLAMA_FTYPE_PREFIX "PXQ2 - 2.27 bpw"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ3:      name = LLAMA_FTYPE_PREFIX "PXQ3 - 3.27 bpw"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ4:      name = LLAMA_FTYPE_PREFIX "PXQ4 - 4.27 bpw"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ4HQ:    name = LLAMA_FTYPE_PREFIX "PXQ4-HQ - 4.52 bpw"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ6:      name = LLAMA_FTYPE_PREFIX "PXQ6 - 5.27 bpw"; break;
+        case LLAMA_FTYPE_MOSTLY_PXQ_UNIVERSAL: name = LLAMA_FTYPE_PREFIX "PXQ-UNIVERSAL"; break;
         case LLAMA_FTYPE_MOSTLY_Q2_K:      name = LLAMA_FTYPE_PREFIX "Q2_K - Medium"; break;
         case LLAMA_FTYPE_MOSTLY_Q2_K_S:    name = LLAMA_FTYPE_PREFIX "Q2_K - Small"; break;
         case LLAMA_FTYPE_MOSTLY_Q3_K_S:    name = LLAMA_FTYPE_PREFIX "Q3_K - Small"; break;
@@ -772,6 +779,12 @@ llama_model_loader::llama_model_loader(
             case GGML_TYPE_NVFP4:   ftype = LLAMA_FTYPE_MOSTLY_NVFP4;   break;
             case GGML_TYPE_Q1_0:    ftype = LLAMA_FTYPE_MOSTLY_Q1_0;    break;
             case GGML_TYPE_Q2_0:    ftype = LLAMA_FTYPE_MOSTLY_Q2_0;    break;
+            case GGML_TYPE_PXQ1:    ftype = LLAMA_FTYPE_MOSTLY_PXQ1;    break;
+            case GGML_TYPE_PXQ2:    ftype = LLAMA_FTYPE_MOSTLY_PXQ2;    break;
+            case GGML_TYPE_PXQ3:    ftype = LLAMA_FTYPE_MOSTLY_PXQ3;    break;
+            case GGML_TYPE_PXQ4:    ftype = LLAMA_FTYPE_MOSTLY_PXQ4;    break;
+            case GGML_TYPE_PXQ4HQ:  ftype = LLAMA_FTYPE_MOSTLY_PXQ4HQ;  break;
+            case GGML_TYPE_PXQ6:    ftype = LLAMA_FTYPE_MOSTLY_PXQ6;    break;
             default:
                 {
                     LLAMA_LOG_WARN("%s: unknown type %s\n", __func__, ggml_type_name(type_max));

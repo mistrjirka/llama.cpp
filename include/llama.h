@@ -157,6 +157,16 @@ extern "C" {
         LLAMA_FTYPE_MOSTLY_Q1_0          = 40, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_Q2_0          = 41, // except 1d tensors
 
+        // PXA PXQ file-type IDs. These are GGUF general.file_type values; PXQ6's ftype
+        // intentionally differs from its tensor type id (257 vs GGML_TYPE_PXQ6=256).
+        LLAMA_FTYPE_MOSTLY_PXQ1          = 248,
+        LLAMA_FTYPE_MOSTLY_PXQ4          = 252,
+        LLAMA_FTYPE_MOSTLY_PXQ4HQ        = 253,
+        LLAMA_FTYPE_MOSTLY_PXQ2          = 254,
+        LLAMA_FTYPE_MOSTLY_PXQ3          = 255,
+        LLAMA_FTYPE_MOSTLY_PXQ_UNIVERSAL = 256,
+        LLAMA_FTYPE_MOSTLY_PXQ6          = 257,
+
         LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
     };
 

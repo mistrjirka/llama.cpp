@@ -1,7 +1,10 @@
 // Copyright (c) 2026 PXA Network. Portions adapted from the MIT-licensed PXA project.
 // See LICENSE-PXA and benches/pxq4-v100/README.md for provenance and numeric contract.
 #include "pxq4.cuh"
+#include "pxq-all.cuh"
 #include "unary.cuh"
+#include "pxq-all-mmvq.cuh"
+#include "pxq-all-mmvf.cuh"
 #include <cstdlib>
 #include <type_traits>
 
@@ -133,24 +136,41 @@ static __global__ void pxq4_mmvq_kernel(
     }
 }
 
-bool ggml_cuda_pxq4_layout_supported(const ggml_tensor * w) {
-    if (!w || w->type != GGML_TYPE_PXQ4 || w->ne[0] <= 0 || w->ne[1] <= 0 ||
-            w->ne[0]%32 || w->ne[1]%64 || w->ne[2]<=0 || w->ne[3]<=0 || w->nb[0]!=17) return false;
-    const size_t row=ggml_row_size(GGML_TYPE_PXQ4,w->ne[0]);
-    // The FP16/FP32 fallback decodes complete contiguous matrices.
-    if(w->nb[1]!=row || w->nb[2]!=row*w->ne[1] || w->nb[3]!=w->nb[2]*w->ne[2])return false;
-    if(w->view_src) {
-        const ggml_tensor * root=w->view_src;
-        if(root->type!=GGML_TYPE_PXQ4 || root->ne[0]!=w->ne[0] || !root->nb[2] || !root->nb[3])return false;
+
+bool ggml_cuda_is_pxq_type(ggml_type type) {
+    return type == GGML_TYPE_PXQ1 || type == GGML_TYPE_PXQ2 || type == GGML_TYPE_PXQ3 ||
+           type == GGML_TYPE_PXQ4 || type == GGML_TYPE_PXQ4HQ || type == GGML_TYPE_PXQ6;
+}
+
+bool ggml_cuda_pxq_layout_supported(const ggml_tensor * w) {
+    if (!w || !ggml_cuda_is_pxq_type(w->type) || w->ne[0] <= 0 || w->ne[1] <= 0 ||
+            w->ne[0]%32 || w->ne[1]%64 || w->ne[2]<=0 || w->ne[3]<=0 ||
+            w->nb[0] != ggml_type_size(w->type)) return false;
+    const size_t row = ggml_row_size(w->type, w->ne[0]);
+    if (w->nb[1] != row || w->nb[2] != row*w->ne[1] || w->nb[3] != w->nb[2]*w->ne[2]) return false;
+    if (w->view_src) {
+        const ggml_tensor * root = w->view_src;
+        if (root->type != w->type || root->ne[0] != w->ne[0] || !root->nb[2] || !root->nb[3]) return false;
         size_t offset=w->view_offs;
-        const size_t sample=offset/root->nb[3];offset%=root->nb[3];
-        const size_t expert=offset/root->nb[2];offset%=root->nb[2];
-        if(sample>=(size_t)root->ne[3] || expert>=(size_t)root->ne[2] || offset%(row*64))return false;
+        const size_t sample=offset/root->nb[3]; offset%=root->nb[3];
+        const size_t expert=offset/root->nb[2]; offset%=root->nb[2];
+        if(sample>=(size_t)root->ne[3] || expert>=(size_t)root->ne[2] || offset%(row*64)) return false;
         const size_t first_row=offset/row;
-        if(first_row+w->ne[1]>(size_t)root->ne[1])return false;
-        if((w->ne[2]>1 || w->ne[3]>1) && (first_row!=0 || w->ne[1]!=root->ne[1]))return false;
+        if(first_row+w->ne[1]>(size_t)root->ne[1]) return false;
+        if((w->ne[2]>1 || w->ne[3]>1) && (first_row!=0 || w->ne[1]!=root->ne[1])) return false;
     }
     return true;
+}
+
+void ggml_cuda_pxq_dequant_f16(ggml_type type, const void * src, half * dst, int64_t nrows, int64_t K, cudaStream_t stream) {
+    pxqa_dequant_dispatch(type, src, dst, nrows, K, stream);
+}
+void ggml_cuda_pxq_dequant_f32(ggml_type type, const void * src, float * dst, int64_t nrows, int64_t K, cudaStream_t stream) {
+    pxqa_dequant_dispatch(type, src, dst, nrows, K, stream);
+}
+
+bool ggml_cuda_pxq4_layout_supported(const ggml_tensor * w) {
+    return w && w->type == GGML_TYPE_PXQ4 && ggml_cuda_pxq_layout_supported(w);
 }
 
 void ggml_cuda_pxq4_mmvq_launch(
@@ -243,10 +263,161 @@ void ggml_cuda_pxq4_mmvq_launch(
 
 }
 
+void ggml_cuda_pxq4hq_mmvq_launch(
+        const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
+        const block_q8_1 * acts, int64_t ne10_padded, const ggml_cuda_mm_fusion_args_host * fusion, cudaStream_t stream) {
+    GGML_ASSERT(src0->type == GGML_TYPE_PXQ4HQ && ggml_cuda_pxq_layout_supported(src0));
+    const ggml_tensor * gate = fusion ? fusion->gate : nullptr;
+    const bool fuse_gate = gate && gate->type == GGML_TYPE_PXQ4HQ && !fusion->x_bias && !fusion->gate_bias &&
+                           !fusion->x_scale && !fusion->gate_scale;
+    if (fusion) GGML_ASSERT(fuse_gate && "PXQ4-HQ fast fusion supports uniform HQ gate+GLU only");
+    const uint32_t K=(uint32_t)src0->ne[0], rows=(uint32_t)src0->ne[1];
+    const uint32_t a1=(uint32_t)(ne10_padded/QK8_1), a2=(uint32_t)(src1->ne[1]*a1), a3=(uint32_t)(src1->ne[2]*a2);
+    const uint32_t d1=(uint32_t)(dst->nb[1]/sizeof(float)), d2=(uint32_t)(dst->nb[2]/sizeof(float)), d3=(uint32_t)(dst->nb[3]/sizeof(float));
+    const uint32_t nt=ids?(uint32_t)dst->ne[2]:(uint32_t)dst->ne[1];
+    const uint32_t ay=ids?(uint32_t)src1->ne[1]:(uint32_t)src1->ne[2];
+    const uint32_t dc=ids?(uint32_t)dst->ne[1]:(uint32_t)dst->ne[2];
+    const uint32_t ns=(uint32_t)dst->ne[3], is=ids?(uint32_t)(ids->nb[1]/sizeof(int32_t)):0;
+    pxq4_mmvq_args a{(const uint8_t*)src0->data,gate?(const uint8_t*)gate->data:nullptr,acts,
+        ids?(const int32_t*)ids->data:nullptr,(float*)dst->data,K,rows,nt,ay,dc,(uint32_t)src0->ne[2],
+        (uint32_t)src0->ne[3],ns,src0->nb[2],src0->nb[3],a1,a2,a3,d1,d2,d3,is,
+        fusion?(int)fusion->glu_op:(int)GGML_GLU_OP_SWIGLU,fusion?fusion->glu_limit:0.f};
+    int wr = fuse_gate && nt == 1 && K >= 1024 ? 2 : 4;
+    if (const char * e=std::getenv("GGML_CUDA_PXQ4HQ_WARP_ROWS")) wr=std::atoi(e);
+    int vdr=4; if (const char * e=std::getenv("GGML_CUDA_PXQ4HQ_VDR")) vdr=std::atoi(e);
+    auto run=[&](auto rt,auto vt){
+        constexpr int R=decltype(rt)::value,V=decltype(vt)::value;
+        const dim3 gr((rows+4*R-1)/(4*R),dc,nt*ns), bl(32,4);
+        if(ids){ if(fuse_gate)pxq4hq_mmvq_coalesced<true,true,R,V><<<gr,bl,0,stream>>>(a); else pxq4hq_mmvq_coalesced<true,false,R,V><<<gr,bl,0,stream>>>(a); }
+        else   { if(fuse_gate)pxq4hq_mmvq_coalesced<false,true,R,V><<<gr,bl,0,stream>>>(a); else pxq4hq_mmvq_coalesced<false,false,R,V><<<gr,bl,0,stream>>>(a); }
+    };
+    if(wr==2){ if(vdr==2)run(std::integral_constant<int,2>{},std::integral_constant<int,2>{}); else run(std::integral_constant<int,2>{},std::integral_constant<int,4>{}); }
+    else     { if(vdr==2)run(std::integral_constant<int,4>{},std::integral_constant<int,2>{}); else run(std::integral_constant<int,4>{},std::integral_constant<int,4>{}); }
+    CUDA_CHECK(cudaGetLastError());
+}
+
+template <class WPOL, bool HAS_IDS>
+static void pxqa_mmvq_launch_up_policy(pxqa_mmvq_args a, const ggml_tensor * gate_tensor, cudaStream_t stream) {
+    constexpr int RPW = 4;
+    constexpr int NW = 4;
+    const dim3 grid((a.rows + RPW*NW - 1)/(RPW*NW), a.channels, a.tokens*a.samples);
+    const dim3 block(32, NW, 1);
+    if (!gate_tensor) {
+        pxqa_mmvq_coalesced<WPOL,WPOL,HAS_IDS,false,RPW,NW><<<grid,block,0,stream>>>(a);
+        return;
+    }
+#define PXQA_GATE_CASE(T, P) case T: pxqa_mmvq_coalesced<WPOL,P,HAS_IDS,true,RPW,NW><<<grid,block,0,stream>>>(a); break
+    switch (gate_tensor->type) {
+        PXQA_GATE_CASE(GGML_TYPE_PXQ1, pxqa_p1);
+        PXQA_GATE_CASE(GGML_TYPE_PXQ2, pxqa_p2);
+        PXQA_GATE_CASE(GGML_TYPE_PXQ3, pxqa_p3);
+        PXQA_GATE_CASE(GGML_TYPE_PXQ4, pxqa_p4);
+        PXQA_GATE_CASE(GGML_TYPE_PXQ4HQ, pxqa_p4hq);
+        PXQA_GATE_CASE(GGML_TYPE_PXQ6, pxqa_p6);
+        default: GGML_ABORT("PXQ gate tensor has unsupported type %s", ggml_type_name(gate_tensor->type));
+    }
+#undef PXQA_GATE_CASE
+}
+
+void ggml_cuda_pxq_mmvq_launch(
+        const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
+        const block_q8_1 * acts, int64_t ne10_padded, const ggml_cuda_mm_fusion_args_host * fusion, cudaStream_t stream) {
+    GGML_ASSERT(ggml_cuda_pxq_layout_supported(src0));
+    const ggml_tensor * gate_tensor = fusion ? fusion->gate : nullptr;
+    const bool fuse_gate = gate_tensor && !fusion->x_bias && !fusion->gate_bias && !fusion->x_scale && !fusion->gate_scale;
+    if (fusion) {
+        GGML_ASSERT(fuse_gate && "PXQ native fusion supports gate+GLU without bias/scale");
+        GGML_ASSERT(ggml_cuda_pxq_layout_supported(gate_tensor));
+        GGML_ASSERT(gate_tensor->ne[0] == src0->ne[0] && gate_tensor->ne[1] == src0->ne[1] &&
+                    gate_tensor->ne[2] == src0->ne[2] && gate_tensor->ne[3] == src0->ne[3]);
+    }
+    const uint32_t a_s11 = (uint32_t)(ne10_padded/QK8_1);
+    const uint32_t a_s12 = (uint32_t)(src1->ne[1]*a_s11);
+    const uint32_t a_s13 = (uint32_t)(src1->ne[2]*a_s12);
+    const uint32_t d_s1 = (uint32_t)(dst->nb[1]/sizeof(float));
+    const uint32_t d_s2 = (uint32_t)(dst->nb[2]/sizeof(float));
+    const uint32_t d_s3 = (uint32_t)(dst->nb[3]/sizeof(float));
+    const uint32_t ncols_dst = ids ? (uint32_t)dst->ne[2] : (uint32_t)dst->ne[1];
+    const uint32_t nchannels_y = ids ? (uint32_t)src1->ne[1] : (uint32_t)src1->ne[2];
+    const uint32_t nchannels_dst = ids ? (uint32_t)dst->ne[1] : (uint32_t)dst->ne[2];
+    const uint32_t nsamples_dst = (uint32_t)dst->ne[3];
+    const uint32_t ids_stride = ids ? (uint32_t)(ids->nb[1]/sizeof(int32_t)) : 0;
+    pxqa_mmvq_args a {
+        (const uint8_t *)src0->data,
+        gate_tensor ? (const uint8_t *)gate_tensor->data : nullptr,
+        acts,
+        ids ? (const int32_t *)ids->data : nullptr,
+        (float *)dst->data,
+        (uint32_t)src0->ne[0], (uint32_t)src0->ne[1], ncols_dst, nchannels_y, nchannels_dst,
+        (uint32_t)src0->ne[2], (uint32_t)src0->ne[3], nsamples_dst,
+        src0->nb[2], src0->nb[3], gate_tensor ? gate_tensor->nb[2] : 0, gate_tensor ? gate_tensor->nb[3] : 0,
+        a_s11,a_s12,a_s13,d_s1,d_s2,d_s3,ids_stride,
+        fusion ? (int)fusion->glu_op : (int)GGML_GLU_OP_SWIGLU,
+        fusion ? fusion->glu_limit : 0.0f
+    };
+#define PXQA_UP_CASE(T, P) case T: if (ids) pxqa_mmvq_launch_up_policy<P,true>(a,gate_tensor,stream); else pxqa_mmvq_launch_up_policy<P,false>(a,gate_tensor,stream); break
+    switch (src0->type) {
+        PXQA_UP_CASE(GGML_TYPE_PXQ1, pxqa_p1);
+        PXQA_UP_CASE(GGML_TYPE_PXQ2, pxqa_p2);
+        PXQA_UP_CASE(GGML_TYPE_PXQ3, pxqa_p3);
+        PXQA_UP_CASE(GGML_TYPE_PXQ4, pxqa_p4);
+        PXQA_UP_CASE(GGML_TYPE_PXQ4HQ, pxqa_p4hq);
+        PXQA_UP_CASE(GGML_TYPE_PXQ6, pxqa_p6);
+        default: GGML_ABORT("not a PXQ tensor");
+    }
+#undef PXQA_UP_CASE
+    CUDA_CHECK(cudaGetLastError());
+}
+
+template <class WPOL, bool HAS_IDS>
+static void pxqa_mmvf_launch_up_policy(pxqa_mmvf_args a, const ggml_tensor * gate_tensor, cudaStream_t stream) {
+    const dim3 grid((a.rows + 63)/64, a.channels, a.tokens*a.samples);
+    if (!gate_tensor) {
+        pxqa_mmvf_panel<WPOL,WPOL,HAS_IDS,false><<<grid,256,0,stream>>>(a);
+        return;
+    }
+#define PXQAF_GATE(T,P) case T: pxqa_mmvf_panel<WPOL,P,HAS_IDS,true><<<grid,256,0,stream>>>(a); break
+    switch (gate_tensor->type) {
+        PXQAF_GATE(GGML_TYPE_PXQ1,pxqa_p1); PXQAF_GATE(GGML_TYPE_PXQ2,pxqa_p2);
+        PXQAF_GATE(GGML_TYPE_PXQ3,pxqa_p3); PXQAF_GATE(GGML_TYPE_PXQ4,pxqa_p4);
+        PXQAF_GATE(GGML_TYPE_PXQ4HQ,pxqa_p4hq); PXQAF_GATE(GGML_TYPE_PXQ6,pxqa_p6);
+        default: GGML_ABORT("bad PXQ gate type");
+    }
+#undef PXQAF_GATE
+}
+
+void ggml_cuda_pxq_mmvf_launch(const ggml_tensor * src0,const ggml_tensor * src1,const ggml_tensor * ids,
+        ggml_tensor * dst,const ggml_cuda_mm_fusion_args_host * fusion,cudaStream_t stream){
+    GGML_ASSERT(ggml_cuda_pxq_layout_supported(src0)&&src1->type==GGML_TYPE_F32&&dst->type==GGML_TYPE_F32);
+    const ggml_tensor *gate=fusion?fusion->gate:nullptr;
+    if(fusion){GGML_ASSERT(gate&&!fusion->x_bias&&!fusion->gate_bias&&!fusion->x_scale&&!fusion->gate_scale);GGML_ASSERT(ggml_cuda_pxq_layout_supported(gate));}
+    pxqa_mmvf_args a{
+        (const uint8_t*)src0->data,gate?(const uint8_t*)gate->data:nullptr,(const float*)src1->data,
+        ids?(const int32_t*)ids->data:nullptr,(float*)dst->data,
+        (uint32_t)src0->ne[0],(uint32_t)src0->ne[1],ids?(uint32_t)dst->ne[2]:(uint32_t)dst->ne[1],
+        ids?(uint32_t)src1->ne[1]:(uint32_t)src1->ne[2],ids?(uint32_t)dst->ne[1]:(uint32_t)dst->ne[2],
+        (uint32_t)src0->ne[2],(uint32_t)src0->ne[3],(uint32_t)dst->ne[3],
+        src0->nb[2],src0->nb[3],gate?gate->nb[2]:0,gate?gate->nb[3]:0,
+        (uint32_t)(src1->nb[1]/sizeof(float)),(uint32_t)(src1->nb[2]/sizeof(float)),(uint32_t)(src1->nb[3]/sizeof(float)),
+        (uint32_t)(dst->nb[1]/sizeof(float)),(uint32_t)(dst->nb[2]/sizeof(float)),(uint32_t)(dst->nb[3]/sizeof(float)),
+        ids?(uint32_t)(ids->nb[1]/sizeof(int32_t)):0,
+        fusion?(int)fusion->glu_op:(int)GGML_GLU_OP_SWIGLU,fusion?fusion->glu_limit:0.f};
+#define PXQAF_UP(T,P) case T: if(ids)pxqa_mmvf_launch_up_policy<P,true>(a,gate,stream);else pxqa_mmvf_launch_up_policy<P,false>(a,gate,stream);break
+    switch(src0->type){
+        PXQAF_UP(GGML_TYPE_PXQ1,pxqa_p1);PXQAF_UP(GGML_TYPE_PXQ2,pxqa_p2);PXQAF_UP(GGML_TYPE_PXQ3,pxqa_p3);
+        PXQAF_UP(GGML_TYPE_PXQ4,pxqa_p4);PXQAF_UP(GGML_TYPE_PXQ4HQ,pxqa_p4hq);PXQAF_UP(GGML_TYPE_PXQ6,pxqa_p6);
+        default: GGML_ABORT("bad PXQ type");
+    }
+#undef PXQAF_UP
+    CUDA_CHECK(cudaGetLastError());
+}
+
+
 
 #include "pxq4-port.cuh"
 #include "pxq4-mmvf.cuh"
 #include "pxq4-wmma.cuh"
+#include "pxq-all-wmma.cuh"
 
 bool ggml_cuda_pxq4_prefill_supported(const ggml_tensor * dst, int cc) {
     const ggml_tensor * w=dst->src[0], *x=dst->src[1], *ids=dst->src[2];
@@ -274,4 +445,95 @@ void ggml_cuda_pxq4_prefill(ggml_backend_cuda_context & ctx, ggml_tensor * dst) 
         (const uint8_t*)w->data,(const char*)x->data,(float*)dst->data,
         map.get(),tiles.get(),ntiles.get(),w->ne[0],w->ne[1],T,U,x->ne[1],w->nb[2],x->nb[1],x->nb[2],dst->nb[1],dst->nb[2]);
     CUDA_CHECK(cudaGetLastError());
+}
+
+
+bool ggml_cuda_pxq_prefill_supported(const ggml_tensor * dst, int cc) {
+    const ggml_tensor * w=dst->src[0], *x=dst->src[1], *ids=dst->src[2];
+    if (!w || !ggml_cuda_is_pxq_type(w->type)) return false;
+    if (w->type == GGML_TYPE_PXQ4) return ggml_cuda_pxq4_prefill_supported(dst,cc);
+    const char * all=std::getenv("GGML_CUDA_PXQ_NATIVE");
+    if (all && std::atoi(all)==0) return false;
+    const char * e=std::getenv("GGML_CUDA_PXQ_PREFILL");
+    return (!e || std::atoi(e)!=0) && cc==GGML_CUDA_CC_VOLTA && dst->op==GGML_OP_MUL_MAT_ID &&
+        ggml_cuda_pxq_layout_supported(w) && x->type==GGML_TYPE_F32 && dst->type==GGML_TYPE_F32 &&
+        w->ne[0]%32==0 && w->ne[1]%64==0 && w->ne[2]<=512 && w->ne[3]==1 &&
+        ids && ids->type==GGML_TYPE_I32 && ids->nb[0]==4 && x->ne[2]>8 &&
+        x->nb[0]==4 && dst->nb[0]==4 && x->ne[3]==1 && dst->ne[3]==1;
+}
+
+template <class POL>
+static void pxqa_prefill_policy(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * w=dst->src[0], *x=dst->src[1], *ids=dst->src[2];
+    const int E=w->ne[2],T=x->ne[2],U=ids->ne[0];
+    const int max_tiles=(T*U+31)/32+E;
+    ggml_cuda_pool_alloc<int> map(ctx.pool(),(size_t)E*T*U);
+    ggml_cuda_pool_alloc<int> counts(ctx.pool(),E),ntiles(ctx.pool(),1);
+    ggml_cuda_pool_alloc<pxq4_tile> tiles(ctx.pool(),max_tiles);
+    cudaStream_t stream=ctx.stream();
+    pxq4_build_map<<<E,256,0,stream>>>((const int32_t*)ids->data,ids->nb[1]/4,T,U,map.get(),counts.get());
+    int threads=32;while(threads<E)threads*=2;
+    pxq4_build_tiles<<<1,threads,0,stream>>>(counts.get(),E,tiles.get(),ntiles.get());
+    pxqa_grouped_wmma<POL><<<dim3(w->ne[1]/64,max_tiles),256,0,stream>>>(
+        (const uint8_t*)w->data,(const char*)x->data,(float*)dst->data,
+        map.get(),tiles.get(),ntiles.get(),w->ne[0],w->ne[1],T,U,x->ne[1],w->nb[2],x->nb[1],x->nb[2],dst->nb[1],dst->nb[2]);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void ggml_cuda_pxq_prefill(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_type type=dst->src[0]->type;
+    if (type==GGML_TYPE_PXQ4) { ggml_cuda_pxq4_prefill(ctx,dst); return; }
+    GGML_ASSERT(ggml_cuda_pxq_prefill_supported(dst,ggml_cuda_info().devices[ctx.device].cc));
+    switch(type) {
+        case GGML_TYPE_PXQ1: pxqa_prefill_policy<pxqa_p1>(ctx,dst); break;
+        case GGML_TYPE_PXQ2: pxqa_prefill_policy<pxqa_p2>(ctx,dst); break;
+        case GGML_TYPE_PXQ3: pxqa_prefill_policy<pxqa_p3>(ctx,dst); break;
+        case GGML_TYPE_PXQ4HQ: pxqa_prefill_policy<pxqa_p4hq>(ctx,dst); break;
+        case GGML_TYPE_PXQ6: pxqa_prefill_policy<pxqa_p6>(ctx,dst); break;
+        default: GGML_ABORT("bad PXQ prefill type");
+    }
+}
+
+
+bool ggml_cuda_pxq_dense_prefill_supported(const ggml_tensor * dst, int cc) {
+    const ggml_tensor * w=dst->src[0], *x=dst->src[1];
+    if (!w || !ggml_cuda_is_pxq_type(w->type)) return false;
+    const char * all=std::getenv("GGML_CUDA_PXQ_NATIVE");
+    if (all && std::atoi(all)==0) return false;
+    if (w->type==GGML_TYPE_PXQ4) {
+        const char * e=std::getenv("GGML_CUDA_PXQ4_NATIVE");
+        if (e && std::atoi(e)==0) return false;
+    }
+    const char * e=std::getenv("GGML_CUDA_PXQ_DENSE_PREFILL");
+    // The generic WMMA prototype is a useful oracle/experiment, but on V100 the coalesced
+    // exact dequant + cuBLAS path is substantially faster for dense prefill. Keep it opt-in.
+    return (e && std::atoi(e)!=0) && cc==GGML_CUDA_CC_VOLTA && dst->op==GGML_OP_MUL_MAT &&
+        ggml_cuda_pxq_layout_supported(w) && x->type==GGML_TYPE_F32 && dst->type==GGML_TYPE_F32 &&
+        w->ne[0]%32==0 && w->ne[1]%64==0 && w->ne[2]==1 && w->ne[3]==1 &&
+        x->ne[1]>8 && x->ne[2]==1 && x->ne[3]==1 && dst->ne[2]==1 && dst->ne[3]==1 &&
+        x->nb[0]==sizeof(float) && dst->nb[0]==sizeof(float);
+}
+
+template<class POL>
+static void pxqa_dense_prefill_policy(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * w=dst->src[0], *x=dst->src[1];
+    const int K=(int)w->ne[0], M=(int)w->ne[1], N=(int)x->ne[1];
+    dim3 grid((unsigned)(M/64),(unsigned)((N+31)/32),1);
+    pxqa_dense_wmma<POL><<<grid,256,0,ctx.stream()>>>(
+        (const uint8_t *)w->data,(const char *)x->data,(float *)dst->data,
+        K,M,N,x->nb[1],dst->nb[1]);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void ggml_cuda_pxq_dense_prefill(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    GGML_ASSERT(ggml_cuda_pxq_dense_prefill_supported(dst,ggml_cuda_info().devices[ctx.device].cc));
+    switch(dst->src[0]->type) {
+        case GGML_TYPE_PXQ1: pxqa_dense_prefill_policy<pxqa_p1>(ctx,dst); break;
+        case GGML_TYPE_PXQ2: pxqa_dense_prefill_policy<pxqa_p2>(ctx,dst); break;
+        case GGML_TYPE_PXQ3: pxqa_dense_prefill_policy<pxqa_p3>(ctx,dst); break;
+        case GGML_TYPE_PXQ4: pxqa_dense_prefill_policy<pxqa_p4>(ctx,dst); break;
+        case GGML_TYPE_PXQ4HQ: pxqa_dense_prefill_policy<pxqa_p4hq>(ctx,dst); break;
+        case GGML_TYPE_PXQ6: pxqa_dense_prefill_policy<pxqa_p6>(ctx,dst); break;
+        default: GGML_ABORT("bad PXQ dense prefill type");
+    }
 }
