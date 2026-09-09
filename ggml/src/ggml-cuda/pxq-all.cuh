@@ -94,6 +94,36 @@ static __device__ __forceinline__ size_t pxqa_panel_stride(int kslabs) {
     return POL::HDR + (size_t)kslabs*POL::SLAB;
 }
 
+template <class POL>
+static __device__ __forceinline__ float2 pxqa_dequant_pair(const uint32_t * q, int b, const float * book) {
+    if constexpr (POL::TYPE == GGML_TYPE_PXQ1) {
+        const uint32_t w = q[0];
+        return make_float2(book[(w >> (2*b)) & 1], book[(w >> (2*b + 1)) & 1]);
+    } else if constexpr (POL::TYPE == GGML_TYPE_PXQ2) {
+        const uint32_t w = q[b >> 3];
+        const int sh = 2*((2*b) & 15);
+        return make_float2(book[(w >> sh) & 3], book[(w >> (sh + 2)) & 3]);
+    } else if constexpr (POL::TYPE == GGML_TYPE_PXQ3) {
+        const int h = b >> 3;
+        const int j0 = (2*b) & 15;
+        const uint32_t lo = q[h];
+        const uint32_t hi = q[2] >> (16*h);
+        const int c0 = (int)((lo >> (2*j0)) & 3) | (int)(((hi >> j0) & 1) << 2);
+        const int c1 = (int)((lo >> (2*j0 + 2)) & 3) | (int)(((hi >> (j0 + 1)) & 1) << 2);
+        return make_float2(book[c0], book[c1]);
+    } else if constexpr (POL::TYPE == GGML_TYPE_PXQ4 || POL::TYPE == GGML_TYPE_PXQ4HQ) {
+        const int byte = (q[b >> 2] >> (8*(b & 3))) & 0xff;
+        return make_float2(book[byte & 0xf], book[byte >> 4]);
+    } else {
+        static_assert(POL::TYPE == GGML_TYPE_PXQ6, "unexpected PXQ policy");
+        const int byte = (q[b >> 2] >> (8*(b & 3))) & 0xff;
+        const uint32_t hi = q[4];
+        const int c0 = (byte & 0xf) | (int)(((hi >> (2*b)) & 1) << 4);
+        const int c1 = (byte >> 4) | (int)(((hi >> (2*b + 1)) & 1) << 4);
+        return make_float2(book[c0], book[c1]);
+    }
+}
+
 template <class POL, typename dst_t>
 static __global__ void pxqa_dequant_matrix_kernel(
         const uint8_t * __restrict__ src, dst_t * __restrict__ dst,
@@ -122,17 +152,46 @@ static __global__ void pxqa_dequant_matrix_kernel(
     const uint8_t * q = slab + POL::CODE_OFF + (size_t)row_in_panel*POL::CODE_BYTES;
     const float anchor = __half2float(((const half *)panel)[row_in_panel]);
 
+    // Keep packed codes and the small set of effective row scales in registers. The original
+    // oracle-style loop reloaded bitfields/scales for every one of the 32 outputs; that is
+    // mathematically simple but instruction-heavy on Turing. Pair decode preserves the same
+    // (anchor * subscale) * book arithmetic while cutting repeated global loads and integer work.
+    uint32_t qr[5] = {0, 0, 0, 0, 0};
+    if constexpr (POL::TYPE == GGML_TYPE_PXQ1) {
+        qr[0] = *(const uint32_t *)q;
+    } else if constexpr (POL::TYPE == GGML_TYPE_PXQ2) {
+        *(uint2 *)qr = *(const uint2 *)q;
+    } else if constexpr (POL::TYPE == GGML_TYPE_PXQ3) {
+        const uint32_t * qs = (const uint32_t *)q;
+        qr[0] = qs[0]; qr[1] = qs[1]; qr[2] = qs[2];
+    } else if constexpr (POL::TYPE == GGML_TYPE_PXQ4 || POL::TYPE == GGML_TYPE_PXQ4HQ) {
+        *(uint4 *)qr = *(const uint4 *)q;
+    } else {
+        static_assert(POL::TYPE == GGML_TYPE_PXQ6, "unexpected PXQ policy");
+        const uint32_t * qs = (const uint32_t *)q;
+        qr[0] = qs[0]; qr[1] = qs[1]; qr[2] = qs[2]; qr[3] = qs[3]; qr[4] = qs[4];
+    }
+
+    float eff[4];
+    if constexpr (POL::HQ) {
+        const uint8_t sb0 = slab[2*row_in_panel];
+        const uint8_t sb1 = slab[2*row_in_panel + 1];
+        eff[0] = anchor * subs[sb0 & 0xf];
+        eff[1] = anchor * subs[sb0 >> 4];
+        eff[2] = anchor * subs[sb1 & 0xf];
+        eff[3] = anchor * subs[sb1 >> 4];
+    } else {
+        const uint8_t sb = slab[row_in_panel];
+        eff[0] = anchor * subs[sb & 0xf];
+        eff[1] = anchor * subs[sb >> 4];
+    }
+
 #pragma unroll
-    for (int j = 0; j < POL::QK; ++j) {
-        int si;
-        if constexpr (POL::HQ) {
-            const uint8_t sb = slab[2*row_in_panel + (j >= 16)];
-            si = ((j & 15) >= 8) ? (sb >> 4) : (sb & 0xf);
-        } else {
-            const uint8_t sb = slab[row_in_panel];
-            si = j >= 16 ? (sb >> 4) : (sb & 0xf);
-        }
-        tile[row_in_panel][j] = ggml_cuda_cast<dst_t>(anchor * subs[si] * book[POL::code(q, j)]);
+    for (int b = 0; b < 16; ++b) {
+        const float e = eff[POL::HQ ? (b >> 2) : (b >> 3)];
+        const float2 v = pxqa_dequant_pair<POL>(qr, b, book);
+        tile[row_in_panel][2*b]     = ggml_cuda_cast<dst_t>(e * v.x);
+        tile[row_in_panel][2*b + 1] = ggml_cuda_cast<dst_t>(e * v.y);
     }
     __syncthreads();
 

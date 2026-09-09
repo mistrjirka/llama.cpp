@@ -139,8 +139,81 @@ static __global__ void __launch_bounds__(CUDA_CONCAT_BLOCK_SIZE)
     }
 }
 
+// Fast dim-0 concat when src1 is a logical transpose: src1[i0,i1] is physically
+// contiguous in i1, while dst is contiguous in i0. The generic non-contiguous kernel
+// assigns adjacent threads to i0 and therefore turns every warp load into a large-stride
+// gather. A classic 32x32 shared-memory transpose coalesces both sides.
+template <typename T, int TILE = 32, int BLOCK_ROWS = 8>
+static __global__ void __launch_bounds__(TILE * BLOCK_ROWS) concat_dim0_transposed_src1(
+        const T * src0, const T * src1, T * dst,
+        int ne00, int ne10, int ne1, int ne0) {
+    __shared__ T tile[TILE][TILE + 1];
+
+    const int src_i1 = blockIdx.x * TILE + threadIdx.x;
+    const int src_i0 = blockIdx.y * TILE + threadIdx.y;
+
+#pragma unroll
+    for (int j = 0; j < TILE; j += BLOCK_ROWS) {
+        if (src_i1 < ne1 && src_i0 + j < ne10) {
+            tile[threadIdx.y + j][threadIdx.x] = src1[(int64_t)(src_i0 + j) * ne1 + src_i1];
+        }
+    }
+
+    // src0 is tiny in the recurrent-state case. Let the first src1 tile column for each
+    // 32-row output slab copy the prefix while the same CTA is already resident.
+    if (blockIdx.y == 0) {
+        const int tid = threadIdx.y * TILE + threadIdx.x;
+        const int n_prefix = TILE * ne00;
+        if (tid < n_prefix) {
+            const int r = blockIdx.x * TILE + tid / ne00;
+            const int c = tid % ne00;
+            if (r < ne1) {
+                dst[(int64_t)r * ne0 + c] = src0[(int64_t)r * ne00 + c];
+            }
+        }
+    }
+
+    __syncthreads();
+
+    const int dst_i0 = blockIdx.y * TILE + threadIdx.x;
+    const int dst_i1 = blockIdx.x * TILE + threadIdx.y;
+#pragma unroll
+    for (int j = 0; j < TILE; j += BLOCK_ROWS) {
+        if (dst_i0 < ne10 && dst_i1 + j < ne1) {
+            dst[(int64_t)(dst_i1 + j) * ne0 + ne00 + dst_i0] = tile[threadIdx.x][threadIdx.y + j];
+        }
+    }
+}
+
+template <typename T>
+static bool concat_try_transposed_src1(const ggml_tensor * src0, const ggml_tensor * src1,
+                                       ggml_tensor * dst, int dim, cudaStream_t stream) {
+    if (dim != 0 || src0->ne[2] != 1 || src0->ne[3] != 1 ||
+            src1->ne[2] != 1 || src1->ne[3] != 1 || dst->ne[2] != 1 || dst->ne[3] != 1 ||
+            src0->ne[1] != src1->ne[1] || dst->ne[1] != src0->ne[1] ||
+            dst->ne[0] != src0->ne[0] + src1->ne[0] ||
+            !ggml_is_contiguous(src0) || !ggml_is_contiguous(dst) ||
+            src1->nb[1] != sizeof(T) || src1->nb[0] != (size_t)src1->ne[1] * sizeof(T) ||
+            src0->ne[0] <= 0 || src0->ne[0] > 8 ||
+            src0->ne[0] > INT_MAX || src1->ne[0] > INT_MAX || src1->ne[1] > INT_MAX || dst->ne[0] > INT_MAX) {
+        return false;
+    }
+
+    constexpr int TILE = 32;
+    constexpr int BLOCK_ROWS = 8;
+    const dim3 block(TILE, BLOCK_ROWS);
+    const dim3 grid((src1->ne[1] + TILE - 1) / TILE, (src1->ne[0] + TILE - 1) / TILE);
+    concat_dim0_transposed_src1<T, TILE, BLOCK_ROWS><<<grid, block, 0, stream>>>(
+        (const T *)src0->data, (const T *)src1->data, (T *)dst->data,
+        (int)src0->ne[0], (int)src1->ne[0], (int)src1->ne[1], (int)dst->ne[0]);
+    return true;
+}
+
 template <typename T>
 static void concat_cuda(const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, int dim, cudaStream_t stream) {
+    if (concat_try_transposed_src1<T>(src0, src1, dst, dim, stream)) {
+        return;
+    }
     if (dim != 3 && ggml_is_contiguous_to_3(src0) && ggml_is_contiguous_to_3(src1)) {
         const T * src0_d = (const T *) src0->data;
         const T * src1_d = (const T *) src1->data;

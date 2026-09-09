@@ -2642,6 +2642,7 @@ static bool ggml_cuda_graph_check_compability(ggml_cgraph * cgraph) {
     for (int i = 0; i < cgraph->n_nodes; i++) {
         ggml_tensor * node = cgraph->nodes[i];
 
+
         if (ggml_cuda_is_view_or_noop(node)) {
             continue;
         }
@@ -3518,6 +3519,23 @@ static bool ggml_cuda_can_fuse(const struct ggml_cgraph *                cgraph,
     return false;
 }
 
+// A fused elementwise/rowwise kernel may safely replace a kernel boundary when an output
+// exactly aliases an input: every block reads/writes the same row and index. A shifted overlap
+// is not safe because a block can overwrite data another block has not read yet.
+static bool ggml_cuda_no_shifted_overlap(const ggml_tensor * dst, const ggml_tensor * src) {
+    if (!dst->data || !src->data || dst->buffer != src->buffer) {
+        return true;
+    }
+    if (dst->data == src->data) {
+        return true;
+    }
+    const char * d0 = (const char *) dst->data;
+    const char * d1 = d0 + ggml_nbytes(dst);
+    const char * s0 = (const char *) src->data;
+    const char * s1 = s0 + ggml_nbytes(src);
+    return d1 <= s0 || s1 <= d0;
+}
+
 // try and fuse nodes and return the number of nodes to skip
 static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
 
@@ -3706,6 +3724,36 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         if (types_ok && shape_ok && dim_ok && contig_ok && x_in_add == x) {
             ggml_cuda_op_snake_fused(*cuda_ctx, x, a, inv_b, add);
             return 4;
+        }
+    }
+
+    // Residual ADD -> RMS_NORM -> MUL(weight). Preserve the residual ADD as a
+    // subgraph output while eliding the standalone RMS/MUL kernels. This removes a full
+    // read/write pass over the residual stream, which is material on Turing prefill.
+    if (i + 2 < cgraph->n_nodes && node->op == GGML_OP_ADD &&
+            cgraph->nodes[i + 1]->op == GGML_OP_RMS_NORM &&
+            cgraph->nodes[i + 2]->op == GGML_OP_MUL) {
+        ggml_tensor * rms = cgraph->nodes[i + 1];
+        ggml_tensor * mul = cgraph->nodes[i + 2];
+        const ggml_tensor * weight = mul->src[0] == rms ? mul->src[1] : (mul->src[1] == rms ? mul->src[0] : nullptr);
+        const ggml_op ops[] = { GGML_OP_ADD, GGML_OP_RMS_NORM, GGML_OP_MUL };
+        const int out_nodes[] = { i, i + 2 };
+        if (rms->src[0] == node && weight != nullptr &&
+                node->type == GGML_TYPE_F32 && node->src[0]->type == GGML_TYPE_F32 && node->src[1]->type == GGML_TYPE_F32 &&
+                rms->type == GGML_TYPE_F32 && mul->type == GGML_TYPE_F32 && weight->type == GGML_TYPE_F32 &&
+                ggml_are_same_shape(node->src[0], node->src[1]) && ggml_are_same_shape(rms, node) && ggml_are_same_shape(mul, rms) &&
+                ggml_is_contiguous(node->src[0]) && ggml_is_contiguous(node->src[1]) && ggml_is_contiguous(node) &&
+                ggml_is_contiguous(weight) && ggml_nrows(weight) == 1 && weight->ne[0] == node->ne[0] &&
+                ggml_can_fuse_subgraph(cgraph, i, 3, ops, out_nodes, 2) &&
+                ggml_cuda_no_shifted_overlap(node, node->src[0]) &&
+                ggml_cuda_no_shifted_overlap(node, node->src[1]) &&
+                ggml_cuda_no_shifted_overlap(node, weight) &&
+                ggml_cuda_no_shifted_overlap(mul, node->src[0]) &&
+                ggml_cuda_no_shifted_overlap(mul, node->src[1]) &&
+                ggml_cuda_no_shifted_overlap(mul, weight) &&
+                (node->data != mul->data || ggml_nbytes(node) == 0)) {
+            ggml_cuda_op_add_rms_norm_fused(*cuda_ctx, node, rms, mul);
+            return 2;
         }
     }
 

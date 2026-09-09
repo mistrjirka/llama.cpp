@@ -123,6 +123,83 @@ static __global__ void ssm_conv_long_token_f32(const float * __restrict__ src0, 
     }
 }
 
+// Delta-net/Qwen prompt fast path: consume the pre-concat state and transposed token
+// matrix directly. This avoids the strided channel-major reads imposed by the materialized
+// [state | tokens] concat and makes token loads coalesced across channel threads.
+template <bool apply_silu, int split_n_t = 32>
+static __global__ void ssm_conv_split_nc4_f32(
+        const float * state, const float * tokens, const float * weight, const float * bias,
+        float * dst, int nr, int n_t, int state_s1, int token_s0, int weight_s1, int dst_s1) {
+    const int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= nr) {
+        return;
+    }
+    const int t0 = blockIdx.y * split_n_t;
+    if (t0 >= n_t) {
+        return;
+    }
+
+    const float * s = state + (int64_t) row * state_s1;
+    const float * w = weight + (int64_t) row * weight_s1;
+    const float w0 = w[0], w1 = w[1], w2 = w[2], w3 = w[3];
+    const float b = bias != nullptr ? bias[row] : 0.0f;
+
+#pragma unroll 4
+    for (int it = 0; it < split_n_t; ++it) {
+        const int t = t0 + it;
+        if (t >= n_t) {
+            break;
+        }
+        const int i0 = t;
+        const int i1 = t + 1;
+        const int i2 = t + 2;
+        const int i3 = t + 3;
+        const float x0 = i0 < 3 ? s[i0] : tokens[(int64_t)(i0 - 3) * token_s0 + row];
+        const float x1 = i1 < 3 ? s[i1] : tokens[(int64_t)(i1 - 3) * token_s0 + row];
+        const float x2 = i2 < 3 ? s[i2] : tokens[(int64_t)(i2 - 3) * token_s0 + row];
+        const float x3 = i3 < 3 ? s[i3] : tokens[(int64_t)(i3 - 3) * token_s0 + row];
+        float sumf = x0*w0 + x1*w1 + x2*w2 + x3*w3;
+        sumf += b;
+        dst[(int64_t)t * dst_s1 + row] = apply_silu ? ggml_cuda_op_silu_single(sumf) : sumf;
+    }
+}
+
+template <bool apply_silu>
+static bool ssm_conv_try_split_nc4(
+        const ggml_tensor * concat, const ggml_tensor * weight, const float * bias,
+        ggml_tensor * out, cudaStream_t stream) {
+    if (concat->op != GGML_OP_CONCAT || ((const int32_t *)concat->op_params)[0] != 0 ||
+            concat->src[0] == nullptr || concat->src[1] == nullptr || weight->ne[0] != 4 ||
+            out->ne[2] != 1 || out->ne[3] != 1) {
+        return false;
+    }
+    const ggml_tensor * state  = concat->src[0];
+    const ggml_tensor * tokens = concat->src[1];
+    const int64_t nr = out->ne[0];
+    const int64_t nt = out->ne[1];
+    if (state->type != GGML_TYPE_F32 || tokens->type != GGML_TYPE_F32 || weight->type != GGML_TYPE_F32 ||
+            state->ne[0] != 3 || state->ne[1] != nr || state->ne[2] != 1 || state->ne[3] != 1 ||
+            tokens->ne[0] != nt || tokens->ne[1] != nr || tokens->ne[2] != 1 || tokens->ne[3] != 1 ||
+            weight->ne[1] != nr ||
+            state->nb[0] != sizeof(float) || state->nb[1] != 3*sizeof(float) ||
+            tokens->nb[1] != sizeof(float) || tokens->nb[0] != (size_t)nr*sizeof(float) ||
+            weight->nb[0] != sizeof(float) || weight->nb[1] != 4*sizeof(float) ||
+            out->nb[0] != sizeof(float) || out->nb[1] != (size_t)nr*sizeof(float) ||
+            nr > INT_MAX || nt > INT_MAX) {
+        return false;
+    }
+
+    constexpr int threads = 128;
+    constexpr int split = 32;
+    const dim3 blocks((nr + threads - 1) / threads, (nt + split - 1) / split, 1);
+    ssm_conv_split_nc4_f32<apply_silu, split><<<blocks, threads, 0, stream>>>(
+        (const float *)state->data, (const float *)tokens->data, (const float *)weight->data, bias,
+        (float *)out->data, (int)nr, (int)nt,
+        (int)(state->nb[1] / sizeof(float)), (int)(tokens->nb[0] / sizeof(float)),
+        (int)(weight->nb[1] / sizeof(float)), (int)(out->nb[1] / sizeof(float)));
+    return true;
+}
+
 template <bool apply_silu>
 static void ssm_conv_f32_cuda(const float * src0, const float * src1, const float * bias, const int src0_nb0, const int src0_nb1,
                               const int src0_nb2, const int src1_nb1, float * dst, const int dst_nb0, const int dst_nb1,
@@ -197,9 +274,15 @@ void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, g
     }
 
     if (fuse_silu) {
+        if (ssm_conv_try_split_nc4<true>(src0, src1, bias_d, const_cast<ggml_tensor *>(out), stream)) {
+            return;
+        }
         ssm_conv_f32_cuda<true>(src0_d, src1_d, bias_d, src0->nb[0], src0->nb[1], src0->nb[2], src1->nb[1], dst_d, out->nb[0], out->nb[1],
                           out->nb[2], nc, nr, n_t, n_s, stream);
     } else {
+        if (ssm_conv_try_split_nc4<false>(src0, src1, bias_d, const_cast<ggml_tensor *>(out), stream)) {
+            return;
+        }
         ssm_conv_f32_cuda<false>(src0_d, src1_d, bias_d, src0->nb[0], src0->nb[1], src0->nb[2], src1->nb[1], dst_d, out->nb[0], out->nb[1],
                           out->nb[2], nc, nr, n_t, n_s, stream);
     }
