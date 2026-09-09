@@ -1,11 +1,12 @@
 # PXQ family on v100-optimized: native CUDA port and benchmark
 
-Experimental branch: `exp/pxq4-v100`, based on `4154e79f7`.
-Implementation/measurements: 2026-09-08. Not merged into `v100-optimized`.
+Status: PXQ CUDA runtime support is integrated into `v100-optimized`; this directory retains the implementation notes, validation harnesses and benchmark history. Original implementation work began on `exp/pxq4-v100` from `4154e79f7`.
 
 ## PXQ family expansion (2026-09-09)
 
 The CUDA runtime now supports **PXQ1, PXQ2, PXQ3, PXQ4, PXQ4-HQ and PXQ6**, plus mixed per-tensor **PXQU/PXQ_UNIVERSAL** models. This includes panel-aware loading/GGUF reading, exact dequant fallback, native decode, mixed gate/up fusion and V100 grouped MoE prefill. PXQ quantization/export remains in the PXA quantizer. See [`results/PXQ-FAMILY-0909.md`](results/PXQ-FAMILY-0909.md) for the all-tier validation and performance table.
+
+For RTX 2080 Ti / SM75 prompt processing, the latest exact dense-SwiGLU fusion and P1k-P16k matched-size results are in [`results/TURING-PREFILL-1K-16K-0909.md`](results/TURING-PREFILL-1K-16K-0909.md).
 
 ## Validation update
 
@@ -171,9 +172,9 @@ measured 113.06 TG/s on the short benchmark. Final GPU kernel tests also passed.
 Validated end-to-end model: Fusion4 PXQ4, fully GPU-resident on **one V100**.
 This is not yet a production-complete quantization ecosystem port. CPU execution of the PXQ
 slab family is explicitly declined rather than being falsely routed through stock row-dot callbacks.
-CUDA runtime support now covers PXQ1/2/3/4/4-HQ/6 and mixed PXQU on validated sm_70 and sm_75 CUDA paths. Remaining ecosystem work
+CUDA runtime support now covers PXQ1/2/3/4/4-HQ/6 and mixed PXQU on validated sm_70 and sm_75 CUDA paths. Mixed V100 + RTX **layer split** is validated; PXQ **tensor split** still hits a separate meta-buffer packing limitation and is not advertised as supported yet. Remaining ecosystem work
 includes PXQ quantization/export inside this fork, CPU fallback, arbitrary unaligned panel-slicing
-views, embedding GET_ROWS, distributed execution, and a broad downstream task-quality suite.
+views, embedding GET_ROWS, full PXQ tensor-parallel support, and a broad downstream task-quality suite.
 Dense broadcasts have independent fallback/native coverage; MTP still needs end-to-end validation.
 FP32 cuBLAS fallback is tested; BF16 overrides are not validated. Routed prefill handles repeated
 expert IDs and mixed per-tensor PXQ tiers.

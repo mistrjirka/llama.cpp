@@ -1790,6 +1790,90 @@ static void ggml_cuda_mul_mat_cublas(ggml_backend_cuda_context & ctx, const ggml
     }
 }
 
+
+static __global__ void ggml_cuda_turing_pxq_swiglu_f16_f32_kernel(
+        const half * gate, const half * up, float * dst, int64_t n) {
+    ggml_cuda_pdl_lc();
+    const int64_t i = int64_t(blockDim.x)*blockIdx.x + threadIdx.x;
+    if (i >= n) return;
+    ggml_cuda_pdl_sync();
+    dst[i] = ggml_cuda_op_silu_single(__half2float(gate[i])) * __half2float(up[i]);
+}
+
+static void ggml_cuda_turing_pxq_swiglu_f16_f32(
+        const half * gate, const half * up, float * dst, int64_t n, cudaStream_t stream) {
+    const int64_t num_blocks = (n + CUDA_GLU_BLOCK_SIZE - 1) / CUDA_GLU_BLOCK_SIZE;
+    const ggml_cuda_kernel_launch_params launch_params((dim3) num_blocks, CUDA_GLU_BLOCK_SIZE, 0, stream);
+    ggml_cuda_kernel_launch(ggml_cuda_turing_pxq_swiglu_f16_f32_kernel, launch_params, gate, up, dst, n);
+}
+
+static bool ggml_cuda_turing_pxq_swiglu_fusion_enabled() {
+    // Exact on Turing: the ordinary F16 cuBLAS path already writes gate/up through
+    // F16 temporaries before converting them to F32.  Fuse that redundant round trip
+    // with SwiGLU; set GGML_CUDA_TURING_PXQ_SWIGLU_FUSION=0 to disable.
+    const char * e = getenv("GGML_CUDA_TURING_PXQ_SWIGLU_FUSION");
+    return e == nullptr || atoi(e) != 0;
+}
+
+static bool ggml_cuda_turing_pxq_swiglu_fusion_supported(
+        ggml_backend_cuda_context & ctx, const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * glu) {
+    if (!ggml_cuda_turing_pxq_swiglu_fusion_enabled()) return false;
+    if (ggml_cuda_info().devices[ctx.device].cc != GGML_CUDA_CC_TURING) return false;
+    if (ctx.curr_stream_no != 0 || !ctx.stream_context().concurrent_events.empty()) return false;
+    if (!gate || !up || !glu || gate->op != GGML_OP_MUL_MAT || up->op != GGML_OP_MUL_MAT || glu->op != GGML_OP_GLU) return false;
+    if (ggml_get_glu_op(glu) != GGML_GLU_OP_SWIGLU || ggml_get_op_params_i32(glu, 1) != 0) return false;
+    const ggml_tensor * wg = gate->src[0];
+    const ggml_tensor * wu = up->src[0];
+    const ggml_tensor * xg = gate->src[1];
+    const ggml_tensor * xu = up->src[1];
+    if (!wg || !wu || !xg || xu != xg) return false;
+    if (!ggml_cuda_is_pxq_type(wg->type) || !ggml_cuda_is_pxq_type(wu->type)) return false;
+    if (!ggml_cuda_pxq_layout_supported(wg) || !ggml_cuda_pxq_layout_supported(wu)) return false;
+    if (!ggml_are_same_shape(wg, wu) || wg->ne[2] != 1 || wg->ne[3] != 1) return false;
+    if (xg->type != GGML_TYPE_F32 || xg->ne[2] != 1 || xg->ne[3] != 1 || xg->ne[1] < 256) return false;
+    if (gate->type != GGML_TYPE_F32 || up->type != GGML_TYPE_F32 || glu->type != GGML_TYPE_F32) return false;
+    if (!ggml_is_contiguously_allocated(xg) || !ggml_is_contiguous(gate) || !ggml_is_contiguous(up) || !ggml_is_contiguous(glu)) return false;
+    if (wg->ne[0] != xg->ne[0] || gate->ne[0] != wg->ne[1] || up->ne[0] != wu->ne[1] || gate->ne[1] != xg->ne[1]) return false;
+    return true;
+}
+
+static void ggml_cuda_turing_pxq_swiglu_fusion(
+        ggml_backend_cuda_context & ctx, const ggml_tensor * gate, const ggml_tensor * up, ggml_tensor * glu) {
+    const ggml_tensor * wg = gate->src[0];
+    const ggml_tensor * wu = up->src[0];
+    const ggml_tensor * x  = up->src[1];
+    const int64_t K = wu->ne[0];
+    const int64_t M = wu->ne[1];
+    const int64_t N = x->ne[1];
+    GGML_ASSERT(wg->ne[0] == K && wg->ne[1] == M && ggml_nelements(glu) == M*N);
+
+    cudaStream_t stream = ctx.stream();
+    cublasHandle_t h = ctx.cublas_handle();
+    ggml_cuda_pool_alloc<half> xh(ctx.pool(), ggml_nelements(x));
+    ggml_cuda_pool_alloc<half> wh(ctx.pool(), ggml_nelements(wu));
+    ggml_cuda_pool_alloc<half> gh(ctx.pool(), (size_t)M*N);
+    ggml_cuda_pool_alloc<half> uh(ctx.pool(), (size_t)M*N);
+
+    const auto to_f16 = ggml_get_to_fp16_cuda(x->type);
+    GGML_ASSERT(to_f16 != nullptr);
+    to_f16(x->data, xh.get(), ggml_nelements(x), stream);
+
+    using f16_traits = batched_mul_mat_traits<GGML_TYPE_F16>;
+    auto gemm = [&](const ggml_tensor * w, half * out) {
+        ggml_cuda_pxq_dequant_f16(w->type, w->data, wh.get(), ggml_nrows(w), K, stream);
+        CUBLAS_CHECK(cublasGemmEx(h, CUBLAS_OP_T, CUBLAS_OP_N,
+                M, N, K,
+                f16_traits::get_alpha(), wh.get(), f16_traits::data_type, K,
+                                         xh.get(), f16_traits::data_type, K,
+                f16_traits::get_beta(),  out,      f16_traits::data_type, M,
+                f16_traits::compute_type, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    };
+
+    gemm(wg, gh.get());
+    gemm(wu, uh.get());
+    ggml_cuda_turing_pxq_swiglu_f16_f32(gh.get(), uh.get(), (float *) glu->data, M*N, stream);
+}
+
 static bool ggml_cuda_should_fuse_mul_mat(const ggml_tensor * ffn_up,
                                           const ggml_tensor * ffn_gate,
                                           const ggml_tensor * glu,
@@ -4185,6 +4269,14 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
             const ggml_tensor * src0 = up->src[0];
             const ggml_tensor * src1 = up->src[1];
             const ggml_tensor * ids  = up->src[2];
+
+            if (op == GGML_OP_MUL_MAT && ggml_cuda_should_fuse_mul_mat(up, gate, glu) &&
+                    ggml_cuda_turing_pxq_swiglu_fusion_supported(*cuda_ctx, gate, up, glu)) {
+                ggml_cuda_turing_pxq_swiglu_fusion(*cuda_ctx, gate, up, glu);
+                fused_mul_mat_vec = true;
+                fused_node_count  = 3;
+                break;
+            }
 
             if (ggml_cuda_should_fuse_mul_mat_vec_f(up)) {
                 ggml_cuda_mm_fusion_args_host fusion_data{};

@@ -6,6 +6,8 @@ A CUDA performance fork of [`llama.cpp`](https://github.com/ggml-org/llama.cpp) 
 
 **Branch:** `v100-optimized` · **Upstream merged through:** `67672dc5b` · **Latest serving update:** [faster MTP and per-agent pause](#faster-mtp-generation-and-per-agent-pause)
 
+**PXQ CUDA support:** PXQ1/2/3/4/4-HQ/6 and mixed PXQU are supported on the validated SM70/SM75 CUDA paths. On SM75, dense PXQ SwiGLU prompt processing uses an exact default-on fusion for N >= 256; the full 1k-16k validation and matched-size K-quant comparison are in [the Turing PXQ prefill report](benches/pxq4-v100/results/TURING-PREFILL-1K-16K-0909.md). CPU PXQ execution/export is not provided by this fork.
+
 ## Performance vs vanilla llama.cpp
 
 The headline vanilla-vs-fork tables below were **rerun after the current upstream sync**: exact upstream llama.cpp `67672dc5b` versus `v100-optimized` runtime `c886bc606`. At benchmark time the fork contained every upstream commit (**0 behind**) plus 69 fork commits. The same model and common runtime settings are used on both sides of each direct comparison, and mixed V100 + RTX results are not reported as single-GPU numbers. Raw results and reproducible harnesses are in the [current benchmark refresh](benches/readme-current-0908/REPORT.md).
@@ -57,6 +59,7 @@ The long-context RTX investigation also contains isolated 101k-KV attention test
 | **V100 — Qwen3.8-27B** | normal CUDA build, **MMQ off**, MTP `n-max=3`; add `--spec-mtp-defer-prompt` for lower agent-turn TTFT |
 | **V100 — Ornith-1.5-35B-A3B** | normal CUDA build with `GGML_CUDA_VOLTA_FORCE_MMQ=moe` |
 | **RTX 2080 Ti — Qwen3.8-27B** | SM75 build; leave `GGML_CUDA_VOLTA_*` unset; Turing paths are selected automatically |
+| **RTX 2080 Ti — dense PXQ prefill** | SM75 build; prefer `--batch-size 4096 --ubatch-size 4096` when VRAM permits; exact PXQ SwiGLU fusion is default-on (`GGML_CUDA_TURING_PXQ_SWIGLU_FUSION=0` disables it for A/B) |
 | **V100 + RTX 2080 Ti — Qwen3.8 Flash-Next** | q8_0 K/V, `n-cpu-moe=18`, layer split **35:14**; enable the QSA PP raw-q8 stack documented below with tile 16 |
 
 Build for `70`, `75`, or `70;75` for a mixed V100 + RTX 2080 Ti system. The same binary can serve dense Qwen and Ornith: leave `GGML_CUDA_VOLTA_FORCE_MMQ` unset for Qwen and set it to `moe` for Ornith.
@@ -295,6 +298,8 @@ cmake --build build-sm75 -j --target llama-server llama-cli
 ```
 
 Do not set the `GGML_CUDA_VOLTA_*` variables in an SM75 run. The Turing paths are selected automatically from the GPU architecture and tensor geometry. Model placement depends on available VRAM; check `--list-devices` and tune `--gpu-layers`, `--split-mode`, and `--tensor-split` for the model and context length.
+
+For PXQ prompt-heavy workloads on SM75, the validated practical sweet spot is `--batch-size 4096 --ubatch-size 4096` when memory permits. Dense standard-SwiGLU PXQ FFNs use the exact default-on fusion for PXQ1/2/3/4/4-HQ/6; full-vocabulary off/on logits were byte-identical, TG was neutral, and Compute Sanitizer memcheck reported 0 errors / 0 leaks. Layer split across V100 + RTX 2080 Ti is validated. PXQ tensor split still has a separate meta-buffer packing limitation, so use layer split for PXQ mixed-GPU serving for now.
 
 For a mixed V100 + RTX 2080 Ti system, compile with `-DCMAKE_CUDA_ARCHITECTURES='70;75'` and retune layer/tensor placement. Mixed-GPU benchmark notes are kept below; do not infer single-RTX performance from them.
 
@@ -738,6 +743,7 @@ SM75 uses separate geometry-gated paths:
 - the prefill GatedDeltaNet x4 path is enabled for both Volta and Turing;
 - long-K Qwen GQA6 prompt tiles can use the smaller `ncols2=2` dispatch;
 - `GGML_CUDA_TURING_CUBLAS_MIN_BATCH` is an optional threshold for sending large dense Q5_K/Q6_K prompt matmuls through cuBLAS; leave it unset unless it is measured on the target SM75 GPU.
+- dense PXQ standard-SwiGLU prompt pairs use an exact fused F16-temporary path on SM75 for N >= 256; it is enabled by default and can be disabled with `GGML_CUDA_TURING_PXQ_SWIGLU_FUSION=0`.
 
 These controls do not replace the SM70 Volta paths. Single-GPU V100 results, single-GPU RTX operator results, and mixed-GPU end-to-end results are labeled separately in this README.
 
