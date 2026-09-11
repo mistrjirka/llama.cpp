@@ -1246,3 +1246,71 @@ Artifacts:
 - `/models/.bench-ornith-mtp4/best-vs-off-abba-fixed/summary.json`
 - `/models/.bench-ornith-mtp4/best-vs-off-abba-fixed/results.json`
 - `/models/.bench-ornith-mtp4/merge-head-clean/`
+
+### README / graph presentation constraint
+
+For final presentation, keep the README user-facing:
+- update the existing hero benchmark graph when the new four-slot MTP/KV result is settled;
+- do **not** place the detailed four-slot result block directly under the hero graph;
+- keep detailed settings/results in the `Ornith and MoE` / four-active-slot MTP section;
+- keep experimental sweeps, rejected KV formats, memory numbers, restore/stability checks and implementation notes in this file.
+
+### Draft KV precision sweep: first pass and restore-format blocker
+
+Current production four-slot MTP point was held fixed while varying only draft KV type:
+- target: Ornith Q6/Q5, Q8 target K/V
+- Q4 Shisa MTP head with target LM-head reuse
+- MTP1, 14:35 RTX:V100 layer split
+- target batch/ubatch 512/128, draft ubatch64
+- 1.4M physical context, four 400k logical slots
+- four restored 100k histories, 4 concurrent x128 generations
+
+Fresh Q8/Q8 draft-KV baseline (3 retained rounds after warmup):
+- aggregate output: **106.5529 tok/s** (stdev 0.7510)
+- mean per-agent TG: **32.6979 tok/s**
+- acceptance: **710/809 = 87.7627%**
+- RTX memory: **19,802 MiB used / 2,199 MiB free**
+- V100 memory: **31,291 MiB used / 1,204 MiB free**
+
+Initial lower-precision attempts (`q5_1`, `q5_0`, `q4_1`, `q4_0`, `iq4_nl`, plus asymmetric q4/q8) all reached a healthy server but restore returned HTTP 400. This is not evidence that the KV formats themselves fail. Server logs prove the existing `.draft` sidecars were serialized with Q8 KV and reject loading into a differently typed draft cache, e.g.:
+- q5_1: `state_read_data: mismatched key type (7 != 8, layer 40)`
+- q4_0: `state_read_data: mismatched key type (2 != 8, layer 40)`
+- followed by `failed to restore kv cache` / invalid draft slot state.
+
+Therefore the next step is to create format-matched draft sidecars (or intentionally rebuild draft state) while keeping the target 100k `.bin` state identical. Do **not** interpret the first-pass HTTP 400s as a quantized-KV incompatibility.
+
+Files:
+- `benches/gemma4-0911/mtp4_draft_kv_sweep.py`
+- `/models/.bench-ornith-mtp4/draft-kv-sweep/results.json`
+- `/models/.bench-ornith-mtp4/draft-kv-sweep/*.log`
+
+### Head-reuse semantic correction: `ctx_other` is not shared KV
+
+While preparing lower-precision draft-KV states, a correctness issue was found in the target-head reuse integration. `common_speculative_impl_draft_mtp` historically used:
+
+```cpp
+is_mem_shared = llama_get_ctx_other(ctx_dft) == ctx_tgt;
+```
+
+That was valid when the only MTP draft using `ctx_other` was Gemma4 Assistant, whose memory wrapper genuinely shares target KV. Qwen3.5/Qwen3.5-MoE target-head reuse also needs `ctx_other`, but only to borrow the target output norm / LM head; its draft KV remains independent.
+
+Consequence before correction:
+- enabling `LLAMA_MTP_SHARE_TARGET_IO=head` made Qwen/Ornith report `is_mem_shared=true`;
+- MTP prompt catch-up skipped filling independent draft KV for newly appended prompt tokens;
+- the restored 100k Q8 `.draft` sidecar masked most of the error, but the ~38-44 token appended suffix was not treated as intended.
+
+Fix:
+- determine shared-memory MTP semantics from the draft architecture;
+- currently only `gemma4-assistant` sets `is_mem_shared=true`;
+- Qwen3.5/Qwen3.5-MoE with borrowed target head keeps `ctx_other` for read-only target tensors but retains independent KV catch-up and enables the validated cache-only refresh path.
+
+Fresh four-slot check after the fix, existing Q8 draft sidecars, 14:35, target 512/128, draft64, Q4 Shisa, MTP1:
+- warmup: 99.0212 tok/s
+- retained: **107.0296**, **106.1396 tok/s**
+- retained mean: **106.5846 tok/s**
+- sampled acceptance in retained rounds: 89.89% and 86.40%
+
+This reproduces the previous ~106.6 tok/s best-vs-best result while restoring correct Qwen draft-KV semantics.
+
+Artifacts:
+- `/models/.bench-ornith-mtp4/head-share-semantic-fix/`

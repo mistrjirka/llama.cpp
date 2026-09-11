@@ -1439,7 +1439,14 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         llama_set_embeddings_nextn(ctx_tgt, true, /*masked*/ false);
         llama_set_embeddings_nextn(ctx_dft, true, /*masked*/ true);
 
-        is_mem_shared = llama_get_ctx_other(ctx_dft) == ctx_tgt;
+        // ctx_other is also used by Qwen3.5 MTP drafts to borrow the target LM
+        // head. That does not imply shared KV. At present the MTP mode with
+        // genuinely shared target memory is Gemma4 Assistant, so determine
+        // shared-memory semantics from the draft architecture instead of the
+        // auxiliary target-context pointer.
+        char draft_arch[32] = {};
+        llama_model_meta_val_str(llama_get_model(ctx_dft), "general.architecture", draft_arch, sizeof(draft_arch));
+        is_mem_shared = std::strcmp(draft_arch, "gemma4-assistant") == 0;
         chain_heads   = n_mtp_layers > 1 && !is_mem_shared;
 
         const auto enabled = [](const char * name, const char * legacy) {
@@ -1447,8 +1454,6 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             if (!value) value = std::getenv(legacy);
             return !value || std::strcmp(value, "1") == 0;
         };
-        char draft_arch[32] = {};
-        llama_model_meta_val_str(llama_get_model(ctx_dft), "general.architecture", draft_arch, sizeof(draft_arch));
         const bool supported_head = std::strcmp(draft_arch, "qwen35") == 0 ||
                                     std::strcmp(draft_arch, "qwen35moe") == 0;
         cache_only_refresh = supported_head && n_mtp_layers == 1 && !is_mem_shared &&
