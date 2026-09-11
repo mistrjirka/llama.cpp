@@ -826,7 +826,8 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
             const int k0_diff = k0_stop - k0_start;
             constexpr bool use_cp_async = nstages == 1;
             if constexpr (int8_qk) {
-                static_assert(DKQ == 256 && DV == 256 && ncols1 == 16 && ncols2 == 2, "bad int8 QK shape");
+                static_assert(DKQ == 256 && DV == 256 && ncols1*ncols2 == 32 &&
+                    (ncols2 == 2 || ncols2 == 4 || ncols2 == 8), "bad int8 QK shape");
                 static_assert(!use_sparse && nbatch_K2 == DKQ/2, "bad int8 QK staging");
                 flash_attn_ext_q8_packed_load_tile_i8<DKQ, nwarps, nbatch_fa, oob_check>(
                     reinterpret_cast<const char *>(K_h2), reinterpret_cast<int *>(tile_K), stride_K, k_VKQ_0, k_VKQ_sup);
@@ -1497,7 +1498,8 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     // Load Q data into tile_Q, either temporarily or permanently.
     if constexpr (int8_qk) {
 #if defined(TURING_MMA_AVAILABLE)
-        static_assert(DKQ == 256 && DV == 256 && ncols1 == 16 && ncols2 == 2 && Q_in_reg, "bad int8 QK Q geometry");
+        static_assert(DKQ == 256 && DV == 256 && ncols1*ncols2 == 32 &&
+            (ncols2 == 2 || ncols2 == 4 || ncols2 == 8) && Q_in_reg, "bad int8 QK Q geometry");
         constexpr int ints_per_row   = DKQ/sizeof(int);
         constexpr int blocks_per_row = DKQ/QK8_0;
         constexpr int sram_stride_i8 = ints_per_row + blocks_per_row + 4;
@@ -2594,15 +2596,21 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
     fattn_kernel_t fattn_kernel;
     bool use_sparse = false;
 
-    // Keep the D256 INT8 specialization out of all other explicit template instantiations.
-    if constexpr (DKQ == 256 && DV == 256 && ncols1 == 16 && ncols2 == 2) {
+    // D256 long-Q8 INT8 QK. Qwen3.8 uses 16x2 (GQA6); Ornith/Qwen3.5-MoE
+    // naturally uses 4x8 (GQA8). Both flatten to the same 32-column MMA geometry.
+    if constexpr (DKQ == 256 && DV == 256 && ncols1*ncols2 == 32 &&
+            (ncols2 == 2 || ncols2 == 4 || ncols2 == 8)) {
         const ggml_tensor * K_src = KQV->src[1];
         const ggml_tensor * V_src = KQV->src[2];
+        const ggml_tensor * Q_src = KQV->src[0];
+        const int gqa_ratio_i8 = Q_src->ne[2] / K_src->ne[2];
         const char * int8_qk_env = getenv("GGML_CUDA_TURING_INT8_QK");
         const bool use_int8_qk =
             cc == GGML_CUDA_CC_TURING && (!int8_qk_env || atoi(int8_qk_env) != 0) && logit_softcap == 0.0f &&
             K_src->type == GGML_TYPE_Q8_0 && V_src->type == GGML_TYPE_Q8_0 &&
-            K_src->ne[2] == 2 && K_src->ne[1] >= 65536 && K_src->ne[1] % 32 == 0 &&
+            K_src->ne[2] == 2 &&
+            (gqa_ratio_i8 == 6 || (gqa_ratio_i8 == 8 && Q_src->ne[1] >= 128)) &&
+            K_src->ne[1] >= 65536 && K_src->ne[1] % 32 == 0 &&
             K_src->ne[3] == 1 && V_src->ne[3] == 1 && KQV->src[4] == nullptr;
         if (use_int8_qk) {
             constexpr bool use_logit_softcap_i8 = false;
