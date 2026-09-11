@@ -219,17 +219,20 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols2(ggml_backend_cuda_con
     // choice (ncols2=8) wastes work on two nonexistent heads; ncols2=2 is consistently
     // faster for cached-prompt appends while keeping decode on the generic path.
     if constexpr (DKQ == 256 && DV == 256) {
+        const char * turing_q8_env = getenv("GGML_CUDA_TURING_TP_Q8_ATTN");
+        const bool turing_q8 = K->type == GGML_TYPE_Q8_0 && V->type == GGML_TYPE_Q8_0 &&
+            (!turing_q8_env || atoi(turing_q8_env) != 0);
         const bool turing_gqa6_two_head_long_prompt =
             cc == GGML_CUDA_CC_TURING &&
             use_gqa_opt &&
             gqa_ratio == 6 &&
             K->ne[2] == 2 &&
-            K->type == GGML_TYPE_F16 && V->type == GGML_TYPE_F16 &&
+            ((K->type == GGML_TYPE_F16 && V->type == GGML_TYPE_F16) || turing_q8) &&
             K->ne[1] >= 65536 &&
             Q->ne[1] >= 128 && Q->ne[1] < 1024 &&
             Q->ne[3] == 1 && K->ne[3] == 1 && V->ne[3] == 1;
         if (turing_gqa6_two_head_long_prompt) {
-            ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1<DKQ, DV, 2>(ctx, dst);
+            ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 16, 2>(ctx, dst);
             return;
         }
     }

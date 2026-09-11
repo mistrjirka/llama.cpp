@@ -1,0 +1,75 @@
+{
+  "model": "ornith",
+  "impl": "optimized-force",
+  "gpu": "v100",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 400000,
+  "batch": 2048,
+  "ubatch": 256,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 991.5854062426251,
+      "prompt_ms": 1008.486,
+      "ttft_wall_ms": 1010.1954130223021,
+      "e2e_wall_ms": 1010.6691779801622,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "034fe932f5c6b3869e54f628467e20420ee98e65d16fd96892b9f2fec0e0c33b"
+    },
+    {
+      "i": 1,
+      "pp": 1040.7603378724361,
+      "prompt_ms": 960.836,
+      "ttft_wall_ms": 962.3239919892512,
+      "e2e_wall_ms": 962.7636540099047,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "034fe932f5c6b3869e54f628467e20420ee98e65d16fd96892b9f2fec0e0c33b"
+    },
+    {
+      "i": 2,
+      "pp": 1037.695320201645,
+      "prompt_ms": 963.674,
+      "ttft_wall_ms": 965.421975008212,
+      "e2e_wall_ms": 965.6624189810827,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "034fe932f5c6b3869e54f628467e20420ee98e65d16fd96892b9f2fec0e0c33b"
+    },
+    {
+      "i": 3,
+      "pp": 1038.283592627356,
+      "prompt_ms": 963.128,
+      "ttft_wall_ms": 964.8178279749118,
+      "e2e_wall_ms": 965.5327189830132,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "034fe932f5c6b3869e54f628467e20420ee98e65d16fd96892b9f2fec0e0c33b"
+    }
+  ],
+  "mean_pp": 1038.9130835671458,
+  "sd_pp": 1.6265846006351614,
+  "mean_prompt_ms": 962.546,
+  "mean_ttft_wall_ms": 964.1879316574583,
+  "mean_e2e_wall_ms": 964.6529306580002,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "034fe932f5c6b3869e54f628467e20420ee98e65d16fd96892b9f2fec0e0c33b"
+  ]
+}

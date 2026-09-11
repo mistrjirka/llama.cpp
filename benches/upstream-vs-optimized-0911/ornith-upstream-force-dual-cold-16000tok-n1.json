@@ -1,0 +1,75 @@
+{
+  "model": "ornith",
+  "impl": "upstream-force",
+  "gpu": "dual",
+  "mode": "cold",
+  "tokens": 16000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 400000,
+  "batch": 2048,
+  "ubatch": 256,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 1751.25751234746,
+      "prompt_ms": 9136.292,
+      "ttft_wall_ms": 9143.382605048828,
+      "e2e_wall_ms": 9145.230949041434,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    },
+    {
+      "i": 1,
+      "pp": 1762.122494165447,
+      "prompt_ms": 9079.959,
+      "ttft_wall_ms": 9086.049933976028,
+      "e2e_wall_ms": 9087.928824999835,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    },
+    {
+      "i": 2,
+      "pp": 1754.6551274696633,
+      "prompt_ms": 9118.601,
+      "ttft_wall_ms": 9124.753995973151,
+      "e2e_wall_ms": 9126.040412986185,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    },
+    {
+      "i": 3,
+      "pp": 1747.6655011922355,
+      "prompt_ms": 9155.07,
+      "ttft_wall_ms": 9161.222450027708,
+      "e2e_wall_ms": 9162.600876006763,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    }
+  ],
+  "mean_pp": 1754.814374275782,
+  "sd_pp": 7.22981196960309,
+  "mean_prompt_ms": 9117.876666666667,
+  "mean_ttft_wall_ms": 9124.008793325629,
+  "mean_e2e_wall_ms": 9125.523371330928,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+  ]
+}

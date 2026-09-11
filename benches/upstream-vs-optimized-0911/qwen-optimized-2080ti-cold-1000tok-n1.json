@@ -1,0 +1,88 @@
+{
+  "model": "qwen",
+  "impl": "optimized",
+  "gpu": "2080ti",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 2048,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 884.0443259825048,
+      "prompt_ms": 1131.165,
+      "ttft_wall_ms": 1132.9656569869258,
+      "e2e_wall_ms": 1133.4419669874478,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 1,
+      "pp": 924.7939096772285,
+      "prompt_ms": 1081.322,
+      "ttft_wall_ms": 1082.9112390056252,
+      "e2e_wall_ms": 1083.4271520143375,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 2,
+      "pp": 923.4573875205816,
+      "prompt_ms": 1082.887,
+      "ttft_wall_ms": 1084.696145990165,
+      "e2e_wall_ms": 1085.072190995561,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 3,
+      "pp": 922.8327273398424,
+      "prompt_ms": 1083.62,
+      "ttft_wall_ms": 1085.1411769981496,
+      "e2e_wall_ms": 1085.6635519885458,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 4,
+      "pp": 922.0226965106973,
+      "prompt_ms": 1084.572,
+      "ttft_wall_ms": 1086.0813239996787,
+      "e2e_wall_ms": 1086.5116289933212,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    }
+  ],
+  "mean_pp": 923.2766802620874,
+  "sd_pp": 1.169645196539263,
+  "mean_prompt_ms": 1083.10025,
+  "mean_ttft_wall_ms": 1084.7074714984046,
+  "mean_e2e_wall_ms": 1085.1686309979414,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+  ]
+}

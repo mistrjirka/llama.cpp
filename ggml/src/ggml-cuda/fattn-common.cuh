@@ -50,6 +50,114 @@ struct ggml_cuda_flash_attn_ext_f16_extra_data {
     uintptr_t end;
 };
 
+// Experimental D256 Q representation for the SM75 INT8-QK path.  The layout is
+// deliberately row-major and keeps FP32 scales, matching the original per-CTA
+// quantizer numerically while allowing the quantization to happen only once.
+struct ggml_cuda_fattn_q8_d256_row {
+    int   qs[256 / sizeof(int)];
+    float d [256 / QK8_0];
+};
+static_assert(sizeof(ggml_cuda_fattn_q8_d256_row) == 288, "unexpected D256 packed-Q size");
+
+__launch_bounds__(256, 1)
+static __global__ void flash_attn_quantize_q8_d256_once(
+        const float * __restrict__ x, ggml_cuda_fattn_q8_d256_row * __restrict__ y,
+        const int ne1, const int ne2, const int ne3,
+        const int64_t s1, const int64_t s2, const int64_t s3, const float scale) {
+#if defined(TURING_MMA_AVAILABLE)
+    constexpr int rows_per_block = 8;
+    static_assert(QI8_1 == 8, "D256 prequantizer assumes eight lanes per 32-value q8 block");
+    const int lane = threadIdx.x;
+    const int row_in_block = threadIdx.y;
+    const int row = blockIdx.x * rows_per_block + row_in_block;
+    const int nrows = ne1 * ne2 * ne3;
+    if (row >= nrows) {
+        return;
+    }
+
+    const int i1 = row % ne1;
+    const int i2 = (row / ne1) % ne2;
+    const int i3 = row / (ne1 * ne2);
+    const float * __restrict__ xr = x + int64_t(i1)*s1 + int64_t(i2)*s2 + int64_t(i3)*s3;
+    ggml_cuda_fattn_q8_d256_row & yr = y[row];
+
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+        float vals[4];
+#pragma unroll
+        for (int l = 0; l < 4; ++l) {
+            vals[l] = scale * xr[half*128 + 4*lane + l];
+        }
+        float amax = fabsf(vals[0]);
+#pragma unroll
+        for (int l = 1; l < 4; ++l) {
+            amax = fmaxf(amax, fabsf(vals[l]));
+        }
+#pragma unroll
+        for (int mask = QI8_1/2; mask > 0; mask >>= 1) {
+            amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, mask, WARP_SIZE));
+        }
+
+        const float d = amax / 127.0f;
+        int q32 = 0;
+        int8_t * q8 = reinterpret_cast<int8_t *>(&q32);
+        if (d != 0.0f) {
+#pragma unroll
+            for (int l = 0; l < 4; ++l) {
+                q8[l] = (int8_t) roundf(vals[l] / d);
+            }
+        }
+        yr.qs[half*32 + lane] = q32;
+        if ((lane % QI8_1) == 0) {
+            yr.d[half*4 + lane/QI8_1] = d;
+        }
+    }
+#else
+    GGML_UNUSED_VARS(x, y, ne1, ne2, ne3, s1, s2, s3, scale);
+    NO_DEVICE_CODE;
+#endif
+}
+
+__launch_bounds__(256, 1)
+static __global__ void flash_attn_pack_q8_d256_once(
+        const char * __restrict__ x, ggml_cuda_fattn_q8_d256_row * __restrict__ y,
+        const int ne1, const int ne2, const int ne3,
+        const int64_t s1, const int64_t s2, const int64_t s3) {
+#if defined(TURING_MMA_AVAILABLE)
+    constexpr int rows_per_block = 8;
+    constexpr int ints_per_q8_block = QK8_0 / sizeof(int);
+    static_assert(ints_per_q8_block == QI8_0, "unexpected q8_0 packing");
+    const int lane = threadIdx.x;
+    const int row_in_block = threadIdx.y;
+    const int row = blockIdx.x * rows_per_block + row_in_block;
+    const int nrows = ne1 * ne2 * ne3;
+    if (row >= nrows) {
+        return;
+    }
+
+    const int i1 = row % ne1;
+    const int i2 = (row / ne1) % ne2;
+    const int i3 = row / (ne1 * ne2);
+    const char * __restrict__ xr = x + int64_t(i1)*s1 + int64_t(i2)*s2 + int64_t(i3)*s3;
+    const block_q8_0 * __restrict__ xb = reinterpret_cast<const block_q8_0 *>(xr);
+    ggml_cuda_fattn_q8_d256_row & yr = y[row];
+
+#pragma unroll
+    for (int iq0 = 0; iq0 < 256/sizeof(int); iq0 += WARP_SIZE) {
+        const int iq = iq0 + lane;
+        const int ib = iq / ints_per_q8_block;
+        const int ii = iq % ints_per_q8_block;
+        ggml_cuda_memcpy_1<sizeof(int), 2>(&yr.qs[iq], xb[ib].qs + ii*sizeof(int));
+    }
+    if (lane < 256/QK8_0) {
+        yr.d[lane] = __half2float(xb[lane].d);
+    }
+#else
+    GGML_UNUSED_VARS(x, y, ne1, ne2, ne3, s1, s2, s3);
+    NO_DEVICE_CODE;
+#endif
+}
+
 static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_get_f16_extra_data(
         const ggml_tensor * dst, const bool need_f16_K, const bool need_f16_V) {
     GGML_ASSERT(dst->op == GGML_OP_FLASH_ATTN_EXT);
@@ -976,7 +1084,7 @@ template <int DV, int ncols1, int ncols2>
 void launch_fattn(
     ggml_backend_cuda_context & ctx, ggml_tensor * dst, fattn_kernel_t fattn_kernel, const int nwarps, const size_t nbytes_shared,
     const int nbatch_fa, const bool need_f16_K, const bool need_f16_V, const bool stream_k, const bool use_sparse,
-    const int warp_size = WARP_SIZE
+    const int warp_size = WARP_SIZE, const bool prequant_q8_q = false, const bool prepack_q8_k = false
 ) {
     constexpr int ncols = ncols1 * ncols2;
 
@@ -1012,11 +1120,52 @@ void launch_fattn(
     ggml_cuda_pool_alloc<int>    KV_max(pool);
     ggml_cuda_pool_alloc<float>  dst_tmp(pool);
     ggml_cuda_pool_alloc<float2> dst_tmp_meta(pool);
+    ggml_cuda_pool_alloc<ggml_cuda_fattn_q8_d256_row> Q_q8(pool);
+    ggml_cuda_pool_alloc<ggml_cuda_fattn_q8_d256_row> K_q8(pool);
+
+    const char * Q_data = (const char *) Q->data;
+    size_t nb01 = Q->nb[1];
+    size_t nb02 = Q->nb[2];
+    size_t nb03 = Q->nb[3];
+    if (prequant_q8_q) {
+        GGML_ASSERT(Q->type == GGML_TYPE_F32 && Q->ne[0] == 256);
+        const size_t nrows_Q = size_t(Q->ne[1]) * Q->ne[2] * Q->ne[3];
+        Q_q8.alloc(nrows_Q);
+        float q_scale = 1.0f;
+        memcpy(&q_scale, (const float *) KQV->op_params + 0, sizeof(float));
+        const dim3 block_q(32, 8, 1);
+        const dim3 grid_q((nrows_Q + block_q.y - 1) / block_q.y, 1, 1);
+        const ggml_cuda_kernel_launch_params qlp = ggml_cuda_kernel_launch_params(grid_q, block_q, 0, main_stream);
+        ggml_cuda_kernel_launch(flash_attn_quantize_q8_d256_once, qlp,
+            (const float *) Q->data, Q_q8.ptr, (int) Q->ne[1], (int) Q->ne[2], (int) Q->ne[3],
+            Q->nb[1]/sizeof(float), Q->nb[2]/sizeof(float), Q->nb[3]/sizeof(float), q_scale);
+        CUDA_CHECK(cudaGetLastError());
+        Q_data = (const char *) Q_q8.ptr;
+        nb01 = sizeof(ggml_cuda_fattn_q8_d256_row);
+        nb02 = size_t(Q->ne[1]) * nb01;
+        nb03 = size_t(Q->ne[2]) * nb02;
+    }
 
     const char * K_data = (const char *) K->data;
     size_t nb11 = K->nb[1];
     size_t nb12 = K->nb[2];
     size_t nb13 = K->nb[3];
+    if (prepack_q8_k) {
+        GGML_ASSERT(K->type == GGML_TYPE_Q8_0 && K->ne[0] == 256);
+        const size_t nrows_K = size_t(K->ne[1]) * K->ne[2] * K->ne[3];
+        K_q8.alloc(nrows_K);
+        const dim3 block_k(32, 8, 1);
+        const dim3 grid_k((nrows_K + block_k.y - 1) / block_k.y, 1, 1);
+        const ggml_cuda_kernel_launch_params klp = ggml_cuda_kernel_launch_params(grid_k, block_k, 0, main_stream);
+        ggml_cuda_kernel_launch(flash_attn_pack_q8_d256_once, klp,
+            (const char *) K->data, K_q8.ptr, (int) K->ne[1], (int) K->ne[2], (int) K->ne[3],
+            K->nb[1], K->nb[2], K->nb[3]);
+        CUDA_CHECK(cudaGetLastError());
+        K_data = (const char *) K_q8.ptr;
+        nb11 = sizeof(ggml_cuda_fattn_q8_d256_row);
+        nb12 = size_t(K->ne[1]) * nb11;
+        nb13 = size_t(K->ne[2]) * nb12;
+    }
 
     const char * V_data = (const char *) V->data;
     size_t nb21 = V->nb[1];
@@ -1224,7 +1373,7 @@ void launch_fattn(
 
         ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num, block_dim, nbytes_shared, main_stream);
         ggml_cuda_kernel_launch(fattn_kernel, launch_params,
-        (const char *) Q->data,
+        Q_data,
         K_data,
         V_data,
         mask ? ((const char *) mask->data) : nullptr,
@@ -1232,7 +1381,7 @@ void launch_fattn(
         KV_max.ptr,
         !stream_k && parallel_blocks > 1 ? dst_tmp.ptr : (float *) KQV->data, dst_tmp_meta.ptr,
         scale, max_bias, m0, m1, n_head_log2, logit_softcap,
-        Q->ne[0], ne01,     Q->ne[2], Q->ne[3], Q->nb[1], Q->nb[2], Q->nb[3],
+        Q->ne[0], ne01,     Q->ne[2], Q->ne[3], nb01, nb02, nb03,
         K->ne[0], n_kv, K->ne[2], K->ne[3], nb11, nb12, nb13,
         nb21, nb22, nb23,
         mask ? mask->ne[1] : 0, mask ? mask->ne[2] : 0, mask ? mask->ne[3] : 0,

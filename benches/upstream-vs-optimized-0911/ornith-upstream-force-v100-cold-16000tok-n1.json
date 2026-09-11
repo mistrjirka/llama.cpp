@@ -1,0 +1,75 @@
+{
+  "model": "ornith",
+  "impl": "upstream-force",
+  "gpu": "v100",
+  "mode": "cold",
+  "tokens": 16000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 400000,
+  "batch": 2048,
+  "ubatch": 256,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 1275.468108753426,
+      "prompt_ms": 12544.414,
+      "ttft_wall_ms": 12555.949606990907,
+      "e2e_wall_ms": 12557.97464796342,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    },
+    {
+      "i": 1,
+      "pp": 1275.3796566104043,
+      "prompt_ms": 12545.284,
+      "ttft_wall_ms": 12551.551031006966,
+      "e2e_wall_ms": 12553.448176011443,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    },
+    {
+      "i": 2,
+      "pp": 1272.4557624789536,
+      "prompt_ms": 12574.111,
+      "ttft_wall_ms": 12580.28115297202,
+      "e2e_wall_ms": 12581.568430992775,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    },
+    {
+      "i": 3,
+      "pp": 1271.1687331897865,
+      "prompt_ms": 12586.842,
+      "ttft_wall_ms": 12598.781006003264,
+      "e2e_wall_ms": 12599.986303015612,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+    }
+  ],
+  "mean_pp": 1273.001384093048,
+  "sd_pp": 2.157833687498204,
+  "mean_prompt_ms": 12568.745666666668,
+  "mean_ttft_wall_ms": 12576.871063327417,
+  "mean_e2e_wall_ms": 12578.334303339943,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "b6c00c2e46de3a1505bbdcbe5e9b8486d58f965b9dd08ee8799f6ede1750c9ea"
+  ]
+}
