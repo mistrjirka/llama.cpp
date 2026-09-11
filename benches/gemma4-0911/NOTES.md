@@ -720,3 +720,454 @@ A clean candidate-only rerun after removing all profiling GDN instrumentation re
 ### Dual Ornith 64-token decode determinism follow-up
 
 A 100k restored + 1k append + 64-token greedy decode test shows roughly neutral/slightly positive TG throughput (~54.4 upstream vs ~54.7 optimized tok/s), but repeated optimized runs do not reproduce identical 64-token hashes while upstream does. This variation persists when the new GQA8 INT8-QK path is disabled, when the pre-existing SM70/75 x4 GatedDeltaNet prefill path is disabled, and when internal all-reduce is disabled. Therefore the issue was **not isolated to either new Ornith optimization**. The new GQA8 INT8 path is nevertheless kept prefill-only (Q>=128) to minimize decode surface area. Continue investigating the broader mixed-GPU/hybrid-state determinism separately; do not claim deterministic dual-Ornith decode in README results yet.
+
+### Multi-slot Ornith MTP follow-up after 2026-09-11 Ornith merge
+
+Goal: make real Shisa MTP advantageous with **four active 100k Ornith slots**, not merely functional or competitive for one request. Production fixture remains `Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf` + `mtp-shisa-ornith15-all-Q5_0.gguf`, Q8 target/draft KV, four logical 400k slots in the existing 1.4M unified physical pool, restored 100k target/draft/spec states, MTP3 draft on one GPU unless explicitly varied.
+
+Prior production baseline from `benches/mtp-final-integration-0907`: one active agent MTP3 improved from 53.27 to 56.96 TG tok/s after the earlier MTP cache/bookkeeping work; four active agents improved from 24.60 to 27.25 mean per-agent TG, but aggregate MTP3 throughput was only roughly equal to the true MTP-off control. Therefore the new success criterion is: **four active slots with MTP must beat the same four-slot setup with MTP disabled by a clear repeatable margin**, while preserving parked/restored slot semantics.
+
+Current merged HEAD for this follow-up: `597492d743f8` plus the just-merged Ornith SM70/SM75 attention/MMQ work. The four saved production slots include `.draft` and `.spec` sidecars, so target + MTP state can be restored without replaying 100k tokens.
+
+#### 4-slot MTP topology / VRAM screen
+
+Old production layer split `CUDA1,CUDA0` = RTX 2080 Ti,V100 with target `--tensor-split 14,35`, target ubatch 256, MTP head fully on RTX (`--spec-draft-device CUDA1`), 1.4M physical / 4x400k logical slots:
+- starts and restores all four 100k slots successfully;
+- startup/restored VRAM: RTX **20,990 MiB used / 1,011 MiB free**, V100 **31,985 MiB used / 510 MiB free**.
+This leaves almost no tuning headroom and explains why the earlier four-slot setup was constrained.
+
+Trying to carry the much faster no-MTP tensor-split topology directly into the full four-slot MTP configuration fails at startup due to CUDA scheduler/workspace allocation, not model-weight storage:
+- tensor 1:1, ubatch 512: OOM while allocating ~4,154 MiB scheduler buffer;
+- tensor 1:1, ubatch 1024: OOM while allocating ~5,573 MiB;
+- tensor 4:5, ubatch 1024: OOM while allocating ~5,573 MiB on the other device;
+- tensor 5:4, ubatch 1024: OOM / failed ~10,895 MiB CUDA1 tensor-range allocation.
+
+Candidate-only no-MTP 100k+1k work had shown tensor 1:1/u1024 around 1.45k PP/s, so tensor mode is still attractive if its workspace can be made to fit. Next screen therefore lowers target ubatch to 128/256 and varies draft placement (RTX vs V100) plus target split. If all tensor modes remain impossible at the full 1.4M pool, next options are reducing scheduler reserve/workspace for tensor mode, using a lower-memory draft-head quant, or keeping layer split and optimizing multi-slot MTP itself.
+
+#### Four-active-slot MTP depth sweep: MTP1 is the clear winner
+
+Using the real four-slot production fixture (four restored 100k histories, 128 generated tokens/request, concurrent=4), old production layer topology, current merged runtime, Shisa `mtp-shisa-ornith15-all-Q5_0.gguf`, Q8 target/draft KV. Mirrored depth order `0,1,2,3,3,2,1,0` to reduce drift.
+
+Averaged results:
+
+| MTP n_max | Wall time | Aggregate output tok/s | Mean per-agent TG | Acceptance |
+|---:|---:|---:|---:|---:|
+| 0 / off | 5.8711 s | **87.21** | 25.54 tok/s | — |
+| 1 | **4.9971 s** | **102.46** | **31.28 tok/s** | **86.88%** (470/541) |
+| 2 | 5.6230 s | 91.10 | 26.95 tok/s | 68.07% (582/855) |
+| 3 | 5.3252 s | 96.26 | 29.27 tok/s | 61.81% (657/1063) |
+
+Relative to MTP off, MTP1 improves aggregate generated throughput by **+17.48%** and reduces whole-turn wall time by **~14.9%**. MTP3 is still beneficial (~+10.4% aggregate), but MTP2 is only ~+4.5%. The main reason MTP1 wins is very high first-position acceptance (~86.9%); deeper positions reduce mean acceptance enough that extra draft work is not recovered.
+
+This is the first clear result that satisfies the current project goal: **MTP is materially advantageous with four simultaneously active slots**. Do not keep MTP3 as the default merely because it was the old production setting. Next optimization target is MTP1 specifically: sweep draft head quant, draft ubatch, and draft placement / low-overhead settings, then run a longer ABBA against MTP-off and MTP3 before changing defaults.
+
+#### Fair true-off vs MTP1 ABBA: MTP1 remains clearly advantageous
+
+The depth sweep's n_max=0 arm is a warm-pause configuration with the draft model still loaded. A stronger control was therefore run with separate server processes where the true-off arms contain **no speculative/MTP arguments and do not load the draft model at all**. MTP1 arms use the same target topology and production Shisa Q5_0 draft head. Four active restored 100k slots, 128 output tokens each; arm order true-off / MTP1 / MTP1 / true-off, three repetitions per process with rep0 excluded.
+
+Retained mean:
+- true MTP off: **90.81 aggregate output tok/s**, mean per-agent TG **26.24 tok/s**;
+- MTP1: **103.28 aggregate output tok/s**, mean per-agent TG **31.44 tok/s**;
+- MTP1 gain vs true-off: **+13.74% aggregate output throughput**.
+
+This confirms the multi-slot MTP1 gain is not caused by comparing against warm-pause overhead or keeping an unused draft model resident. MTP1 is genuinely faster than a server with MTP completely absent under the same four-slot production target topology. Treat **+13.7%** as the current conservative multi-slot MTP win; the earlier warm-pause comparison was +17.5%.
+
+## 2026-09-11 checkpoint: four-slot Ornith MTP optimization and memory reuse
+
+This section is a handoff/checkpoint before continuing the MTP work. Production branch HEAD remains `597492d743f8`; the code experiments described below are **uncommitted** unless explicitly stated otherwise.
+
+### Goal
+
+Make Shisa MTP materially advantageous for the real multi-agent workload, especially **four simultaneously active Ornith slots** with long retained contexts, without giving up the four-slot save/restore workflow or reducing logical slot capacity.
+
+Main fixture used throughout:
+- target model: `/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf`
+- Shisa draft heads: `/workspace/models/Ornith-1.5-35B-A3B/shisa-mtp/`
+- four restored real histories: `/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real100k-{0,1,2,3}.bin` plus `.draft` and `.spec` sidecars
+- prompts from `/workspace/oai-qwen38-pp-lab/results/parallel-refined-0907/real-fixture.json`
+- four simultaneous requests
+- each restored slot has 100k cached target tokens
+- 128 generated tokens/request for the main four-slot TG screens
+- target Q8 K/V
+- draft Q8 K/V unless noted
+- old production topology: layer split, `--device CUDA1,CUDA0 --tensor-split 14,35`
+- target batch/ubatch normally 2048/256
+- llama.cpp device names on this build: `CUDA0 = Tesla V100-SXM2-32GB`, `CUDA1 = RTX 2080 Ti 22GB` (note: `nvidia-smi` physical indexes are the opposite)
+- draft head normally pinned to `CUDA1` = RTX 2080 Ti
+- `GGML_CUDA_VOLTA_FORCE_MMQ=moe`
+- internal allreduce with threshold 131072
+- greedy sampling, seed 1234
+
+### Result 1: MTP1 is the correct depth for four active slots
+
+A symmetric in-process depth sweep used order `0,1,2,3,3,2,1,0` where `speculative_n_max=0` leaves the draft loaded but paused. Paired means:
+
+| MTP depth | aggregate output tok/s | mean per-request TG tok/s | proposal acceptance |
+|---|---:|---:|---:|
+| 0 (draft loaded, paused) | 87.2124 | 25.5395 | - |
+| **1** | **102.4591** | **31.2755** | **86.876%** (470/541) |
+| 2 | 91.0975 | 26.9545 | 68.070% (582/855) |
+| 3 | 96.2574 | 29.2742 | 61.806% (657/1063) |
+
+Files:
+- `benches/gemma4-0911/mtp4_depth_screen.py`
+- `/models/.bench-ornith-mtp4/depth/depth-screen.json`
+- `/models/.bench-ornith-mtp4/depth/depth-summary.json`
+
+Interpretation: the old MTP3 policy was a major reason speculative decoding was only near break-even in the four-agent workload. With one draft token, acceptance is extremely high and the extra draft work is small. MTP2/MTP3 perform more proposal work than their additional accepted tokens justify.
+
+### Result 2: fair true-no-draft vs MTP1 ABBA
+
+The depth-0 arm still has the draft model/context loaded. A stronger process-level ABBA used separate servers:
+- `off-a`: no speculative draft model/context at all
+- `mtp1-a`: Shisa Q5_0 head, MTP1
+- `mtp1-b`: Shisa Q5_0 head, MTP1
+- `off-b`: no draft model/context
+
+Warmup repetition removed from each process. Matched result:
+- true no-MTP aggregate: **90.8081 tok/s**
+- MTP1 Q5_0 aggregate: **103.2818 tok/s**
+- aggregate gain: **+13.7363%**
+- true no-MTP mean per-request TG: **26.2351 tok/s**
+- MTP1 mean per-request TG: **31.4364 tok/s** (~+19.8%)
+
+File:
+- `benches/gemma4-0911/mtp4_trueoff_abba.py`
+- `/models/.bench-ornith-mtp4/trueoff/abba.json`
+
+This establishes that MTP is genuinely useful with four active slots, not merely better than a paused-draft baseline.
+
+### Result 3: Q4 Shisa head is better than production Q5_0 for MTP1
+
+Draft quant screen started with the all-Q4 Shisa head:
+- file: `mtp-shisa-ornith15-all-q4.gguf`
+- size: 1,191,152,384 bytes
+- retained runs aggregate output: **105.7273 tok/s**
+- mean TG: **31.9627 tok/s**
+- acceptance: **87.570%** (472/539)
+- startup GPU memory in this config: RTX 2080 Ti 20,740 MiB used / 1,261 MiB free; V100 31,633 MiB used / 862 MiB free
+
+Relative to true MTP-off 90.8081 tok/s this is about **+16.4% aggregate throughput**.
+
+The Q4 screen was interrupted after validating Q4 because subsequent work focused on memory reuse. Full Q5_K_M/Q6_K/Q8 sweep remains optional.
+
+Files:
+- `benches/gemma4-0911/mtp4_draft_quant_screen.py`
+- `/models/.bench-ornith-mtp4/draft-quant/screen.json`
+
+### Result 4: full tensor split is not viable at four x 400k logical slots
+
+Target physical pool is 1.4M (`--ctx-size 1400000`, four logical slots with `--kv-unified-per-slot 400000`). Multiple tensor-mode configurations were attempted with MTP3 and with smaller target batch/ubatch, different splits, and draft placement on either GPU.
+
+All tested tensor splits failed in scheduler/context allocation. Examples:
+- 1:1, ubatch 512: scheduler tries ~4.15 GiB allocation and OOMs
+- 1:1, ubatch 1024: ~5.57 GiB allocation and OOMs
+- 1:1 even batch512/ubatch256 still fails
+- 4:5, 3:5, 5:4 also fail
+- moving the draft head from RTX to V100 did not solve it
+
+Therefore the fast 1:1 tensor topology that was excellent for the single-slot 100k+1k PP benchmark is not compatible with the current four-slot 1.4M physical context on this 22GB+32GB hardware.
+
+Files:
+- `benches/gemma4-0911/mtp4_topology_screen.py`
+- `/models/.bench-ornith-mtp4/topology-screen.json`
+- `/models/.bench-ornith-mtp4/screen2/topology-screen.json`
+
+### Result 5: layer split/batch tuning
+
+True-no-draft startup memory screen showed viable layer splits:
+- 14:35 -> RTX 15,258 MiB, V100 31,455 MiB
+- 16:33 -> RTX 16,480 MiB, V100 30,235 MiB
+- 18:31 -> RTX 19,136 MiB, V100 27,579 MiB
+
+With MTP Q5_0, smaller target batching and draft ubatch can move more target layers toward RTX:
+- 14:35, target batch512/ubatch128, draft ubatch64: RTX ~20,304 MiB / 1,697 free
+- 15:34, same: RTX ~20,922 MiB / 1,079 free
+- 16:33, same: RTX ~21,542 MiB / 459 free
+- 16:33 with draft ubatch128 failed in one memory screen; draft ubatch32/64 fit, with only 189/101 MiB free in the stricter screen
+
+Performance screen (Q5_0 head, MTP1; retained runs):
+- old 14:35, target 2048/256, draft128: **103.8234 tok/s**
+- 14:35, target 512/128, draft64: **103.9945 tok/s**
+- 15:34, target 512/128, draft64: **103.7908 tok/s**
+- **16:33, target 512/128, draft64: 105.1657 tok/s**
+
+So 16:33 is ~+1.3% over the old MTP1 split, but leaves too little RTX margin to recommend until memory is freed.
+
+Files:
+- `/models/.bench-ornith-mtp4/split-perf/screen.json`
+- `/models/.bench-ornith-mtp4/split-perf/*.log`
+
+### Major memory observation: MTP draft inherits the full 1.4M target context
+
+In `common/speculative.cpp`, `common_speculative_init_result` explicitly does:
+
+```cpp
+// the draft context holds as many tokens per sequence as the target context
+cparams.n_ctx = llama_n_ctx(ctx_tgt);
+```
+
+For the production four-slot fixture this makes the MTP context report `n_ctx_seq = 1,400,064`, even though MTP itself evaluates tiny draft batches. The draft context then reserves large scheduler/compute buffers; one failed placement attempt showed a **~2.91 GiB MTP compute PP buffer** request.
+
+Important distinction:
+- draft KV/state capacity may legitimately need to track long slot positions/save-restore semantics
+- draft **scheduler/graph compute workspace** should not necessarily need to scale with the 1.4M physical context
+
+This remains a promising optimization target: keep full MTP state/KV addressability while reserve-sizing compute graphs from actual MTP ubatch/max-output behavior.
+
+Relevant code:
+- `common/speculative.cpp` around `common_speculative_init_result`
+- `src/llama-context.cpp::sched_reserve()`
+- `sched_reserve()` uses `n_tokens = min(cparams.n_ctx, cparams.n_ubatch)`, so raw n_ctx should not directly increase n_tokens once ubatch is capped, but other MTP memory modules / graph shapes may still scale with context. Need profile exact allocation attribution before changing semantics.
+
+### Draft GGUF duplication analysis
+
+The all-Q4 Shisa MTP GGUF contains 23 tensors. The largest generic I/O tensors are:
+- `output.weight`: **417,177,600 bytes**, Q6_K, shape 2048 x 248320
+- `token_embd.weight`: **286,064,640 bytes**, Q4_0, shape 2048 x 248320
+- `output_norm.weight`: 8,192 bytes, F32
+
+Together the generic embedding+LM-head copies occupy ~703 MiB of file tensor payload, over half of the ~1.19 GB Q4 draft file.
+
+The target Q6/Q5 Ornith model contains the corresponding tensors in Q8_0:
+- `output.weight`: 540,344,320 bytes, Q8_0
+- `token_embd.weight`: 540,344,320 bytes, Q8_0
+- same 2048 x 248320 shapes
+
+A sampled dequantized comparison (`benches/gemma4-0911/compare_gguf_tensor.cpp`) confirms they represent the same underlying weights, just at different quantizations:
+- token embedding target Q8 vs draft Q4: sampled relative RMSE ~0.1067
+- output target Q8 vs draft Q6_K: sampled relative RMSE ~0.0193
+
+Therefore using target I/O tensors for the draft is numerically sensible and may improve draft quality/acceptance, provided backend placement permits it.
+
+### Existing precedent for read-only tensor reuse
+
+`src/models/dflash.cpp` already supports a draft model borrowing target `tok_embd` and LM head through `cparams.ctx_other`. This is the preferred ownership pattern rather than inventing a new shared-buffer lifetime scheme.
+
+### Uncommitted prototype: `LLAMA_MTP_SHARE_TARGET_IO`
+
+Current worktree has an **experimental, uncommitted** prototype touching:
+- `src/models/qwen35.cpp`
+- `src/models/qwen35moe.cpp`
+- `src/llama-context.cpp`
+
+Behavior:
+- for MTP-only Qwen3.5 / Qwen3.5-MoE draft GGUFs, environment variable `LLAMA_MTP_SHARE_TARGET_IO` can skip loading draft generic I/O tensors and make graph_mtp fall back to the target model through `ctx_other`
+- `LLAMA_MTP_SHARE_TARGET_IO=embed` currently means embedding-only sharing
+- a nonzero value other than `embed` attempts embedding + output/head sharing
+- Qwen MTP context was modified experimentally to retain `params.ctx_other` when draft I/O is omitted
+
+**Do not merge this yet.** It is an experimental branch-in-worktree prototype.
+
+#### Full I/O-sharing attempt
+
+With Q4 head and `LLAMA_MTP_SHARE_TARGET_IO=1`:
+- loader successfully skipped:
+  - token embedding 286,064,640 bytes
+  - output norm 8,192 bytes
+  - output head 417,177,600 bytes
+- first failure was because Qwen MTP context dropped `ctx_other`; experimental context fix resolved that
+- next failure: target `output.weight` is pre-allocated on `CUDA0`, while the one-device draft scheduler owns `CUDA1` only:
+  - `pre-allocated tensor (output.weight) in a buffer (CUDA0) that cannot run the operation`
+
+Naively exposing both GPUs to the draft (`--spec-draft-device CUDA1,CUDA0`) is **not** a fix because the draft inherits target split behavior; it attempted to place ~1.45 GiB of MTP KV on CUDA0 and OOMed.
+
+Next clean experiment for full head sharing:
+- let the draft scheduler know about both GPUs so it can execute the target LM-head tensor on CUDA0
+- but force **all draft-owned MTP layer/KV state onto CUDA1 (RTX 2080 Ti)** instead of inheriting target 14:35 placement
+- likely requires an MTP/draft-specific placement override rather than generic two-device draft splitting
+
+#### Embedding-only sharing attempt
+
+`LLAMA_MTP_SHARE_TARGET_IO=embed` runs correctly.
+Results with Q4 head, old 14:35 topology:
+- aggregate output: **105.3441 tok/s**
+- mean TG: 32.0715 tok/s
+- mean PP: 79.3458 tok/s
+- acceptance: **84.335%** in the retained two runs
+- startup nvidia-smi: RTX 20,740 MiB used / 1,261 free; V100 31,633 MiB / 862 free
+
+That startup VRAM is effectively identical to the ordinary Q4 run, despite the loader skipping the 286 MB embedding tensor. Conclusion: that tensor was not consuming a dedicated GPU allocation in the way file size suggests (likely host/input-side placement or buffer accounting). Embedding sharing is functionally valid but not a useful VRAM optimization on this topology. Throughput is roughly neutral/slightly below the earlier Q4 sample (105.34 vs 105.73), well within short-run noise and with different acceptance realization.
+
+Files:
+- `/models/.bench-ornith-mtp4/share-embed/result.json`
+- `/models/.bench-ornith-mtp4/share-embed/server.log`
+
+### Memory reuse priority after this checkpoint
+
+Highest-value candidates, in order:
+
+1. **Share target LM head / output norm with MTP while keeping draft-owned layer/KV entirely on CUDA1.**
+   - ~398 MiB Q6_K draft output tensor potentially avoided
+   - target has higher-quality Q8 output already resident
+   - requires draft scheduler/backend visibility without moving MTP KV to CUDA0
+
+2. **Reduce MTP compute-arena reservation independently of long draft KV/state capacity.**
+   - MTP1 only needs tiny proposal batches
+   - preserve four 400k logical slot positions and `.draft` save/restore semantics
+   - profile exactly which context/scheduler allocation accounts for the multi-GB reserve before coding
+
+3. **Combine any recovered VRAM with 16:33 layer split.**
+   - 16:33 already measured ~105.17 tok/s with Q5_0 MTP1
+   - Q4 MTP1 alone ~105.73 tok/s
+   - expectation: Q4 + safer 16:33 may gain another ~1% if enough margin is recovered; must benchmark rather than assume additivity
+
+4. Draft KV precision sweep (e.g. Q4 draft K/V) only after state-quality/correctness validation. Draft KV is much smaller than target KV and may not be the dominant memory, but could give useful headroom.
+
+5. Full Shisa quant sweep (Q5_K_M/Q6_K/Q8) is lower priority because Q4 already wins on the tested workload.
+
+### Correctness / determinism caveat still applies
+
+The earlier dual-GPU Ornith deterministic-output issue remains unresolved: repeated greedy restored runs on the fork can yield different output hashes even when MTP is disabled, and prior isolation ruled out the new GQA8 INT8-QK route, GDN x4 path, and internal allreduce as sole causes. Therefore these MTP benchmarks use throughput/acceptance and restored-state integrity, but no claim is made yet that repeated dual-GPU generation is bitwise deterministic.
+
+### Git/worktree state at checkpoint
+
+Pushed production HEAD: `597492d743f8`.
+
+Tracked modifications now include:
+- `benches/gemma4-0911/NOTES.md`
+- experimental MTP target-I/O sharing changes in `src/models/qwen35.cpp`, `src/models/qwen35moe.cpp`, `src/llama-context.cpp`
+
+There are many old unrelated untracked `benches/flashnext-0905/...` artifacts. Do not clean or add them indiscriminately.
+
+Do not commit/merge the experimental I/O-sharing code until:
+- full-output sharing either works with correct backend placement or is rejected
+- normal behavior with the env unset is regression-tested
+- Qwen3.8 target-only PP/TG gates remain unchanged
+- MTP save/restore sidecars still work for all four slots
+
+### Follow-up after checkpoint: output-only target reuse is successful
+
+The first successful full-I/O sharing run recovered real VRAM but changed both the draft embedding and LM head. To isolate the useful part, the prototype now supports:
+- `LLAMA_MTP_SHARE_TARGET_IO=embed`: borrow only target token embedding
+- `LLAMA_MTP_SHARE_TARGET_IO=head` (or `output`): keep draft embedding, borrow target output norm + LM head
+- other nonzero values: borrow both embedding and output path
+
+To make target-head reuse possible while keeping draft-owned state on the RTX:
+- draft device list is `CUDA1,CUDA0` (`CUDA1` = RTX 2080 Ti, `CUDA0` = V100)
+- experimental logic in `common_base_params_to_speculative()` forces the draft tensor split to `[1,0,...]` when full/head target I/O sharing is active
+- this keeps all MTP-owned layers/KV on the first draft device (RTX) while merely exposing the V100 backend to the draft scheduler for the borrowed target LM head
+- without this forced split, a two-device draft inherited the target 14:35 split and tried to allocate ~1.45 GiB MTP KV on V100, causing OOM
+
+#### Full embedding + head sharing
+
+Q4 head, old 14:35 topology, MTP1:
+- RTX usage: **20,338 MiB**, 1,663 MiB free
+- V100 usage: 31,649 MiB, 846 MiB free
+- retained aggregate: **104.7912 tok/s**
+- mean TG: 32.1717 tok/s
+- acceptance: 84.489%
+
+This proved real output-head memory reuse (~402 MiB saved vs ordinary Q4), but throughput/acceptance was slightly worse than the short Q4 baseline.
+
+File:
+- `/models/.bench-ornith-mtp4/share-io-2dev/result.json`
+
+#### **Output/head-only sharing: best result so far**
+
+Keep the Q4 draft token embedding, but borrow the target Q8 `output_norm`/`output.weight` through `ctx_other`.
+
+Q4 head, old 14:35 topology, MTP1:
+- RTX usage: **20,338 MiB**, 1,663 MiB free
+- V100 usage: 31,649 MiB, 846 MiB free
+- retained aggregate output: **108.0657 tok/s**
+- mean per-request TG: **33.0460 tok/s**
+- mean PP: 71.6434 tok/s
+- acceptance: **87.109%**
+
+Comparisons:
+- vs ordinary Q4 MTP1 105.7273: **+2.21%** and ~402 MiB less RTX VRAM
+- vs true no-MTP 14:35 control 90.8081: **+19.0% aggregate throughput** (provisional overall comparison; no-MTP split still needs its own tuning)
+
+This is the first memory-reuse change that is both a real VRAM win and a throughput win.
+
+File:
+- `/models/.bench-ornith-mtp4/share-head/result.json`
+- `/models/.bench-ornith-mtp4/share-head/server.log`
+
+Next fairness/optimization tasks:
+1. use the recovered ~402 MiB to test Q4+head-sharing at 16:33 and possibly 17:32 with smaller target/draft ubatches
+2. independently sweep the **true no-MTP** layer split (14:35, 16:33, 18:31 and near-fit higher RTX shares) so final MTP advantage is measured against the fastest non-speculative four-slot configuration, not merely the historical 14:35 baseline
+3. then run mirrored ABBA for best MTP vs best no-MTP
+
+### Fair split frontier: optimized no-MTP vs head-sharing MTP
+
+A capacity and performance sweep was run after output/head-only reuse was working, so the final MTP comparison would not rely on the historical 14:35 no-MTP baseline.
+
+Capacity with target batch/ubatch 512/128 unless otherwise noted:
+- head-sharing MTP1/Q4: 14:35, 15:34, 16:33 and 17:32 fit; 18:31 fails in the MTP compute-buffer reserve even with draft ubatch 32
+- at 17:32: draft ubatch64 leaves ~343 MiB RTX free; draft ubatch32 ~431 MiB
+- no-MTP: through 22:27 fits; 23:26 fails in target compute-buffer reserve
+
+Larger target batching also fits for selected frontier points:
+- MTP 16:33, target 2048/256, draft64: ~603 MiB RTX free
+- MTP 17:32, target 2048/256, draft32: only ~73 MiB RTX free (ceiling only, not production-safe)
+- no-MTP 22:27, target 2048/256: ~1.0 GiB RTX free
+
+Performance screen, four restored 100k slots, 4 concurrent requests x128 output tokens, first rep discarded:
+- no-MTP 18:31, target 2048/256: **91.0548 aggregate tok/s**, mean TG 26.2973
+- no-MTP 20:29: **90.9352 tok/s**
+- no-MTP 21:28: **89.9190 tok/s**
+- no-MTP 22:27: **90.0743 tok/s**
+- MTP1 Q4 + shared target head, 16:33, target 2048/256, draft64: **105.1680 tok/s**, acceptance 85.90%
+- same 16:33, target 512/128, draft64: **105.9978 tok/s**, acceptance 86.53%
+- 17:32, target 512/128, draft32: **106.5971 tok/s**, acceptance 87.41%
+- 17:32, target 2048/256, draft32: **104.3865 tok/s**, only 73 MiB RTX free
+
+Important finding: moving more target layers to the RTX is not monotonically faster. The V100 compute advantage matters; best no-MTP in this frontier is 18:31, not max-resident 22:27. Likewise MTP 16/17 splits do not beat the earlier 14:35 head-sharing run (~108.07 tok/s), so a focused 14:35 draft/target-ubatch sweep is required before final ABBA.
+
+Files:
+- `benches/gemma4-0911/mtp4_best_capacity.py`
+- `benches/gemma4-0911/mtp4_fair_frontier.py`
+- `/models/.bench-ornith-mtp4/best-capacity/capacity.json`
+- `/models/.bench-ornith-mtp4/fair-frontier/results.json`
+
+### Focused 14:35 head-sharing MTP1 sweep
+
+Because 16:33/17:32 did not beat the earlier 14:35 result, target and draft ubatch were swept at 14:35 with Q4 Shisa + target output/head sharing.
+
+Four restored 100k slots, 4 concurrent x128, first rep discarded:
+- target 2048/256, draft128: 104.6044 tok/s, acceptance 86.69%, RTX 20,338 MiB used
+- target 2048/256, draft64: 104.2835 tok/s, acceptance 83.88%, RTX 20,160 MiB
+- target 2048/256, draft32: 101.2140 tok/s, acceptance 82.97%, RTX 20,072 MiB
+- **target 512/128, draft64: 107.5218 tok/s, acceptance 85.50%, RTX 19,802 MiB / 2,199 free**
+- target 512/128, draft32: 106.8619 tok/s, acceptance 90.77%, RTX 19,714 MiB / 2,287 free
+
+The short previous 14:35/head-share sample gave 108.0657 tok/s; this rerun confirms the same general ~107-108 tok/s region but also shows nontrivial run-to-run acceptance/output variation. The practical current choice is target 512/128 + draft64: fastest retained mean in the focused sweep with >2 GiB RTX margin. Draft32 saves only ~88 MiB more and has higher sampled acceptance, but slightly lower aggregate throughput.
+
+Files:
+- `benches/gemma4-0911/mtp4_mtp14_sweep.py`
+- `/models/.bench-ornith-mtp4/mtp14-sweep/results.json`
+
+Next: process-level ABBA against best no-MTP 18:31/2048/256.
+
+### Stability blocker discovered during best-vs-best process ABBA
+
+Attempted ABBA order: best no-MTP `18:31 / target 2048/256` -> practical best MTP `14:35 / target 512/128 / draft64 / Q4 / MTP1 / target-head sharing` -> mirrored MTP -> no-MTP.
+
+The first no-MTP process completed normally (retained aggregate **90.4004 tok/s**, mean TG 26.1716). In the first MTP process, rep0 also completed normally. After erasing/restoring the four 100k slots for rep1 and launching the next four concurrent completions, the server aborted in the CUDA VMM pool:
+
+```
+ggml/src/ggml-cuda/ggml-cuda.cu:681:
+GGML_ASSERT(ptr == (void *) ((char *)(pool_addr) + pool_used)) failed
+```
+
+Backtrace includes:
+- `ggml_cuda_pool_vmm::free()`
+- `launch_fattn<256,4,8>()`
+- `ggml_cuda_flash_attn_ext_mma_f16_case<256,256,4,8>()`
+- target/server decode path
+
+This was **not an OOM**. It occurred after one successful concurrent MTP round and a second erase/restore cycle. Standalone head-sharing sweeps had already completed multiple rounds successfully, so the failure is intermittent / state-lifecycle sensitive rather than deterministic.
+
+Do not merge the target-head sharing prototype until this is isolated. Required controls:
+1. repeated multi-round restore/generate stress with head sharing enabled;
+2. same stress with ordinary Q4 MTP1 (no sharing);
+3. same with MTP disabled;
+4. if needed disable the new Turing GQA8 INT8-QK path to determine whether the FA allocation pattern contributes (although this assertion is allocator bookkeeping, not an arithmetic correctness failure);
+5. inspect `ggml_cuda_pool_vmm::free` LIFO assumptions and asynchronous lifetime/order across mixed CUDA backends.
+
+Files:
+- `benches/gemma4-0911/mtp4_best_vs_off_abba.py`
+- `/models/.bench-ornith-mtp4/best-vs-off-abba/mtp-a.log`
+- `/models/.bench-ornith-mtp4/best-vs-off-abba/results.json`
