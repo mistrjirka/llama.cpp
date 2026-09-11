@@ -1,6 +1,6 @@
 # Upstream sync and regression check — 2026-09-11
 
-`v100-optimized` was synced with upstream llama.cpp through `43f3dda62` and rebuilt for SM70 + SM75. The pre-sync fork is `a7caa68b8`; the final upstream merge is `d183ec0f9`, followed by the Qwen hardware-aware batch-default commit `720798061`. Performance was checked both pre/post sync and directly against the exact upstream revision contained in the branch.
+`v100-optimized` is synced with upstream llama.cpp through `8172e6577`. The runtime benchmark baseline is `43f3dda62`; `8172e6577` adds only six lines to `tools/server/tests/unit/test_completion.py`, so CUDA, server runtime, model and scheduling source are unchanged. The pre-sync fork is `a7caa68b8`; the runtime upstream merge is `d183ec0f9`, the Qwen batch-default commit is `720798061`, and the final test-only upstream merge is `1f81621be`.
 
 The regression checks below use the same model, saved KV state, batch settings, GPU placement, and request shape on both sides. Each process receives an unreported warm request; the tables use retained samples. Qwen uses `Qwen3.8-27B-UD-Q5_K_XL.gguf` with `q8_0` K/V and MTP disabled.
 
@@ -15,9 +15,9 @@ The regression checks below use the same model, saved KV state, batch settings, 
 
 The mixed-GPU result had more process-to-process drift than the single-GPU tests. In the immediately following current-upstream comparison the merged fork measured 689.91–690.98 PP/s in the two retained process arms, matching the pre-sync ~690 PP/s envelope. No material performance regression was found.
 
-## Current upstream vs synced fork
+## Upstream runtime vs synced fork
 
-Current upstream benchmark baseline is `43f3dda62`, the same upstream revision contained in the branch. The V100 row was rerun after the final server/docs commits with the rebuilt branch binary; the other runtime-affecting source was unchanged.
+The measured upstream runtime is `43f3dda62`. The branch also contains current upstream `8172e6577`, whose only additional change is the Python unit-test edit described above. The V100 row was rerun after the final server/defaults changes with a rebuilt fork binary.
 
 | Workload | Upstream PP | Synced fork PP | PP gain | Upstream TTFT | Synced fork TTFT | TTFT reduction |
 |---|---:|---:|---:|---:|---:|---:|
@@ -85,7 +85,7 @@ The values come from the 16k prompt sweep: V100 `ubatch=1024/2048/4096` measured
 
 ## Current cold prompt processing
 
-These Qwen measurements use upstream `43f3dda62`, the default runtime paths, Q8 K/V and matched batch/ubatch settings. No benchmark-only CUDA tuning variables are enabled.
+These Qwen measurements use upstream `43f3dda62`, default runtime paths, Q8 K/V and matched batch/ubatch settings.
 
 | Hardware | 1k upstream | 1k fork | Gain | 16k upstream | 16k fork | Gain |
 |---|---:|---:|---:|---:|---:|---:|

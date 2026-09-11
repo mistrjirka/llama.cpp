@@ -4,11 +4,11 @@ CUDA optimizations for NVIDIA **Volta (SM70)** and **Turing (SM75)**, tested on 
 
 The fork focuses on prompt-processing latency, especially when a long context is already cached. The current implementation adds tuned long-context Q8 attention paths for both GPUs, an INT8 Tensor-Core QK path for the RTX 2080 Ti, and measured batch defaults for single-GPU Qwen3.8 on V100 and RTX 2080 Ti.
 
-**Branch:** `v100-optimized` · **Synced through upstream:** `43f3dda62` · **Benchmark baseline:** `43f3dda62` (2026-09-11) · **Optimization commit:** `0fc400871`
+**Branch:** `v100-optimized` · **Synced upstream:** `8172e6577` · **Benchmarked upstream runtime:** `43f3dda62` (2026-09-11) · **Optimization commit:** `0fc400871`
 
 ## Benchmarks
 
-The main workload is **100,000 cached tokens followed by a 1,000-token prompt append**. The headline comparisons were rerun against the same upstream revision now merged into the fork, `43f3dda62`. Qwen uses `UD-Q5_K_XL`, `q8_0` K/V, FlashAttention, and MTP disabled on both engines.
+The main workload is **100,000 cached tokens followed by a 1,000-token prompt append**. The headline comparisons use upstream `43f3dda62`. Current upstream `8172e6577` differs from that revision only in a server Python unit test, so the runtime source used by these benchmarks is unchanged. Qwen uses `UD-Q5_K_XL`, `q8_0` K/V, FlashAttention, and MTP disabled on both engines.
 
 ### 100k cached + 1k append
 
@@ -35,7 +35,7 @@ The allocation left about 463 MiB free on the 22 GB card. Cold-prompt and earlie
 
 ### Cold prompt processing
 
-Cold PP is a secondary workload. These measurements use the same upstream `43f3dda62` baseline and the same default runtime paths shown in the launch examples; no benchmark-only CUDA tuning variables are enabled.
+Cold PP is a secondary workload. These measurements use the same upstream `43f3dda62` runtime and the default paths shown in the launch examples.
 
 | Hardware | 1k upstream | 1k `v100-optimized` | Gain | 16k upstream | 16k `v100-optimized` | Gain |
 |---|---:|---:|---:|---:|---:|---:|
@@ -43,7 +43,7 @@ Cold PP is a secondary workload. These measurements use the same upstream `43f3d
 | RTX 2080 Ti 22 GB | 670.74 | **925.19 tok/s** | **+37.94%** | 642.02 | **929.52 tok/s** | **+44.78%** |
 | V100 + RTX 2080 Ti | 963.61 | **1088.98 tok/s** | **+13.01%** | 1025.85 | **1242.23 tok/s** | **+21.09%** |
 
-Full current-sync methodology and measurements are in [`benches/upstream-sync-0911/REPORT.md`](benches/upstream-sync-0911/REPORT.md). The previous `b0dcb8192` benchmark set is retained in [`benches/upstream-vs-optimized-0911/REPORT.md`](benches/upstream-vs-optimized-0911/REPORT.md).
+Full methodology, regression checks and retained measurements are in [`benches/upstream-sync-0911/REPORT.md`](benches/upstream-sync-0911/REPORT.md).
 
 ## Build and run
 
