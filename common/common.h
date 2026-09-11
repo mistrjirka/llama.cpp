@@ -453,6 +453,8 @@ struct common_params {
     int32_t n_ctx                 =     0; // context size, 0 == context the model was trained with
     int32_t n_batch               =  2048; // logical batch size for prompt processing (must be >=32 to use BLAS)
     int32_t n_ubatch              =   512; // physical batch size for prompt processing (must be >=32 to use BLAS)
+    bool    n_batch_explicit      = false; // set by config/env/CLI batch option
+    bool    n_ubatch_explicit     = false; // set by config/env/CLI ubatch option
     int32_t n_pipeline_copies       =     0; // pipeline scheduler copies (0 = backend default)
     int32_t prefill_reuse           =     0; // CUDA lossless prefill-reuse GEMM tile (0 = disabled)
     int32_t n_keep                =     0; // number of tokens to keep from initial prompt

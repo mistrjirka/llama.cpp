@@ -9,11 +9,14 @@
 #include "build-info.h"
 #include "common.h"
 #include "fit.h"
+#include "gguf.h"
 #include "llama.h"
 #include "log.h"
 
 #include <atomic>
 #include <clocale>
+#include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <signal.h>
 #include <thread> // for std::thread::hardware_concurrency
@@ -24,6 +27,107 @@
 
 static std::function<void(int)> shutdown_handler;
 static std::atomic_flag is_terminating = ATOMIC_FLAG_INIT;
+
+static std::string server_gguf_string(const std::string & path, const char * key) {
+    const gguf_init_params params = {
+        /* .no_alloc = */ true,
+        /* .ctx      = */ nullptr,
+    };
+    gguf_context * ctx = gguf_init_from_file(path.c_str(), params);
+    if (ctx == nullptr) {
+        return {};
+    }
+
+    const int64_t id = gguf_find_key(ctx, key);
+    std::string value;
+    if (id >= 0 && gguf_get_kv_type(ctx, id) == GGUF_TYPE_STRING) {
+        value = gguf_get_val_str(ctx, id);
+    }
+    gguf_free(ctx);
+    return value;
+}
+
+static void server_apply_measured_batch_defaults(common_params & params) {
+    const char * auto_batch = getenv("LLAMA_V100_AUTO_BATCH");
+    if (auto_batch != nullptr && atoi(auto_batch) == 0) {
+        return;
+    }
+
+    const bool batch_explicit  = params.n_batch_explicit  || params.n_batch  != 2048;
+    const bool ubatch_explicit = params.n_ubatch_explicit || params.n_ubatch != 512;
+    if (batch_explicit && ubatch_explicit) {
+        return;
+    }
+    if (params.model.path.empty()) {
+        return;
+    }
+
+    const std::string arch = server_gguf_string(params.model.path, "general.architecture");
+    const std::string name = server_gguf_string(params.model.path, "general.name");
+    if (arch != "qwen35" || name != "Qwen3.8-27B") {
+        return;
+    }
+
+    int n_cuda = 0;
+    bool has_v100 = false;
+    bool has_2080ti = false;
+    auto inspect = [&](ggml_backend_dev_t dev) {
+        if (dev == nullptr) {
+            return;
+        }
+        const char * backend_name = ggml_backend_dev_name(dev);
+        if (backend_name == nullptr || strncmp(backend_name, "CUDA", 4) != 0) {
+            return;
+        }
+        const char * description = ggml_backend_dev_description(dev);
+        const std::string desc = description != nullptr ? description : "";
+        ++n_cuda;
+        has_v100   = has_v100   || desc.find("V100")    != std::string::npos;
+        has_2080ti = has_2080ti || desc.find("2080 Ti") != std::string::npos;
+    };
+
+    if (!params.devices.empty()) {
+        for (ggml_backend_dev_t dev : params.devices) {
+            inspect(dev);
+        }
+    } else {
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            inspect(ggml_backend_dev_get(i));
+        }
+    }
+
+    int measured_batch = 0;
+    int measured_ubatch = 0;
+    const char * cell = nullptr;
+    if (n_cuda == 1 && has_v100 && params.n_ctx == 131072) {
+        measured_batch = 4096;
+        measured_ubatch = 4096;
+        cell = "Qwen3.8-27B / V100 / 131072 ctx";
+    } else if (n_cuda == 1 && has_2080ti && (params.n_ctx == 32768 || params.n_ctx == 67584)) {
+        measured_batch = 4096;
+        measured_ubatch = 2048;
+        cell = "Qwen3.8-27B / RTX 2080 Ti / tested ctx";
+    } else if (n_cuda == 2 && has_v100 && has_2080ti && params.n_ctx == 409600) {
+        measured_batch = 4096;
+        measured_ubatch = 2048;
+        cell = "Qwen3.8-27B / V100 + RTX 2080 Ti / 409600 ctx";
+    } else {
+        return;
+    }
+
+    if (!batch_explicit) {
+        params.n_batch = measured_batch;
+    }
+    if (!ubatch_explicit) {
+        params.n_ubatch = std::min(measured_ubatch, params.n_batch);
+    }
+    if (params.n_batch < params.n_ubatch) {
+        params.n_batch = params.n_ubatch;
+    }
+
+    SRV_INF("auto batch: %s -> -b %d -ub %d (measured; explicit config/env/CLI values override; LLAMA_V100_AUTO_BATCH=0 disables)\n",
+            cell, params.n_batch, params.n_ubatch);
+}
 
 static inline void signal_handler(int signal) {
     if (is_terminating.test_and_set()) {
@@ -404,6 +508,10 @@ int llama_server(common_params & params, int argc, char ** argv) {
             SRV_ERR("failed to download model: %s\n", e.what());
             return 1;
         }
+    }
+
+    if (!is_router_server) {
+        server_apply_measured_batch_defaults(params);
     }
 
     //
