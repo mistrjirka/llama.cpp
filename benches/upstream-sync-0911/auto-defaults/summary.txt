@@ -1,6 +1,7 @@
-v100-131k          auto batch: Qwen3.8-27B / V100 / 131072 ctx -> -b 4096 -ub 4096 (measured; explicit config/env/CLI values override; LLAMA_V100_AUTO_BATCH=0 disables)
-rtx-32768          auto batch: Qwen3.8-27B / RTX 2080 Ti / tested ctx -> -b 4096 -ub 2048 (measured; explicit config/env/CLI values override; LLAMA_V100_AUTO_BATCH=0 disables)
-dual-409600        auto batch: Qwen3.8-27B / V100 + RTX 2080 Ti / 409600 ctx -> -b 4096 -ub 2048 (measured; explicit config/env/CLI values override; LLAMA_V100_AUTO_BATCH=0 disables)
-explicit           no auto override
-optout             no auto override
-untested-ctx       no auto override
+v100-auto          auto batch: Qwen3.8-27B / V100 -> -b 4096 -ub 4096
+rtx2080ti-auto     auto batch: Qwen3.8-27B / RTX 2080 Ti -> -b 4096 -ub 2048
+mixed-auto         no auto override
+cli-explicit       no auto override
+env-explicit       no auto override
+config-explicit    no auto override
+optout             no auto override (LLAMA_V100_AUTO_BATCH=0)

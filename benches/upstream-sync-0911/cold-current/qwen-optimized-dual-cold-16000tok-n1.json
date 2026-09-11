@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "optimized",
+  "gpu": "dual",
+  "mode": "cold",
+  "tokens": 16000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 2048,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 1233.57913425566,
+      "prompt_ms": 12970.388,
+      "ttft_wall_ms": 12981.305986002553,
+      "e2e_wall_ms": 12982.608110003639,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 1,
+      "pp": 1243.7294658321864,
+      "prompt_ms": 12864.534,
+      "ttft_wall_ms": 12876.651133003179,
+      "e2e_wall_ms": 12878.188261005562,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 2,
+      "pp": 1242.5062313628919,
+      "prompt_ms": 12877.199,
+      "ttft_wall_ms": 12889.207516040187,
+      "e2e_wall_ms": 12890.332783048507,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 3,
+      "pp": 1240.4683574353753,
+      "prompt_ms": 12898.354,
+      "ttft_wall_ms": 12910.390238976106,
+      "e2e_wall_ms": 12911.846838018391,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    }
+  ],
+  "mean_pp": 1242.234684876818,
+  "sd_pp": 1.6474252986136624,
+  "mean_prompt_ms": 12880.029,
+  "mean_ttft_wall_ms": 12892.082962673157,
+  "mean_e2e_wall_ms": 12893.45596069082,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+  ]
+}

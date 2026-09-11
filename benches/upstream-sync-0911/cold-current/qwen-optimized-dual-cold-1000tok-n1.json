@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "optimized",
+  "gpu": "dual",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 2048,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 975.7801606329301,
+      "prompt_ms": 1024.821,
+      "ttft_wall_ms": 1026.7527740215883,
+      "e2e_wall_ms": 1027.1939490339719,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "f0d0e023f9b1a4da91c19ac15cf2ea71427f0e4a8cf70397527d67c360d80af7"
+    },
+    {
+      "i": 1,
+      "pp": 1071.2912165904443,
+      "prompt_ms": 933.453,
+      "ttft_wall_ms": 934.9890290177427,
+      "e2e_wall_ms": 935.4209169978276,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "f0d0e023f9b1a4da91c19ac15cf2ea71427f0e4a8cf70397527d67c360d80af7"
+    },
+    {
+      "i": 2,
+      "pp": 1093.2175688809061,
+      "prompt_ms": 914.731,
+      "ttft_wall_ms": 916.272247035522,
+      "e2e_wall_ms": 916.8571470072493,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "f0d0e023f9b1a4da91c19ac15cf2ea71427f0e4a8cf70397527d67c360d80af7"
+    },
+    {
+      "i": 3,
+      "pp": 1102.4398095424986,
+      "prompt_ms": 907.079,
+      "ttft_wall_ms": 908.771031012293,
+      "e2e_wall_ms": 909.3363740248606,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "f0d0e023f9b1a4da91c19ac15cf2ea71427f0e4a8cf70397527d67c360d80af7"
+    }
+  ],
+  "mean_pp": 1088.9828650046163,
+  "sd_pp": 16.000257760832778,
+  "mean_prompt_ms": 918.4209999999999,
+  "mean_ttft_wall_ms": 920.0107690218525,
+  "mean_e2e_wall_ms": 920.5381460099792,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "f0d0e023f9b1a4da91c19ac15cf2ea71427f0e4a8cf70397527d67c360d80af7"
+  ]
+}

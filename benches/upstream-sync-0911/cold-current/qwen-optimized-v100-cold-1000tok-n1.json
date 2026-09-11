@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "optimized",
+  "gpu": "v100",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 4096,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 869.632519386283,
+      "prompt_ms": 1149.911,
+      "ttft_wall_ms": 1151.8054699990898,
+      "e2e_wall_ms": 1152.3100819904357,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "fae395f293903d4418445fe918f33708f92b4d1c89725a394acc739556f4e99e"
+    },
+    {
+      "i": 1,
+      "pp": 906.2255885482084,
+      "prompt_ms": 1103.478,
+      "ttft_wall_ms": 1105.1729299942963,
+      "e2e_wall_ms": 1105.5784589843825,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "fae395f293903d4418445fe918f33708f92b4d1c89725a394acc739556f4e99e"
+    },
+    {
+      "i": 2,
+      "pp": 902.9125249316721,
+      "prompt_ms": 1107.527,
+      "ttft_wall_ms": 1109.002354030963,
+      "e2e_wall_ms": 1109.4642769894563,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "fae395f293903d4418445fe918f33708f92b4d1c89725a394acc739556f4e99e"
+    },
+    {
+      "i": 3,
+      "pp": 903.2036633940587,
+      "prompt_ms": 1107.17,
+      "ttft_wall_ms": 1108.6727150250226,
+      "e2e_wall_ms": 1109.0696490136907,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "fae395f293903d4418445fe918f33708f92b4d1c89725a394acc739556f4e99e"
+    }
+  ],
+  "mean_pp": 904.1139256246464,
+  "sd_pp": 1.834538260197916,
+  "mean_prompt_ms": 1106.0583333333334,
+  "mean_ttft_wall_ms": 1107.6159996834274,
+  "mean_e2e_wall_ms": 1108.0374616625097,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "fae395f293903d4418445fe918f33708f92b4d1c89725a394acc739556f4e99e"
+  ]
+}

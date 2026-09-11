@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "optimized",
+  "gpu": "2080ti",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 2048,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 882.7956372239609,
+      "prompt_ms": 1132.765,
+      "ttft_wall_ms": 1134.346809994895,
+      "e2e_wall_ms": 1134.9555039778352,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 1,
+      "pp": 926.3479288713006,
+      "prompt_ms": 1079.508,
+      "ttft_wall_ms": 1080.9996360330842,
+      "e2e_wall_ms": 1081.4955619862303,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 2,
+      "pp": 924.6998424311469,
+      "prompt_ms": 1081.432,
+      "ttft_wall_ms": 1082.6613359968178,
+      "e2e_wall_ms": 1082.9807060072199,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "i": 3,
+      "pp": 924.5194578987706,
+      "prompt_ms": 1081.643,
+      "ttft_wall_ms": 1082.6348580303602,
+      "e2e_wall_ms": 1082.806344027631,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    }
+  ],
+  "mean_pp": 925.1890764004061,
+  "sd_pp": 1.0076402789954402,
+  "mean_prompt_ms": 1080.861,
+  "mean_ttft_wall_ms": 1082.0986100200873,
+  "mean_e2e_wall_ms": 1082.4275373403605,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+  ]
+}

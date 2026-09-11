@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "upstream",
+  "gpu": "dual",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 2048,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 862.9475353786917,
+      "prompt_ms": 1158.819,
+      "ttft_wall_ms": 1160.826658946462,
+      "e2e_wall_ms": 1161.2948429537937,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 1,
+      "pp": 940.31801555286,
+      "prompt_ms": 1063.47,
+      "ttft_wall_ms": 1065.1641489821486,
+      "e2e_wall_ms": 1065.6563480151817,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 2,
+      "pp": 975.2891000714887,
+      "prompt_ms": 1025.337,
+      "ttft_wall_ms": 1026.9045400200412,
+      "e2e_wall_ms": 1027.3642390384339,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 3,
+      "pp": 975.2111088247827,
+      "prompt_ms": 1025.419,
+      "ttft_wall_ms": 1026.9286870025098,
+      "e2e_wall_ms": 1027.3708640015684,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    }
+  ],
+  "mean_pp": 963.6060748163771,
+  "sd_pp": 20.168088626700786,
+  "mean_prompt_ms": 1038.0753333333334,
+  "mean_ttft_wall_ms": 1039.6657920015666,
+  "mean_e2e_wall_ms": 1040.1304836850613,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+  ]
+}

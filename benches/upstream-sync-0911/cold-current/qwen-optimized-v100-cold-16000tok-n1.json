@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "optimized",
+  "gpu": "v100",
+  "mode": "cold",
+  "tokens": 16000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 4096,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 962.2035037558111,
+      "prompt_ms": 16628.499,
+      "ttft_wall_ms": 16641.270794032607,
+      "e2e_wall_ms": 16642.780683003366,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "eb3c4eb5d08cfdfeccc15734ae86cde2e5f247299e3b6d5742dc35e67da62fad"
+    },
+    {
+      "i": 1,
+      "pp": 962.8391044103928,
+      "prompt_ms": 16617.522,
+      "ttft_wall_ms": 16628.876734001096,
+      "e2e_wall_ms": 16629.897159000393,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "eb3c4eb5d08cfdfeccc15734ae86cde2e5f247299e3b6d5742dc35e67da62fad"
+    },
+    {
+      "i": 2,
+      "pp": 961.8259688923839,
+      "prompt_ms": 16635.026,
+      "ttft_wall_ms": 16646.16905298317,
+      "e2e_wall_ms": 16647.505691973493,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "eb3c4eb5d08cfdfeccc15734ae86cde2e5f247299e3b6d5742dc35e67da62fad"
+    },
+    {
+      "i": 3,
+      "pp": 960.0915159232978,
+      "prompt_ms": 16665.078,
+      "ttft_wall_ms": 16671.65927501628,
+      "e2e_wall_ms": 16672.779123007786,
+      "cache_n": 0,
+      "prompt_n": 16000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "eb3c4eb5d08cfdfeccc15734ae86cde2e5f247299e3b6d5742dc35e67da62fad"
+    }
+  ],
+  "mean_pp": 961.5855297420248,
+  "sd_pp": 1.3894851069274665,
+  "mean_prompt_ms": 16639.20866666667,
+  "mean_ttft_wall_ms": 16648.901687333517,
+  "mean_e2e_wall_ms": 16650.06065799389,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "eb3c4eb5d08cfdfeccc15734ae86cde2e5f247299e3b6d5742dc35e67da62fad"
+  ]
+}

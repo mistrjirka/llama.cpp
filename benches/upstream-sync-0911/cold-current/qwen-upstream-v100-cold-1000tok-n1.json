@@ -1,0 +1,75 @@
+{
+  "model": "qwen",
+  "impl": "upstream",
+  "gpu": "v100",
+  "mode": "cold",
+  "tokens": 1000,
+  "n_predict": 1,
+  "ctx_alloc": 32768,
+  "meta_ctx": 409600,
+  "batch": 4096,
+  "ubatch": 4096,
+  "rows": [
+    {
+      "i": 0,
+      "pp": 830.0697756653424,
+      "prompt_ms": 1204.718,
+      "ttft_wall_ms": 1206.5572999999858,
+      "e2e_wall_ms": 1207.0226600044407,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 1,
+      "pp": 858.4597343753891,
+      "prompt_ms": 1164.877,
+      "ttft_wall_ms": 1166.5631610085256,
+      "e2e_wall_ms": 1167.0246139983647,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 2,
+      "pp": 859.0290394766795,
+      "prompt_ms": 1164.105,
+      "ttft_wall_ms": 1165.5999919748865,
+      "e2e_wall_ms": 1166.1616199999116,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    },
+    {
+      "i": 3,
+      "pp": 859.8873719520217,
+      "prompt_ms": 1162.943,
+      "ttft_wall_ms": 1164.5248559652828,
+      "e2e_wall_ms": 1164.9640669929795,
+      "cache_n": 0,
+      "prompt_n": 1000,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_tps": 0.0,
+      "token_sha": "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+    }
+  ],
+  "mean_pp": 859.1253819346967,
+  "sd_pp": 0.7186784151941399,
+  "mean_prompt_ms": 1163.975,
+  "mean_ttft_wall_ms": 1165.562669649565,
+  "mean_e2e_wall_ms": 1166.0501003304187,
+  "mean_predicted_tps": 0.0,
+  "token_shas": [
+    "3bcf2afdb32ea342100e69fd054bb7052791450672fdfa8a269e36a5fa7d5b7a"
+  ]
+}
