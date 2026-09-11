@@ -1210,3 +1210,39 @@ Files:
 - post-fix `/models/.bench-ornith-mtp4/stability-matrix-fixed/`
 
 This fix is independent of the experimental target-head sharing changes and is safe to commit separately.
+
+### Final post-fix best-vs-best ABBA and merge decision
+
+After the VMM stack-order fix, the same process-level ABBA that previously exposed the allocator assertion completed cleanly:
+- order: no-MTP A -> MTP A -> MTP B -> no-MTP B
+- no-MTP: 18:31 RTX:V100, target 2048/256
+- MTP: 14:35 RTX:V100, target 512/128, draft64, Q4 Shisa, MTP1, Q8 draft KV, target-head reuse
+- four restored 100k slots, four concurrent x128 generations; warmup rep discarded inside each process
+
+Mirrored results:
+- no-MTP A: 90.3939 aggregate tok/s, mean TG 26.0758
+- no-MTP B: 90.1809 aggregate tok/s, mean TG 26.2136
+- MTP A: 106.3863 aggregate tok/s, mean TG 32.5938
+- MTP B: 106.7859 aggregate tok/s, mean TG 32.5727
+
+Combined:
+- **no-MTP: 90.2874 aggregate tok/s**
+- **MTP1 + Q4 + target-head reuse: 106.5861 aggregate tok/s**
+- **aggregate gain: +18.0520%**
+- mean per-agent TG: **26.1447 -> 32.5833 tok/s (+24.6267%)**
+- MTP acceptance: **87.4074%**
+- MTP startup memory: RTX 19,802 MiB used / 2,199 free; V100 31,291 MiB used / 1,204 free
+- no-MTP startup memory: RTX 19,136 MiB used / 2,865 free; V100 27,579 MiB used / 4,916 free
+
+The cleaned merge candidate only supports output/head sharing (`LLAMA_MTP_SHARE_TARGET_IO=head` or `output`). The experimental embedding-sharing mode was removed before merge because it saved no GPU memory and reduced sampled acceptance. Default behavior remains unchanged when the variable is unset.
+
+Post-fix dense-Qwen regression gate with identical output hashes:
+- V100 100k+1k PP: 448.7343 -> 450.3916 tok/s (**+0.37%**)
+- RTX 2080 Ti 65k+1k PP: 499.1224 -> 498.2232 tok/s (**-0.18%**)
+
+The head-sharing runtime change is therefore suitable for a separate opt-in merge after the independent VMM fix.
+
+Artifacts:
+- `/models/.bench-ornith-mtp4/best-vs-off-abba-fixed/summary.json`
+- `/models/.bench-ornith-mtp4/best-vs-off-abba-fixed/results.json`
+- `/models/.bench-ornith-mtp4/merge-head-clean/`

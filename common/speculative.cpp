@@ -2661,6 +2661,22 @@ common_params common_base_params_to_speculative(const common_params & params) {
             result.split_mode = LLAMA_SPLIT_MODE_LAYER;
         }
 
+        // When an MTP draft borrows the target LM head, the draft scheduler must
+        // see the target output backend. Keep every draft-owned layer/KV tensor
+        // on the first draft device and use later devices only for borrowed
+        // read-only target tensors.
+        const char * share_io_env = std::getenv("LLAMA_MTP_SHARE_TARGET_IO");
+        const bool share_target_output = share_io_env &&
+                                         (std::strcmp(share_io_env, "head") == 0 ||
+                                          std::strcmp(share_io_env, "output") == 0);
+        const bool spec_mtp = std::find(params.speculative.types.begin(), params.speculative.types.end(),
+                                        COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();
+        if (spec_mtp && share_target_output && n_devs > 1) {
+            result.split_mode = LLAMA_SPLIT_MODE_LAYER;
+            std::fill(std::begin(result.tensor_split), std::end(result.tensor_split), 0.0f);
+            result.tensor_split[0] = 1.0f;
+        }
+
         if (params_spec.cpuparams.n_threads > 0) {
             result.cpuparams.n_threads       = params_spec.cpuparams.n_threads;
             result.cpuparams_batch.n_threads = params_spec.cpuparams_batch.n_threads;

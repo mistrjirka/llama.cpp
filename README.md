@@ -223,9 +223,46 @@ The model plus 67,584-token context fits on the 22 GB card with only a small VRA
 
 A layer-split 14:35 RTX:V100 configuration reached 1108.32 tok/s on the optimized branch; tensor split is substantially faster for this Ornith workload, so the graph uses the matched tensor-split comparison.
 
-The production MTP head is the Shisa 12K KL-distilled `mtp-shisa-ornith15-all-Q5_0.gguf`. A four-agent regression test with MTP3, Q8 target/draft KV, four 100k cached histories and `MMQ=moe` measured **89.35 → 89.46 generated tok/s aggregate (+0.13%)** across the upstream sync; mean per-agent TG was **27.85 → 27.90 tok/s** and draft acceptance **60.0% → 60.6%**. This confirms that the sync did not regress the production MTP path.
+### Four active Ornith slots with MTP
 
-The tested Ornith Q6/Q5 model is about 25 GiB and fits on the V100 or the combined V100 + RTX 2080 Ti setup. Earlier MTP serving studies are under [`benches/mtp-final-integration-0907/`](benches/mtp-final-integration-0907/).
+For the production-style four-agent workload, MTP1 is substantially better than the older MTP3 setting. The tested setup restores four 100k-token histories, generates 128 tokens per slot concurrently, and keeps four 400k logical slots in a 1.4M unified physical context. The best fair process-level ABBA comparison was:
+
+| Four active slots | Aggregate output | Mean per-agent TG |
+|---|---:|---:|
+| No MTP, tuned 18:31 RTX:V100 layer split | 90.29 tok/s | 26.14 tok/s |
+| Q4 Shisa, MTP1, target-head reuse | **106.59 tok/s** | **32.58 tok/s** |
+| Change | **+18.05%** | **+24.63%** |
+
+MTP acceptance was **87.41%**. The MTP arm used a 14:35 RTX:V100 layer split, target `batch=512`, `ubatch=128`, draft `ubatch=64`, Q8 target/draft KV, and the all-Q4 Shisa head. The target-head reuse avoids a second copy of the draft LM head on the RTX 2080 Ti, saving about **402 MiB** in the matched memory test. The draft token embedding remains local because sharing it did not reduce device memory and lowered acceptance.
+
+Enable the reuse path with `LLAMA_MTP_SHARE_TARGET_IO=head`. The draft scheduler must see both GPUs, with the RTX listed first; the branch keeps all draft-owned MTP layer/KV tensors on that first draft device while using the V100 backend only for the already-resident target LM head:
+
+```bash
+export GGML_CUDA_VOLTA_FORCE_MMQ=moe
+export GGML_CUDA_ALLREDUCE=internal
+export GGML_CUDA_AR_COPY_THRESHOLD=131072
+export LLAMA_MTP_SHARE_TARGET_IO=head
+
+./build/bin/llama-server \
+  --model /path/to/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf \
+  --device CUDA1,CUDA0 --tensor-split 14,35 --split-mode layer \
+  --gpu-layers all --fit off \
+  --ctx-size 1400000 --parallel 4 --kv-unified --kv-unified-per-slot 400000 \
+  --override-kv qwen35moe.context_length=int:400000 \
+  --rope-scaling yarn --rope-scale 1.52587890625 --yarn-orig-ctx 262144 \
+  --flash-attn on --batch-size 512 --ubatch-size 128 --pipeline-copies 1 \
+  --cache-type-k q8_0 --cache-type-v q8_0 \
+  --slot-fork-prefix \
+  --spec-type draft-mtp \
+  --spec-draft-model /path/to/mtp-shisa-ornith15-all-q4.gguf \
+  --spec-draft-device CUDA1,CUDA0 --spec-draft-ngl all \
+  --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 \
+  --spec-draft-ubatch 64 --spec-draft-n-max 1 --spec-mtp-defer-prompt
+```
+
+This command assumes llama.cpp names the RTX 2080 Ti `CUDA1` and the V100 `CUDA0`; verify with `--list-devices`. The four-slot result used the normal SM70/SM75 build plus selective `GGML_CUDA_VOLTA_FORCE_MMQ=moe`.
+
+The tested Ornith Q6/Q5 model is about 25 GiB and fits on the V100 or the combined V100 + RTX 2080 Ti setup. Detailed MTP tuning and stability data are in [`benches/gemma4-0911/NOTES.md`](benches/gemma4-0911/NOTES.md) and earlier serving work is under [`benches/mtp-final-integration-0907/`](benches/mtp-final-integration-0907/).
 
 ## Other fork features
 

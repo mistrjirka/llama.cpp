@@ -37,14 +37,25 @@ void llama_model_qwen35::load_arch_tensors(llama_model_loader & ml) {
     const int trunk_flags = mtp_only ? TENSOR_NOT_REQUIRED : 0;
     int mtp_flags = !ml.load_mtp ? TENSOR_SKIP : 0;
 
+    // MTP-only memory optimization: optionally reuse the target model's
+    // already-resident final norm + LM head. Keep the draft token embedding
+    // local; sharing it did not save device memory and reduced acceptance in
+    // the four-slot Ornith workload.
+    const char * share_io_env = std::getenv("LLAMA_MTP_SHARE_TARGET_IO");
+    const bool share_target_output = mtp_only && share_io_env &&
+                                     (std::strcmp(share_io_env, "head") == 0 ||
+                                      std::strcmp(share_io_env, "output") == 0);
+    const int output_flags = share_target_output ? (TENSOR_NOT_REQUIRED | TENSOR_SKIP) : 0;
+
     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, 0);
 
     // output
-    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), { n_embd }, 0);
-    output = create_tensor(tn(LLM_TENSOR_OUTPUT, "weight"), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
+    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), { n_embd }, output_flags);
+    output = create_tensor(tn(LLM_TENSOR_OUTPUT, "weight"), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED | (share_target_output ? TENSOR_SKIP : 0));
 
-    // if output is NULL, init from the input tok embed
-    if (output == NULL) {
+    // if output is NULL, init from the input tok embed unless graph_mtp borrows
+    // the target output through ctx_other.
+    if (output == NULL && !share_target_output) {
         output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, TENSOR_DUPLICATED);
     }
 
@@ -635,7 +646,12 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     ggml_tensor * head_norm_w = layer.nextn.shared_head_norm
             ? layer.nextn.shared_head_norm
             : model.output_norm;
-    GGML_ASSERT(head_norm_w && "QWEN35 MTP: missing both nextn.shared_head_norm and output_norm");
+    if (head_norm_w == nullptr) {
+        GGML_ASSERT(cparams.ctx_other != nullptr);
+        const auto * model_other = llama_get_model(cparams.ctx_other);
+        head_norm_w = model_other->output_norm;
+    }
+    GGML_ASSERT(head_norm_w && "QWEN35 MTP: missing both draft and target output norm");
     cur = build_norm(cur, head_norm_w, nullptr, LLM_NORM_RMS, -1);
 
     cb(cur, "h_nextn", -1);
@@ -646,7 +662,13 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
 
     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s : model.output_s;
-    GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head (nextn.shared_head_head or model.output)");
+    if (head_w == nullptr) {
+        GGML_ASSERT(cparams.ctx_other != nullptr);
+        const auto * model_other = llama_get_model(cparams.ctx_other);
+        head_w = model_other->output;
+        head_s = model_other->output_s;
+    }
+    GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head in both draft and target");
     cur = build_lora_mm(head_w, cur, head_s);
     ggml_mul_mat_set_hint(cur, GGML_HINT_MTP_SHORTLIST);
     cb(cur, "result_output", -1);
