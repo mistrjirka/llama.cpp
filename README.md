@@ -14,7 +14,7 @@ The main workload is **100,000 cached tokens followed by a 1,000-token prompt ap
 
 | Hardware | Upstream PP | `v100-optimized` PP | PP gain | Upstream TTFT | `v100-optimized` TTFT | TTFT reduction |
 |---|---:|---:|---:|---:|---:|---:|
-| V100 32 GB | 297.06 tok/s | **428.23 tok/s** | **+44.15%** | 3.419 s | **2.386 s** | **-30.21%** |
+| V100 32 GB | 297.69 tok/s | **429.66 tok/s** | **+44.33%** | 3.411 s | **2.380 s** | **-30.23%** |
 | V100 + RTX 2080 Ti | 408.08 tok/s | **690.96 tok/s** | **+69.32%** | 2.505 s | **1.505 s** | **-39.93%** |
 
 The V100 row uses native 131072 context and matched `batch=4096`, `ubatch=4096`. The dual-GPU row uses the production-style 409600-token YaRN context, a 4:5 RTX 2080 Ti:V100 tensor split, and `batch=4096`, `ubatch=2048`.

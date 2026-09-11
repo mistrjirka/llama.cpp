@@ -21,7 +21,7 @@ Current upstream benchmark baseline is `43f3dda62`, the same upstream revision c
 
 | Workload | Upstream PP | Synced fork PP | PP gain | Upstream TTFT | Synced fork TTFT | TTFT reduction |
 |---|---:|---:|---:|---:|---:|---:|
-| V100, 100k cached + 1k | 297.06 | 428.23 | **+44.15%** | 3.419 s | 2.386 s | **-30.21%** |
+| V100, 100k cached + 1k | 297.69 | 429.66 | **+44.33%** | 3.411 s | 2.380 s | **-30.23%** |
 | RTX 2080 Ti, 65,536 cached + 1k | 382.30 | 494.92 | **+29.46%** | 2.656 s | 2.058 s | **-22.53%** |
 | V100 + RTX 2080 Ti, 100k cached + 1k | 408.08 | 690.96 | **+69.32%** | 2.505 s | 1.505 s | **-39.93%** |
 | Ornith V100, 100k cached + 1k | 539.11 | 803.18 | **+48.98%** | 1.911 s | 1.299 s | **-32.06%** |
