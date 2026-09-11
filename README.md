@@ -1,14 +1,16 @@
 # llama.cpp for V100 and RTX 2080 Ti
 
-CUDA optimizations for NVIDIA **Volta (SM70)** and **Turing (SM75)**, tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main target is Qwen3.8-27B `UD-Q5_K_XL` with llama.cpp's standard `q8_0` K/V cache.
+CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Turing (SM75)**, tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main Qwen setup uses Qwen3.8-27B `UD-Q5_K_XL` with llama.cpp `q8_0` K/V.
 
-The fork focuses on prompt-processing latency, especially when a long context is already cached. The current implementation adds tuned long-context Q8 attention paths for both GPUs, an INT8 Tensor-Core QK path for the RTX 2080 Ti, and measured batch defaults for single-GPU Qwen3.8 on V100 and RTX 2080 Ti.
+![Long-context prompt processing throughput comparing upstream llama.cpp with v100-optimized on V100, RTX 2080 Ti, mixed V100 plus RTX 2080 Ti, and Ornith on V100](docs/benchmarks/long-context-prompt-processing.svg)
 
-**Branch:** `v100-optimized` · **Synced upstream:** `8172e6577` · **Benchmarked upstream runtime:** `43f3dda62` (2026-09-11) · **Optimization commit:** `0fc400871`
+**Long-context highlights:** Qwen on V100 + RTX 2080 Ti reaches **+69.3% prompt processing** with **39.9% lower TTFT**; Ornith on V100 reaches **+49.0% PP** with **32.1% lower TTFT**; Qwen on V100 reaches **+44.3% PP** with **30.2% lower TTFT**.
+
+**Branch:** `v100-optimized` · **Synced upstream:** `8172e6577` · **Benchmarked upstream runtime:** `43f3dda62` (2026-09-11)
 
 ## Benchmarks
 
-The main workload is **100,000 cached tokens followed by a 1,000-token prompt append**. The headline comparisons use upstream `43f3dda62`. Current upstream `8172e6577` differs from that revision only in a server Python unit test, so the runtime source used by these benchmarks is unchanged. Qwen uses `UD-Q5_K_XL`, `q8_0` K/V, FlashAttention, and MTP disabled on both engines.
+The headline workload is **100,000 cached tokens followed by a 1,000-token prompt append**. Qwen uses `UD-Q5_K_XL`, `q8_0` K/V, FlashAttention, and MTP disabled on both engines. The benchmark report records the exact upstream revision, sync checks, and retained measurements.
 
 ### 100k cached + 1k append
 
@@ -31,11 +33,11 @@ The 22 GB RTX 2080 Ti can run the long-Q8 path at a 67,584-token context. Using 
 | TTFT | 2.656 s | **2.058 s** | **-22.53%** |
 | 64-token decode | 17.30 tok/s | 17.34 tok/s | +0.19% |
 
-The allocation left about 463 MiB free on the 22 GB card. Cold-prompt and earlier comparison data are retained in the benchmark reports.
+The 67,584-token allocation leaves about 463 MiB free on the 22 GB card. Cold-prompt results follow below.
 
 ### Cold prompt processing
 
-Cold PP is a secondary workload. These measurements use the same upstream `43f3dda62` runtime and the default paths shown in the launch examples.
+Cold PP shows the same comparison on fresh 1k and 16k prompts, using upstream `43f3dda62` and the launch settings documented below.
 
 | Hardware | 1k upstream | 1k `v100-optimized` | Gain | 16k upstream | 16k `v100-optimized` | Gain |
 |---|---:|---:|---:|---:|---:|---:|
