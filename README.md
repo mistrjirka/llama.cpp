@@ -8,9 +8,24 @@ The fork focuses on prompt-processing latency, especially when a long context is
 
 ## Benchmarks
 
-All headline results below use Qwen3.8-27B `UD-Q5_K_XL`, `q8_0` K/V, FlashAttention, MTP disabled, and the same prompt on both engines. Cold-prompt comparisons use `batch=4096` and `ubatch=2048` on both upstream and the fork.
+The main benchmark is the workload this fork is optimized for: **100,000 cached tokens followed by a 1,000-token prompt append**. All comparisons use Qwen3.8-27B `UD-Q5_K_XL`, llama.cpp `q8_0` K/V cache, FlashAttention, MTP disabled, and current upstream `b0dcb8192` as the baseline.
+
+### 100k cached + 1k append
+
+| Hardware | Upstream PP | `v100-optimized` PP | PP gain | Upstream TTFT | `v100-optimized` TTFT | TTFT reduction |
+|---|---:|---:|---:|---:|---:|---:|
+| V100 32 GB | 298.34 tok/s | **431.90 tok/s** | **+44.77%** | 3.409 s | **2.365 s** | **-30.62%** |
+| V100 + RTX 2080 Ti | 408.79 tok/s | **691.80 tok/s** | **+69.23%** | 2.497 s | **1.499 s** | **-39.97%** |
+
+The single-V100 row uses native 131072 context and matched `batch=4096`, `ubatch=4096` on both engines. Six measurements per side were collected in A/B/B/A process order after a warm request; the generated control token matched across every measured run.
+
+The dual-GPU row uses the production-style 409600-token YaRN context, a 4:5 RTX 2080 Ti:V100 tensor split, and `batch=4096`, `ubatch=2048`. With 64 generated tokens after the append, upstream measured **24.02 tok/s** generation and **5.131 s** end-to-end, while `v100-optimized` measured **26.68 tok/s** and **3.867 s**.
+
+These long-context results are where the Q8 attention work matters most: the request spends substantial time attending over the existing 100k-token KV cache, so the optimized Volta and Turing attention paths have much more impact than they do on a cold short prompt.
 
 ### Cold prompt processing
+
+Cold PP is included as a secondary comparison. These runs start without a 100k cached prefix and use matched `batch=4096`, `ubatch=2048` settings on upstream and the fork.
 
 | Hardware | 1k upstream | 1k `v100-optimized` | Gain | 16k upstream | 16k `v100-optimized` | Gain |
 |---|---:|---:|---:|---:|---:|---:|
@@ -18,22 +33,9 @@ All headline results below use Qwen3.8-27B `UD-Q5_K_XL`, `q8_0` K/V, FlashAttent
 | RTX 2080 Ti 22 GB | 670.78 | **923.28 tok/s** | **+37.64%** | 641.91 | **923.07 tok/s** | **+43.80%** |
 | V100 + RTX 2080 Ti | 982.50 | **1085.45 tok/s** | **+10.48%** | 1031.86 | **1239.70 tok/s** | **+20.14%** |
 
-The RTX 2080 Ti sees the largest cold-prompt gain: about **38% at 1k** and **44% at 16k** in this test.
+The RTX 2080 Ti also benefits strongly without a long cached prefix because the fork adds Turing-specific prompt-processing and attention paths.
 
-### 100k cached + 1k append
-
-This is the main long-context benchmark: 409600-token YaRN context, V100 + RTX 2080 Ti tensor parallel, a restored 100,000-token Q8 KV state, and a 1,000-token append.
-
-| Metric | Upstream `b0dcb8192` | `v100-optimized` | Change |
-|---|---:|---:|---:|
-| Prompt processing | 408.79 tok/s | **691.80 tok/s** | **+69.23%** |
-| TTFT | 2.497 s | **1.499 s** | **-39.97%** |
-| 64-token decode | 24.02 tok/s | **26.68 tok/s** | **+11.1%** |
-| 64-token end-to-end | 5.131 s | **3.867 s** | **-24.6%** |
-
-The final merged tree was rebuilt with the old tuning environment switches unset. Warm 100k+1k samples settled around **693.7 tok/s**, and the D256/GQA6/KV101120/Q1000 attention test passed against the CPU reference on both GPUs.
-
-Full methodology and retained raw measurements are in [`benches/upstream-vs-optimized-0911/REPORT.md`](benches/upstream-vs-optimized-0911/REPORT.md).
+Full methodology, correctness checks, and retained measurements are in [`benches/upstream-vs-optimized-0911/REPORT.md`](benches/upstream-vs-optimized-0911/REPORT.md).
 
 ## Build and run
 

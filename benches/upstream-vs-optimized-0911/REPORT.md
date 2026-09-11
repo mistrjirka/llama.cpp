@@ -15,7 +15,21 @@ All Qwen rows use `Qwen3.8-27B-UD-Q5_K_XL.gguf`, Q8 K/V, FlashAttention, MTP off
 
 ## Qwen 100k cached + 1k append
 
-The cached test uses 409600 context with static YaRN (`1.5625`, original context 262144), tensor split `4,5`, V100 + RTX 2080 Ti, and an independently generated 100000-token slot state for each implementation.
+### Single V100
+
+A fresh current-upstream rerun uses one V100, native 131072 context, matched `--batch-size 4096 --ubatch-size 4096`, Q8 K/V, FlashAttention, MTP off, and the same restored 100000-token state on both engines. Each process receives one warm request before three retained measurements; process order is upstream/fork/fork/upstream, giving six retained measurements per side.
+
+| metric | upstream `b0dcb8192` | fork | change |
+|---|---:|---:|---:|
+| prompt processing | 298.34 tok/s | 431.90 tok/s | +44.77% |
+| wall TTFT | 3.409 s | 2.365 s | -30.62% |
+| prompt phase | 3.352 s | 2.315 s | -30.92% |
+
+All measured runs produced the same generated control token. Raw results are retained in `v100-current-b4096-u4096-100k1k-raw.json` and `v100-current-b4096-u4096-100k1k-summary.json`.
+
+### V100 + RTX 2080 Ti
+
+The dual-GPU cached test uses 409600 context with static YaRN (`1.5625`, original context 262144), tensor split `4,5`, V100 + RTX 2080 Ti, and an independently generated 100000-token slot state for each implementation.
 
 | metric | upstream | fork | change |
 |---|---:|---:|---:|

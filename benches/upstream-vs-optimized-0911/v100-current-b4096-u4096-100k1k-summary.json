@@ -1,0 +1,17 @@
+{
+  "batch": 4096,
+  "ubatch": 4096,
+  "upstream_pp": 298.33735488508694,
+  "fork_pp": 431.8958605109854,
+  "pp_gain_pct": 44.76761070612236,
+  "upstream_prompt_ms": 3351.9175,
+  "fork_prompt_ms": 2315.3858333333333,
+  "prompt_reduction_pct": 30.923543514023443,
+  "upstream_ttft_wall_ms": 3408.6988141643815,
+  "fork_ttft_wall_ms": 2364.808638347313,
+  "ttft_reduction_pct": 30.62430072963108,
+  "upstream_e2e_wall_ms": 3416.376737334455,
+  "fork_e2e_wall_ms": 2372.8519408420348,
+  "n_per_side": 6,
+  "output_exact": true
+}
