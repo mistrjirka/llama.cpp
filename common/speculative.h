@@ -64,13 +64,12 @@ struct common_speculative_draft_params {
     int32_t n_max = -1;
 
     // A negative override leaves the implementation limit unchanged; zero is
-    // an explicit no-proposal budget. Keep both the entry and loop guards equal.
+    // an explicit no-proposal budget.
     int32_t max_draft_tokens(int32_t configured_limit) const {
         return std::max<int32_t>(0, n_max < 0 ? configured_limit : std::min(configured_limit, n_max));
     }
 
-
-    llama_pos   n_past;
+    llama_pos   pos0;
     llama_token id_last;
 
     // TODO: remove in the future by keeping track of the prompt from the _begin() call and the consecutive accept calls
@@ -88,9 +87,8 @@ void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, co
 // process the batch and update the internal state of the speculative context
 bool common_speculative_process(common_speculative * spec, const llama_batch & batch);
 
-// Experimental split-phase MTP latency path. prepare_deferred() is called before
-// target decode so h_nextn can be copied asynchronously into a private pinned
-// buffer; flush_deferred() advances the draft context later, before drafting.
+// Split-phase MTP latency path used by the server to move prompt catch-up off
+// the first-token critical path.
 bool common_speculative_can_defer_prompt(const common_speculative * spec);
 bool common_speculative_prepare_deferred(common_speculative * spec, const llama_batch & batch);
 void common_speculative_finish_deferred_capture(common_speculative * spec);
