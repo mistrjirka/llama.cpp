@@ -1171,3 +1171,42 @@ Files:
 - `benches/gemma4-0911/mtp4_best_vs_off_abba.py`
 - `/models/.bench-ornith-mtp4/best-vs-off-abba/mtp-a.log`
 - `/models/.bench-ornith-mtp4/best-vs-off-abba/results.json`
+
+### VMM allocator assertion root cause and fix
+
+The restore-cycle crash was isolated to the D256 prequantized FlashAttention path introduced for the SM75 GQA8 INT8-QK work, not to MTP target-head sharing.
+
+Root cause in `ggml/src/ggml-cuda/fattn-common.cuh::launch_fattn()`:
+- RAII pool owners were declared in this order: `KV_max`, `dst_tmp`, `dst_tmp_meta`, `Q_q8`, `K_q8`
+- but when the prequant/prepack route is active, actual VMM allocations occur in the order `Q_q8`, `K_q8`, then `KV_max` / output temporaries
+- C++ destroys locals in reverse declaration order, so `K_q8` / `Q_q8` were freed *before* later VMM allocations
+- `ggml_cuda_pool_vmm` is a strict stack allocator and asserts that frees are exactly reverse allocation order, producing:
+  `GGML_ASSERT(ptr == (void *) ((char *)(pool_addr) + pool_used)) failed`
+
+Why it appeared intermittent in the four-slot fixture:
+- individual restored prompt suffixes were only ~38-44 tokens, but four concurrent requests can form an aggregate target batch >=128 tokens
+- that crosses the GQA8 INT8-QK prefill gate and enables `Q_q8` / `K_q8` prepacking
+- depending request/batch packing, the problematic allocation pattern was not entered on every round
+
+Fix:
+- declare `Q_q8`, `K_q8` before `KV_max`, `dst_tmp`, `dst_tmp_meta`
+- allocation order and reverse destructor order now obey the VMM pool stack discipline
+- no arithmetic, kernel, tensor shape, or routing behavior changed
+
+Pre-fix stress matrix, four restored 100k slots, repeated erase/restore + 4 concurrent x128 generations:
+- head-sharing Q4 MTP1: 10/10 rounds happened to pass in one run
+- ordinary Q4 MTP1: 10/10 rounds happened to pass
+- **no-MTP: crashed on round 2** with the same VMM assertion and `launch_fattn<256,4,8>` backtrace
+- an earlier head-sharing process had also hit the same assertion on round 2, confirming stochastic batch-shape dependence rather than a sharing-specific failure
+
+Post-fix identical 10-round matrix:
+- **head-sharing MTP: 10/10, no crash**, mean aggregate 106.6581 tok/s
+- **ordinary Q4 MTP: 10/10, no crash**, mean aggregate 104.6202 tok/s
+- **no-MTP: 10/10, no crash**, mean aggregate 90.3848 tok/s
+
+Files:
+- `benches/gemma4-0911/mtp4_stability_matrix.py`
+- pre-fix `/models/.bench-ornith-mtp4/stability-matrix/`
+- post-fix `/models/.bench-ornith-mtp4/stability-matrix-fixed/`
+
+This fix is independent of the experimental target-head sharing changes and is safe to commit separately.

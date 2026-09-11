@@ -1117,11 +1117,15 @@ void launch_fattn(
     const ggml_cuda_flash_attn_ext_f16_extra_data f16_extra =
         ggml_cuda_flash_attn_ext_get_f16_extra_data(KQV, need_f16_K, need_f16_V);
 
+    // VMM pool allocations must be freed in strict reverse allocation order.
+    // Q/K prepacking happens before KV_max and temporary output buffers below,
+    // so declare their RAII owners first as well. C++ destroys locals in reverse
+    // declaration order, preserving the pool's stack discipline.
+    ggml_cuda_pool_alloc<ggml_cuda_fattn_q8_d256_row> Q_q8(pool);
+    ggml_cuda_pool_alloc<ggml_cuda_fattn_q8_d256_row> K_q8(pool);
     ggml_cuda_pool_alloc<int>    KV_max(pool);
     ggml_cuda_pool_alloc<float>  dst_tmp(pool);
     ggml_cuda_pool_alloc<float2> dst_tmp_meta(pool);
-    ggml_cuda_pool_alloc<ggml_cuda_fattn_q8_d256_row> Q_q8(pool);
-    ggml_cuda_pool_alloc<ggml_cuda_fattn_q8_d256_row> K_q8(pool);
 
     const char * Q_data = (const char *) Q->data;
     size_t nb01 = Q->nb[1];
