@@ -244,10 +244,41 @@ void ggml_cuda_mul_mat_q(
                                          ne11 * ne10_padded * sizeof(block_q8_1) / (QK8_1 * sizeof(int));
     const int64_t s13 = ne12*s12;
 
-    // Each expert only sees ne12*n_expert_used/ne02 tokens on average.
-    // On RDNA3 and RDNA4 it is faster to pick the tile size against this value instead of ne12.
+    // ncols_opt selects the MMQ J tile width; the launch grid still covers all routed rows.
+    // Ornith/Qwen3.5-MoE has 256 experts with top-8 routing and strongly skewed expert loads,
+    // so choosing J from the whole microbatch substantially over-tiles most experts. Keep the
+    // override exact to the measured SM70/SM75 expert geometries and N <= 512; unrelated MoE
+    // models and larger batches retain the generic selector.
     int64_t ncols_opt = ne12;
-    if (GGML_CUDA_CC_IS_RDNA3_0(cc) || GGML_CUDA_CC_IS_RDNA4(cc)) {
+    if (ne02 == 256 && n_expert_used == 8 && ne12 > 0 && ne12 <= 512 &&
+            (cc == GGML_CUDA_CC_VOLTA || cc == GGML_CUDA_CC_TURING)) {
+        if (ne00 == 2048 && ne01 == 512) {
+            // Gate/up. AD-Q6_K-Q5_K uses Q5_K; the 21 GiB Turing quant uses Q4_K.
+            if (src0->type == GGML_TYPE_Q5_K) {
+                ncols_opt = ne12 <= 128 ? 8 : ne12 <= 256 ? 16 : 24;
+            } else if (src0->type == GGML_TYPE_Q4_K && cc == GGML_CUDA_CC_TURING && ne12 >= 384) {
+                ncols_opt = 24;
+            }
+        } else if (ne00 == 512 && ne01 == 2048) {
+            // Down. AD-Q6_K-Q5_K uses Q6_K; the 21 GiB Turing quant uses Q5_K.
+            if (src0->type == GGML_TYPE_Q6_K) {
+                if (ne12 < 64) {
+                    // Keep TG and unmeasured tiny appends on the generic J8 choice.
+                    ncols_opt = 8;
+                } else if (ne12 <= 128) {
+                    // At N=64 SM75 prefers J16, while SM70 still prefers J8.
+                    ncols_opt = ne12 == 64 && cc == GGML_CUDA_CC_VOLTA ? 8 : 16;
+                } else if (ne12 <= 256) {
+                    ncols_opt = 24;
+                } else {
+                    ncols_opt = 48;
+                }
+            } else if (src0->type == GGML_TYPE_Q5_K && cc == GGML_CUDA_CC_TURING && ne12 >= 384) {
+                ncols_opt = 64;
+            }
+        }
+    } else if (GGML_CUDA_CC_IS_RDNA3_0(cc) || GGML_CUDA_CC_IS_RDNA4(cc)) {
+        // Each expert only sees ne12*n_expert_used/ne02 tokens on average.
         ncols_opt = (ne12*n_expert_used + ne02 - 1) / ne02;
     }
 
@@ -316,6 +347,10 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
         }
     }
 
+#ifdef GGML_CUDA_FORCE_MMQ
+    return true;
+#endif //GGML_CUDA_FORCE_MMQ
+
     if (turing_mma_available(cc)) {
         // On physical sm_75, dense large-N quantized matmuls cross over to
         // dequantize->FP16 + cuBLAS. A matched sweep on RTX 2080 Ti puts the best
@@ -347,10 +382,6 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
         // TODO: check if cards older than pascal might benefit from this as well
         return cc >= GGML_CUDA_CC_PASCAL && n_experts > 0;
     }
-
-#ifdef GGML_CUDA_FORCE_MMQ
-    return true;
-#endif //GGML_CUDA_FORCE_MMQ
 
     if (cc == GGML_CUDA_CC_VOLTA && n_experts > 0) {
         const char * force = getenv("GGML_CUDA_VOLTA_FORCE_MMQ");
