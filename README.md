@@ -6,7 +6,85 @@ CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Tur
 
 **Long-context highlights:** Qwen on V100 + RTX 2080 Ti reaches **+69.3% prompt processing** with **39.9% lower TTFT**; Ornith on V100 reaches **+49.0% PP** with **32.1% lower TTFT**; Qwen on V100 reaches **+44.3% PP** with **30.2% lower TTFT**.
 
-**Branch:** `v100-optimized` · **Synced upstream:** `8172e6577` · **Benchmarked upstream runtime:** `43f3dda62` (2026-09-11)
+## Build and run
+
+### Build
+
+Clone and build one binary containing both SM70 and SM75 kernels:
+
+```bash
+git clone --branch v100-optimized --single-branch https://github.com/mistrjirka/llama.cpp.git && cd llama.cpp && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_GRAPHS=ON -DCMAKE_CUDA_ARCHITECTURES='70;75' -DLLAMA_BUILD_UI=OFF && cmake --build build -j --target llama-server
+```
+
+`70;75` builds kernels for both V100 and RTX 2080 Ti, so the same build works on either GPU or on a mixed system. `-DLLAMA_BUILD_UI=OFF` skips the web UI and its build/download step; remove it if you use the built-in UI.
+
+The same CUDA build is recommended for Qwen and Ornith. On V100-containing systems, set `GGML_CUDA_VOLTA_FORCE_MMQ=moe`: it enables MMQ only for routed MoE experts and measured within 0.2% of normal dispatch on dense Qwen.
+
+### V100
+
+For Qwen3.8-27B on a single V100, the server selects the measured `batch=4096`, `ubatch=4096` defaults when `-b/-ub` are omitted. Run `./build/bin/llama-server --list-devices` to check the CUDA name; the example below uses `CUDA0`.
+
+```bash
+GGML_CUDA_VOLTA_FORCE_MMQ=moe ./build/bin/llama-server \
+  --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
+  --device CUDA0 --split-mode none \
+  --gpu-layers all \
+  --ctx-size 131072 --parallel 1 \
+  --flash-attn on \
+  --cache-type-k q8_0 --cache-type-v q8_0
+```
+
+At 16k prompt processing, the measured V100 ubatch sweep was **876.49 tok/s at 1024**, **923.31 at 2048**, and **952.18 at 4096**.
+
+### RTX 2080 Ti
+
+For a single RTX 2080 Ti, the server selects `batch=4096`, `ubatch=2048` for the tested Qwen3.8-27B contexts. Run `./build/bin/llama-server --list-devices` and use the RTX device name; the example below uses `CUDA0`.
+
+```bash
+./build/bin/llama-server \
+  --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
+  --device CUDA0 --split-mode none \
+  --gpu-layers all \
+  --ctx-size 32768 --parallel 1 \
+  --flash-attn on \
+  --cache-type-k q8_0 --cache-type-v q8_0
+```
+
+At 16k prompt processing, `ubatch=1024/2048/4096` measured **890.95 / 923.63 / 930.62 tok/s**. `ubatch=2048` keeps almost all of the performance while leaving more VRAM for context and server state.
+
+### V100 + RTX 2080 Ti
+
+Batch/ubatch and tensor placement stay explicit on mixed-GPU systems because free VRAM, context size, and tensor split materially change the best configuration. The following is the tested 400k-context configuration used for the long-context benchmark. Check `./build/bin/llama-server --list-devices` first; the device order below assumes the RTX 2080 Ti is `CUDA1` and the V100 is `CUDA0`.
+
+```bash
+export GGML_CUDA_VOLTA_FORCE_MMQ=moe
+export GGML_CUDA_ALLREDUCE=internal
+export GGML_CUDA_AR_COPY_THRESHOLD=131072
+./build/bin/llama-server \
+  --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
+  --device CUDA1,CUDA0 --tensor-split 4,5 --split-mode tensor \
+  --gpu-layers all --fit off --parallel 1 \
+  --ctx-size 409600 \
+  --override-kv qwen35.context_length=int:409600 \
+  --rope-scaling yarn --rope-scale 1.5625 --yarn-orig-ctx 262144 \
+  --flash-attn on \
+  --batch-size 4096 --ubatch-size 2048 \
+  --cache-type-k q8_0 --cache-type-v q8_0 \
+  --ctx-checkpoints 32 --checkpoint-min-step 8192
+```
+
+The tested 400k profile uses `4096/2048`. `ubatch=4096` was a little faster in the sweep but left only about 1 GiB free on the RTX 2080 Ti before adding other server state.
+
+### Batch defaults
+
+| Setup | Qwen3.8 default | Selection |
+|---|---:|---|
+| Single V100, 131072 ctx | `4096/4096` | automatic |
+| Single RTX 2080 Ti, 32768 or 67584 ctx | `4096/2048` | automatic |
+| V100 + RTX 2080 Ti, 409600 ctx | `4096/2048` | automatic |
+| Other model/topology/context | upstream behavior | unchanged |
+
+Explicit `-b/-ub`, `LLAMA_ARG_BATCH`/`LLAMA_ARG_UBATCH`, and configuration values take precedence. `LLAMA_V100_AUTO_BATCH=0` disables the hardware-aware Qwen batch defaults. The mixed 400k command above keeps `4096/2048` explicit so the complete tested setup is visible in one place.
 
 ## Benchmarks
 
@@ -46,85 +124,6 @@ Cold PP shows the same comparison on fresh 1k and 16k prompts, using upstream `4
 | V100 + RTX 2080 Ti | 963.61 | **1088.98 tok/s** | **+13.01%** | 1025.85 | **1242.23 tok/s** | **+21.09%** |
 
 Full methodology, regression checks and retained measurements are in [`benches/upstream-sync-0911/REPORT.md`](benches/upstream-sync-0911/REPORT.md).
-
-## Build and run
-
-### Build
-
-Clone and build one binary containing both SM70 and SM75 kernels:
-
-```bash
-git clone --branch v100-optimized --single-branch https://github.com/mistrjirka/llama.cpp.git && cd llama.cpp && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_GRAPHS=ON -DCMAKE_CUDA_ARCHITECTURES='70;75' -DLLAMA_BUILD_UI=OFF && cmake --build build -j --target llama-server
-```
-
-`70;75` builds kernels for both V100 and RTX 2080 Ti, so the same build works on either GPU or on a mixed system. `-DLLAMA_BUILD_UI=OFF` skips the web UI and its build/download step; remove it if you use the built-in UI.
-
-The same CUDA build is recommended for Qwen and Ornith. On V100-containing systems, set `GGML_CUDA_VOLTA_FORCE_MMQ=moe`: it enables MMQ only for routed MoE experts and measured within 0.2% of normal dispatch on dense Qwen.
-
-### V100
-
-For Qwen3.8-27B on a single V100, the server automatically selects the measured `batch=4096`, `ubatch=4096` defaults when `-b/-ub` are omitted.
-Replace the `CUDA_VISIBLE_DEVICES=0` index below with the `nvidia-smi` index of the card you want to expose. Once only one GPU is visible, llama.cpp sees it as `CUDA0`.
-
-```bash
-GGML_CUDA_VOLTA_FORCE_MMQ=moe CUDA_VISIBLE_DEVICES=0 ./build/bin/llama-server \
-  --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
-  --gpu-layers all \
-  --ctx-size 131072 --parallel 1 \
-  --flash-attn on \
-  --cache-type-k q8_0 --cache-type-v q8_0
-```
-
-At 16k prompt processing, the measured V100 ubatch sweep was **876.49 tok/s at 1024**, **923.31 at 2048**, and **952.18 at 4096**.
-
-### RTX 2080 Ti
-
-For a single RTX 2080 Ti, the server automatically selects `batch=4096`, `ubatch=2048` for the tested Qwen3.8-27B model.
-
-```bash
-CUDA_VISIBLE_DEVICES=0 ./build/bin/llama-server \
-  --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
-  --gpu-layers all \
-  --ctx-size 32768 --parallel 1 \
-  --flash-attn on \
-  --cache-type-k q8_0 --cache-type-v q8_0
-```
-
-At 16k prompt processing, `ubatch=1024/2048/4096` measured **890.95 / 923.63 / 930.62 tok/s**. `ubatch=2048` keeps almost all of the performance while leaving more VRAM for context and server state.
-
-### V100 + RTX 2080 Ti
-
-Batch/ubatch and tensor placement stay explicit on mixed-GPU systems because free VRAM, context size, and tensor split materially change the best configuration. The following is the tested 400k-context configuration used for the long-context benchmark. Check `./build/bin/llama-server --list-devices` first; the device order below assumes the RTX 2080 Ti is `CUDA1` and the V100 is `CUDA0`.
-
-```bash
-export GGML_CUDA_VOLTA_FORCE_MMQ=moe
-export GGML_CUDA_ALLREDUCE=internal
-export GGML_CUDA_AR_COPY_THRESHOLD=131072
-./build/bin/llama-server \
-  --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
-  --device CUDA1,CUDA0 --tensor-split 4,5 --split-mode tensor \
-  --gpu-layers all --fit off --parallel 1 \
-  --ctx-size 409600 \
-  --override-kv qwen35.context_length=int:409600 \
-  --rope-scaling yarn --rope-scale 1.5625 --yarn-orig-ctx 262144 \
-  --flash-attn on \
-  --batch-size 4096 --ubatch-size 2048 \
-  --cache-type-k q8_0 --cache-type-v q8_0 \
-  --ctx-checkpoints 32 --checkpoint-min-step 8192
-```
-
-The tested 400k profile uses `4096/2048`. `ubatch=4096` was a little faster in the sweep but left only about 1 GiB free on the RTX 2080 Ti before adding other server state.
-
-### Batch defaults
-
-| Setup | Qwen3.8 default | Selection |
-|---|---:|---|
-| Single V100 | `4096/4096` | automatic |
-| Single RTX 2080 Ti | `4096/2048` | automatic |
-| V100 + RTX 2080 Ti, 409600 ctx | `4096/2048` | explicit tested profile |
-| Other model/topology | upstream behavior | unchanged |
-
-Explicit `-b/-ub`, `LLAMA_ARG_BATCH`/`LLAMA_ARG_UBATCH`, and non-default configuration values take precedence. `LLAMA_V100_AUTO_BATCH=0` disables the hardware-aware Qwen batch defaults. Automatic tuning is deliberately limited to the two benchmarked single-GPU types.
 
 ## RTX 2080 Ti optimizations
 
@@ -188,6 +187,8 @@ The branch also contains earlier work on MTP serving, exact-prefix KV sharing, p
 - [`benches/upstream-sync-0911/REPORT.md`](benches/upstream-sync-0911/REPORT.md)
 
 ## Benchmark notes
+
+The branch is synced through upstream `8172e6577`; the benchmarked upstream runtime is `43f3dda62` (2026-09-11). The intervening upstream change is confined to `tools/server/tests/unit/test_completion.py`.
 
 Benchmark percentages are measurements for the configurations above. Context length, quantization, tensor placement, batch size, and ubatch can move the bottleneck substantially. The current sync report contains the exact controls, retained measurements, MMQ comparison, and correctness checks used for the headline tables.
 
