@@ -11,6 +11,27 @@ OUT = Path(__file__).with_name("long-context-prompt-processing.svg")
 
 rows = [
     {
+        "lines": ("Qwen3.8 27B", "V100 32 GB", "100k cached + 1k"),
+        "upstream": 297.69,
+        "fork": 429.66,
+        "gain": 44.33,
+        "ttft": 30.23,
+    },
+    {
+        "lines": ("Qwen3.8 27B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
+        "upstream": 382.30,
+        "fork": 494.92,
+        "gain": 29.46,
+        "ttft": 22.53,
+    },
+    {
+        "lines": ("Qwen3.8 27B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
+        "upstream": 408.08,
+        "fork": 690.96,
+        "gain": 69.32,
+        "ttft": 39.93,
+    },
+    {
         "lines": ("Ornith 1.5 35B-A3B", "V100 32 GB", "100k cached + 1k"),
         "upstream": 539.11,
         "fork": 803.18,
@@ -18,11 +39,18 @@ rows = [
         "ttft": 32.06,
     },
     {
-        "lines": ("Qwen3.8 27B", "V100 32 GB", "100k cached + 1k"),
-        "upstream": 297.69,
-        "fork": 429.66,
-        "gain": 44.33,
-        "ttft": 30.23,
+        "lines": ("Ornith 1.5 35B-A3B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
+        "upstream": 1332.91,
+        "fork": 1505.73,
+        "gain": 12.97,
+        "ttft": 11.13,
+    },
+    {
+        "lines": ("Ornith 1.5 35B-A3B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
+        "upstream": 1247.39,
+        "fork": 1458.85,
+        "gain": 16.95,
+        "ttft": 14.44,
     },
     {
         "lines": ("Gemma 4 31B", "V100 32 GB", "100k depth + 1k"),
@@ -37,34 +65,6 @@ rows = [
         "fork": 905.84,
         "gain": 31.37,
         "ttft": None,
-    },
-    {
-        "lines": ("Qwen3.8 27B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
-        "upstream": 382.30,
-        "fork": 494.92,
-        "gain": 29.46,
-        "ttft": 22.53,
-    },
-    {
-        "lines": ("Ornith 1.5 35B-A3B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
-        "upstream": 1327.01,
-        "fork": 1500.26,
-        "gain": 13.06,
-        "ttft": 11.42,
-    },
-    {
-        "lines": ("Qwen3.8 27B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
-        "upstream": 408.08,
-        "fork": 690.96,
-        "gain": 69.32,
-        "ttft": 39.93,
-    },
-    {
-        "lines": ("Ornith 1.5 35B-A3B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
-        "upstream": 1247.39,
-        "fork": 1458.85,
-        "gain": 16.95,
-        "ttft": 14.44,
     },
 ]
 
@@ -101,7 +101,7 @@ parts = [
     '<desc id="desc">Grouped vertical bars comparing upstream llama.cpp with v100-optimized across single-V100, single-RTX-2080-Ti, Gemma, Ornith, and mixed-GPU long-context workloads.</desc>',
     f'<rect width="{W}" height="{H}" rx="12" fill="#FFFFFF"/>',
     svg_text(left, 42, "Long-context prompt processing", size=30, weight=700, anchor="start"),
-    svg_text(left, 72, "Prompt processing throughput (tok/s) · single-GPU/model results first, mixed-GPU last", size=17, anchor="start", fill=muted),
+    svg_text(left, 72, "Prompt processing throughput (tok/s) · grouped by model family and hardware", size=17, anchor="start", fill=muted),
 ]
 
 # Legend

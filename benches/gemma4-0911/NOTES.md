@@ -1314,3 +1314,101 @@ This reproduces the previous ~106.6 tok/s best-vs-best result while restoring co
 
 Artifacts:
 - `/models/.bench-ornith-mtp4/head-share-semantic-fix/`
+
+### Draft KV precision: matched-state generation and q4_0/q4_0 result
+
+The first lower-precision restore failures were caused only by Q8-serialized `.draft` sidecars. Exact format-matched sidecars are now generated from the fixture's four `histories`, each exactly 100,000 tokens.
+
+#### Separate cold-prefill issue found during state generation
+
+Trying to build a 100k state from scratch on the production 14:35 mixed-GPU topology exposed an unrelated long cold-prefill failure around 65k tokens. It reproduced with both Q8/Q8 and Q4_0/Q4_0 draft KV, so it is **not** caused by draft KV quantization.
+
+Q8 control failed just after 65,024 prompt tokens with:
+- `CUDA error: an illegal memory access was encountered`
+- `ggml_backend_cuda_cpy_tensor_async`
+- `cudaMemcpyPeerAsync(...)`
+
+The normal production workload restores 100k and appends only ~38-44 prompt tokens, so this path was not exercised by the serving benchmark. Treat this as a separate dual-GPU long-cold-prefill bug to investigate later.
+
+#### Stable format-matched sidecar generation
+
+To avoid changing the production benchmark while bypassing the cold-prefill bug, sidecars are generated on a stable topology:
+- target fully on V100 (`CUDA0`, split mode none), context 131072, parallel1;
+- target Q8 K/V, batch/ubatch 4096/4096;
+- draft layer/KV on RTX 2080 Ti;
+- target-head reuse enabled;
+- synchronous MTP prompt processing (no `--spec-mtp-defer-prompt`) so `n_predict=0` fully fills draft KV before save.
+
+After saving, the newly written target `.bin` is deleted and replaced with a symlink to the original target snapshot. Therefore production benchmarking changes only the `.draft` / `.spec` companions; the target state remains byte-for-byte the original fixture state.
+
+For q4_0/q4_0:
+- first exact 100k prefill: 57.50 s prompt time / 1739.08 tok/s;
+- later histories reuse a 95,904-token prefix and append 4096 tokens at ~1160-1164 tok/s;
+- each q4 draft sidecar: **60,400,068 bytes** vs ~107 MiB for original Q8 draft state.
+
+#### q4_0/q4_0 on unchanged production topology
+
+Setup remains 1.4M physical context, four 400k slots, 14:35 RTX:V100, target 512/128, draft ubatch64, Q4 Shisa, MTP1, target-head reuse; only draft KV changes from Q8/Q8 to q4_0/q4_0.
+
+Four retained rounds after warmup:
+- aggregate output: **105.4644 tok/s** (stdev 1.5758)
+- mean per-agent TG: **31.9822 tok/s**
+- acceptance: **932/1093 = 85.2699%**
+- RTX memory: **19,118 MiB used / 2,883 MiB free**
+- V100 memory: **31,291 MiB used / 1,204 MiB free**
+
+Versus fresh Q8/Q8 baseline from the same sweep:
+- Q8 output 106.5529 tok/s, acceptance 87.7627%, RTX 19,802 MiB;
+- q4_0 output is **-1.02%**;
+- acceptance is **-2.49 percentage points**;
+- q4_0 recovers **684 MiB of RTX VRAM**.
+
+This is promising but not yet the recommendation: the recovered VRAM may permit a faster layer split, and asymmetric / q5 / q4_1 / iq4_nl cases should establish the best quality-memory frontier first.
+
+Artifacts:
+- `/models/.bench-ornith-mtp4/draft-kv-states/q4_0-q4_0/`
+- `/models/.bench-ornith-mtp4/draft-kv-matched/q4_0-q4_0/result.json`
+
+### Final matched draft-KV frontier and production choice
+
+After fixing Qwen head-reuse semantics, all draft-KV candidates were rebuilt with exact 100k format-matched `.draft` sidecars and measured on the unchanged four-slot production topology (14:35 RTX:V100, target 512/128, draft64, Q4 Shisa, MTP1, target-head reuse). Four retained rounds were used after warmup.
+
+| Draft K/V | Aggregate tok/s | Mean TG | Acceptance | RTX used | RTX free |
+|---|---:|---:|---:|---:|---:|
+| q8_0/q8_0 | 105.250 | 32.249 | 85.70% | 19,802 MiB | 2,199 MiB |
+| q5_1/q5_1 | 102.031 | 31.387 | 83.17% | 19,374 MiB | 2,627 MiB |
+| q5_0/q5_0 | 101.829 | 31.420 | 82.24% | 19,288 MiB | 2,713 MiB |
+| q4_1/q4_1 | 104.673 | 31.795 | 84.90% | 19,204 MiB | 2,797 MiB |
+| **q4_0/q4_0** | **105.272** | **31.968** | **84.08%** | **19,118 MiB** | **2,883 MiB** |
+| iq4_nl/iq4_nl | 38.848 | 10.496 | 83.32% | 16,222 MiB | 5,779 MiB |
+| q4_0/q8_0 | 104.239 | 31.811 | 84.67% | 19,460 MiB | 2,541 MiB |
+| q8_0/q4_0 | 103.389 | 31.729 | 84.08% | 19,460 MiB | 2,541 MiB |
+
+Production choice: **q4_0/q4_0**. It recovered **684 MiB** of RTX VRAM versus Q8/Q8 while aggregate throughput was statistically tied in this sweep (+0.02 tok/s nominally). `iq4_nl` is rejected despite its large memory saving because this CUDA path fell to ~39 aggregate tok/s.
+
+The extra q4 memory was tested for more target-layer residency:
+- 16:33: 20,356 MiB RTX, 103.48 tok/s;
+- 17:32: 20,974 MiB RTX, 104.72 tok/s;
+- 18:31 and 19:30: fail at MTP context creation because the RTX still cannot allocate the ~2911.67 MiB draft compute arena.
+
+Therefore **14:35 remains the best production split**. The saved q4 KV memory is valuable as operational headroom, not as justification for moving more target layers to the RTX.
+
+Artifacts:
+- `benches/gemma4-0911/mtp4_draft_kv_generate_states.py`
+- `benches/gemma4-0911/mtp4_draft_kv_matched_case.py`
+- `/models/.bench-ornith-mtp4/draft-kv-states/`
+- `/models/.bench-ornith-mtp4/draft-kv-matched/`
+
+### Refreshed single RTX 2080 Ti Ornith 65k+1k comparison
+
+The standard single-RTX Ornith row was rerun after the current branch changes using the dedicated compile-time FORCE_MMQ build, `AD-Q5_K-Q4_K`, 67,584 context, Q8 target K/V, MTP off, batch4096/ubatch512, and a restored 65,536-token prefix plus 1,000-token append.
+
+Process ABBA retained means:
+- upstream `43f3dda62`: **1332.907 PP/s**, TTFT **790.10 ms**;
+- current `v100-optimized`: **1505.725 PP/s**, TTFT **702.14 ms**;
+- PP gain: **+12.97%**;
+- TTFT reduction: **11.13%**.
+
+This supersedes only the older numerical measurement for the *same* graph row (1327.01 -> 1500.26). No valid graph workload is removed. Hero-graph policy is to preserve existing rows by default and replace a row only when the same apples-to-apples workload has a newer validated measurement.
+
+Artifact: `benches/gemma4-0911/ornith-2080-force-mmq/abba.json`.
