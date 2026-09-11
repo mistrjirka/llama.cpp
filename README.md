@@ -4,7 +4,9 @@ CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Tur
 
 ![Long-context prompt processing throughput comparing upstream llama.cpp with v100-optimized across V100, RTX 2080 Ti, Gemma, Ornith, and mixed-GPU workloads](docs/benchmarks/long-context-prompt-processing.svg)
 
-**Long-context highlights:** on a single V100, Ornith reaches **+49.0% PP**, Qwen3.8-27B **+44.3%**, Gemma 4 31B **+36.7%**, and Gemma 4 26B-A4B **+31.4%**. Qwen on a single RTX 2080 Ti reaches **+29.5%**. The less common V100 + RTX 2080 Ti setup is shown last in the graph and reaches **+69.3%**.
+**Long-context highlights:** on a single V100, Ornith reaches **+49.0% PP**, Qwen3.8-27B **+44.3%**, Gemma 4 31B **+36.7%**, and Gemma 4 26B-A4B **+31.4%**. On a single RTX 2080 Ti, Qwen reaches **+29.5%** and Ornith **+13.1%**. Mixed V100 + RTX 2080 Ti results are shown last in the graph: **+69.3%** for Qwen and **+17.0%** for Ornith.
+
+The Ornith RTX 2080 Ti and mixed-GPU rows use a dedicated `GGML_CUDA_FORCE_MMQ=ON` build on both upstream and optimized arms; the Qwen rows use the normal build. Exact settings are documented below.
 
 ## Build and run
 
@@ -21,7 +23,7 @@ cmake --build build -j --target llama-server
 
 `70;75` builds kernels for both V100 and RTX 2080 Ti, so the same build works on either GPU or on a mixed system. `-DLLAMA_BUILD_UI=OFF` skips the web UI and its build/download step; remove it if you use the built-in UI.
 
-The same CUDA build is recommended for Qwen and Ornith. On V100-containing systems, set `GGML_CUDA_VOLTA_FORCE_MMQ=moe`: it enables MMQ only for routed MoE experts and measured within 0.2% of normal dispatch on dense Qwen.
+The normal CUDA build is recommended for Qwen and for V100-only Ornith. On the V100, set `GGML_CUDA_VOLTA_FORCE_MMQ=moe`: it enables MMQ only for routed MoE experts and measured within 0.2% of normal dispatch on dense Qwen. RTX-only and mixed-GPU Ornith use the dedicated FORCE_MMQ build documented below.
 
 ### V100
 
@@ -166,7 +168,7 @@ The compact path remains specific to the validated long-context geometry. The re
 
 ## Ornith and MoE
 
-Use the same build shown above. On V100 or a V100-containing system, set:
+For the V100-only setup, use the normal build shown above and set:
 
 ```bash
 export GGML_CUDA_VOLTA_FORCE_MMQ=moe
@@ -188,7 +190,38 @@ This selects MMQ for routed expert matmuls on Volta. The setting is safe to keep
 
 A mirrored Qwen test measured **429.86 PP/s** with the selector unset and **429.17 PP/s** with `GGML_CUDA_VOLTA_FORCE_MMQ=moe` (-0.16%). Dense Qwen has no routed experts, so the selector leaves its matmul policy unchanged.
 
-Global `GGML_CUDA_FORCE_MMQ=ON` is much less suitable as a common build: the same Qwen 100k+1k test fell to **295.70 PP/s**, while Ornith measured **776.86 PP/s** globally forced versus **804.23 PP/s** with selective `MMQ=moe`. The normal build plus the runtime selector therefore gives the better shared Qwen/Ornith configuration.
+Global `GGML_CUDA_FORCE_MMQ=ON` is much less suitable as a common Qwen build: the same Qwen 100k+1k test fell to **295.70 PP/s**. For a V100-only shared Qwen/Ornith launcher, the normal build plus `GGML_CUDA_VOLTA_FORCE_MMQ=moe` remains the recommended setup.
+
+For **RTX 2080 Ti-only Ornith** and the **V100 + RTX 2080 Ti Ornith** configuration below, use a dedicated build with global MMQ forced at compile time. Both upstream and optimized benchmark arms used the same setting:
+
+```bash
+cmake -S . -B build-ornith-mmq -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_GRAPHS=ON -DGGML_CUDA_FORCE_MMQ=ON -DCMAKE_CUDA_ARCHITECTURES='70;75' -DLLAMA_BUILD_UI=OFF
+cmake --build build-ornith-mmq -j --target llama-server
+```
+
+Do not use that dedicated FORCE_MMQ build for the dense Qwen benchmarks above.
+
+### Ornith on RTX 2080 Ti: 65k cached + 1k append
+
+`Ornith-1.5-35B-A3B-AD-Q5_K-Q4_K.gguf`, fully resident on the RTX 2080 Ti, 67,584-token context, Q8 K/V, MTP off, global FORCE_MMQ on both engines, `batch=4096`, `ubatch=512`:
+
+| Metric | Upstream `43f3dda62` | `v100-optimized` | Change |
+|---|---:|---:|---:|
+| Prompt processing | 1327.01 tok/s | **1500.26 tok/s** | **+13.06%** |
+| TTFT | 0.790 s | **0.700 s** | **-11.42%** |
+
+The model plus 67,584-token context fits on the 22 GB card with only a small VRAM margin; this row intentionally uses that maximum tested setup.
+
+### Ornith on V100 + RTX 2080 Ti: 100k cached + 1k append
+
+`Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf`, Q8 K/V, MTP off, global FORCE_MMQ on both engines. The best fair topology was **tensor split 1:1** with `batch=2048`, `ubatch=1024`, and internal CUDA all-reduce:
+
+| Metric | Upstream `43f3dda62` | `v100-optimized` | Change |
+|---|---:|---:|---:|
+| Prompt processing | 1247.39 tok/s | **1458.85 tok/s** | **+16.95%** |
+| TTFT | 0.856 s | **0.733 s** | **-14.44%** |
+
+A layer-split 14:35 RTX:V100 configuration reached 1108.32 tok/s on the optimized branch; tensor split is substantially faster for this Ornith workload, so the graph uses the matched tensor-split comparison.
 
 The production MTP head is the Shisa 12K KL-distilled `mtp-shisa-ornith15-all-Q5_0.gguf`. A four-agent regression test with MTP3, Q8 target/draft KV, four 100k cached histories and `MMQ=moe` measured **89.35 → 89.46 generated tok/s aggregate (+0.13%)** across the upstream sync; mean per-agent TG was **27.85 → 27.90 tok/s** and draft acceptance **60.0% → 60.6%**. This confirms that the sync did not regress the production MTP path.
 

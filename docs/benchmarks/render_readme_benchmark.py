@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Render the README long-context benchmark as a standalone SVG.
 
-The values below are the headline measurements retained in
-benches/upstream-sync-0911/REPORT.md.
+The values below are retained headline measurements documented in the
+README and benchmark notes.
 """
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -46,19 +46,33 @@ rows = [
         "ttft": 22.53,
     },
     {
-        "lines": ("Qwen3.8 27B", "V100 + RTX 2080 Ti", "100k cached + 1k"),
+        "lines": ("Ornith 1.5 35B-A3B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
+        "upstream": 1327.01,
+        "fork": 1500.26,
+        "gain": 13.06,
+        "ttft": 11.42,
+    },
+    {
+        "lines": ("Qwen3.8 27B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
         "upstream": 408.08,
         "fork": 690.96,
         "gain": 69.32,
         "ttft": 39.93,
     },
+    {
+        "lines": ("Ornith 1.5 35B-A3B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
+        "upstream": 1247.39,
+        "fork": 1458.85,
+        "gain": 16.95,
+        "ttft": 14.44,
+    },
 ]
 
-W, H = 1500, 720
-left, right, top, bottom = 90, 45, 128, 158
+W, H = 1900, 790
+left, right, top, bottom = 90, 45, 128, 170
 plot_w = W - left - right
 plot_h = H - top - bottom
-ymax = 1000.0
+ymax = 1600.0
 baseline_y = top + plot_h
 
 upstream_color = "#8C959F"
@@ -92,7 +106,7 @@ parts = [
 
 # Legend
 legend_y = 51
-legend_x = 1160
+legend_x = 1540
 parts += [
     f'<rect x="{legend_x}" y="{legend_y-14}" width="20" height="20" rx="4" fill="{upstream_color}"/>',
     svg_text(legend_x + 30, legend_y + 2, "Upstream", size=16, anchor="start", fill=muted),
@@ -101,7 +115,7 @@ parts += [
 ]
 
 # Grid / y axis
-for tick in range(0, 901, 200):
+for tick in range(0, 1601, 400):
     yy = y(tick)
     parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{W-right}" y2="{yy:.1f}" stroke="{grid}" stroke-width="1"/>')
     parts.append(svg_text(left - 14, yy + 6, tick, size=14, anchor="end", fill=muted))
