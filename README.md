@@ -13,7 +13,10 @@ CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Tur
 Clone and build one binary containing both SM70 and SM75 kernels:
 
 ```bash
-git clone --branch v100-optimized --single-branch https://github.com/mistrjirka/llama.cpp.git && cd llama.cpp && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_GRAPHS=ON -DCMAKE_CUDA_ARCHITECTURES='70;75' -DLLAMA_BUILD_UI=OFF && cmake --build build -j --target llama-server
+git clone --branch v100-optimized --single-branch https://github.com/mistrjirka/llama.cpp.git
+cd llama.cpp
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_GRAPHS=ON -DCMAKE_CUDA_ARCHITECTURES='70;75' -DLLAMA_BUILD_UI=OFF
+cmake --build build -j --target llama-server
 ```
 
 `70;75` builds kernels for both V100 and RTX 2080 Ti, so the same build works on either GPU or on a mixed system. `-DLLAMA_BUILD_UI=OFF` skips the web UI and its build/download step; remove it if you use the built-in UI.
