@@ -2,9 +2,9 @@
 
 CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Turing (SM75)**, tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main Qwen setup uses Qwen3.8-27B `UD-Q5_K_XL` with llama.cpp `q8_0` K/V.
 
-![Long-context prompt processing throughput comparing upstream llama.cpp with v100-optimized on V100, RTX 2080 Ti, mixed V100 plus RTX 2080 Ti, and Ornith on V100](docs/benchmarks/long-context-prompt-processing.svg)
+![Long-context prompt processing throughput comparing upstream llama.cpp with v100-optimized across V100, RTX 2080 Ti, Gemma, Ornith, and mixed-GPU workloads](docs/benchmarks/long-context-prompt-processing.svg)
 
-**Long-context highlights:** Qwen on V100 + RTX 2080 Ti reaches **+69.3% prompt processing** with **39.9% lower TTFT**; Ornith on V100 reaches **+49.0% PP** with **32.1% lower TTFT**; Qwen on V100 reaches **+44.3% PP** with **30.2% lower TTFT**.
+**Long-context highlights:** on a single V100, Ornith reaches **+49.0% PP**, Qwen3.8-27B **+44.3%**, Gemma 4 31B **+36.7%**, and Gemma 4 26B-A4B **+31.4%**. Qwen on a single RTX 2080 Ti reaches **+29.5%**. The less common V100 + RTX 2080 Ti setup is shown last in the graph and reaches **+69.3%**.
 
 ## Build and run
 
@@ -114,7 +114,22 @@ The 22 GB RTX 2080 Ti can run the long-Q8 path at a 67,584-token context. Using 
 | TTFT | 2.656 s | **2.058 s** | **-22.53%** |
 | 64-token decode | 17.30 tok/s | 17.34 tok/s | +0.19% |
 
-The 67,584-token allocation leaves about 463 MiB free on the 22 GB card. Cold-prompt results follow below.
+The 67,584-token allocation leaves about 463 MiB free on the 22 GB card.
+
+### Gemma 4 on V100
+
+Gemma uses the same Release SM70/SM75 build, Q8 K/V and FlashAttention. These measurements use `llama-bench -d 100000 -p 1000`, which constructs the 100k KV state outside the timed region and measures only the 1,000-token append. The optimized branch changes the Volta D512 FlashAttention staging from the generic `FA32/K128/V128` layout to `FA128/K32/V32`; backend correctness passed all 22 supported D512 cases tested.
+
+| Model | Upstream PP | `v100-optimized` PP | PP gain |
+|---|---:|---:|---:|
+| Gemma 4 31B `UD-Q4_K_XL` | 199.84 tok/s | **273.19 tok/s** | **+36.70%** |
+| Gemma 4 26B-A4B `UD-Q4_K_XL` | 689.52 tok/s | **905.84 tok/s** | **+31.37%** |
+
+The gain scales with context length rather than trading away short-prompt speed. Gemma 31B measured **+1.74% at 1k**, **+8.59% at 16k**, and **+36.70% at 100k+1k**; Gemma 26B-A4B measured **+2.69%**, **+5.67%**, and **+31.37%** at the same points.
+
+For Gemma 26B-A4B, routed-expert MMQ is complementary to the attention change. With `GGML_CUDA_VOLTA_FORCE_MMQ=moe`, the optimized 100k+1k result reached **959.48 tok/s**, another **+5.9%** over the D512-attention-only result and **+39.2%** over the upstream baseline. This optional MoE setting is kept out of the main graph so its bars remain an apples-to-apples standard-build comparison.
+
+Cold-prompt results follow below.
 
 ### Cold prompt processing
 
