@@ -1,0 +1,5 @@
+0.05.576.092 I cmn          init: llama threadpool init, n_threads = 24
+main : testing with cache fill 0x00
+test_previous_recurrent_snapshot : max logit drift=4.27808 at token 59673, top1=248046/248046
+test_previous_recurrent_snapshot : previous recurrent snapshot restored successfully
+test_rollback : dirty-ctx logits mismatch at position 6, token 0 (0.585958 != 2.96117)
