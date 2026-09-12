@@ -2,13 +2,13 @@
 
 CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Turing (SM75)**, tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main Qwen setup uses Qwen3.8-27B `UD-Q5_K_XL` with llama.cpp `q8_0` K/V.
 
-![Long-context prompt processing throughput comparing upstream llama.cpp with v100-optimized across V100, RTX 2080 Ti, Gemma, Ornith, and mixed-GPU workloads](docs/benchmarks/long-context-prompt-processing.svg)
+![Prompt processing benchmarks: retained long-context upstream comparisons and the current Volta quantization regression gate](docs/benchmarks/long-context-prompt-processing.svg)
 
-**Long-context highlights:** on a single V100, Ornith reaches **+49.0% PP**, Qwen3.8-27B **+44.3%**, Gemma 4 31B **+36.7%**, and Gemma 4 26B-A4B **+31.4%**. On a single RTX 2080 Ti, Qwen reaches **+29.5%** and Ornith **+13.1%**. Mixed V100 + RTX 2080 Ti results are shown last in the graph: **+69.3%** for Qwen and **+17.0%** for Ornith.
+**Long-context highlights:** on a single V100, Ornith reaches **+49.0% PP**, Qwen3.8-27B **+44.3%**, Gemma 4 31B **+36.7%**, and Gemma 4 26B-A4B **+31.4%**. On a single RTX 2080 Ti, Qwen reaches **+29.5%** and Ornith **+13.1%**. Mixed V100 + RTX 2080 Ti reaches **+69.3%** for Qwen and **+17.0%** for Ornith. The new lower panel independently checks the generic Volta quantization work against the pre-quant V100 branch: **+6.86% Q2_K**, **+6.56% Q3_K**, **+12.64% Q4_K**, **+6.52% Q5_K/Q6_K**, and **+1.61% MXFP4**, while the unrelated PXQ4-HQ control is effectively unchanged (**-0.035%**).
 
 The Ornith RTX 2080 Ti and mixed-GPU rows use a dedicated `GGML_CUDA_FORCE_MMQ=ON` build on both upstream and optimized arms; the Qwen rows use the normal build. Exact settings are documented below.
 
-**September 12 correctness update:** rebuild for the long-context Stream-K and recurrent-convolution fixes. The graph retains the earlier benchmark runs; current fix-isolation measurements, regression tests, and saved-state guidance are in the [correctness report](benches/correctness-0912/nondeterminism/REPORT.md).
+**September 12 update:** the upper graph panel retains the established long-context benchmark runs. The lower panel is a fresh direct regression gate for the Q2_K-Q6_K and MXFP4 conversion work against pre-quant `v100-optimized` (`eae5d0ec`). Current correctness-fix isolation and saved-state guidance remain in the [correctness report](benches/correctness-0912/nondeterminism/REPORT.md).
 
 ## Build and run
 
