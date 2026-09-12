@@ -1,0 +1,327 @@
+{
+  "base_commit": "a70ee26ae",
+  "fix_commit": "580168936",
+  "production_change": "SSM_CONV reads its materialized input rather than CONCAT ancestors",
+  "performance": {
+    "ornith-rtx": {
+      "before": {
+        "pp": 1485.1667727357353,
+        "pp_sd": 5.983284907685009,
+        "tg": 59.310377863181714,
+        "decode_hashes": [
+          "18bd47849a12929bf3ecb7bff8b24e47bb779ee90fb5bccdf1323bff588c13c0",
+          "e586fcabdf7a683206c0d88f1779c49b998abdbd3c05b801e833a646b3a8d7b3"
+        ]
+      },
+      "fixed": {
+        "pp": 1582.8585775890547,
+        "pp_sd": 5.696455561817767,
+        "tg": 59.28760220043449,
+        "decode_hashes": [
+          "ea6bba31c996023f4e71bbe6e953c07c7dc2afe191d694a211f57577f8705041"
+        ]
+      },
+      "pp_delta_pct": 6.577833994586824,
+      "tg_delta_pct": -0.03840080533589196
+    },
+    "ornith-dual": {
+      "before": {
+        "pp": 1087.1519383195691,
+        "pp_sd": 6.021174624798828,
+        "tg": 53.55033822583131,
+        "decode_hashes": [
+          "00b960d6beaad2f2b1416c16b5b058fbe57a3de0c70fcacb96f3f3160ff7eb52",
+          "2dc66e806c8481334d66697640efec57251e7d5d585106ed0ffeb2641fd0f116"
+        ]
+      },
+      "fixed": {
+        "pp": 1136.0844738596802,
+        "pp_sd": 3.36352269745168,
+        "tg": 53.64194351683281,
+        "decode_hashes": [
+          "35062a1c0bdca740c44b55557e6c901f74f2acd068c37e9694eba0fdc4346cfc"
+        ]
+      },
+      "pp_delta_pct": 4.500984068128222,
+      "tg_delta_pct": 0.17106388873806555
+    },
+    "ornith-v100": {
+      "before": {
+        "pp": 926.2397962480442,
+        "pp_sd": 3.7581071084779887,
+        "tg": 56.859156338731,
+        "decode_hashes": [
+          "83fb328c39eb83bba2408526e916bd88d8ad4b5fd2ac1e25cc0e16b999c41f6c",
+          "c6a61563481fbaec95fe94561702d55809790bb2b758281cd61d75195d2fb137"
+        ]
+      },
+      "fixed": {
+        "pp": 975.2825174929676,
+        "pp_sd": 3.978375645882767,
+        "tg": 57.00603003457741,
+        "decode_hashes": [
+          "35062a1c0bdca740c44b55557e6c901f74f2acd068c37e9694eba0fdc4346cfc"
+        ]
+      },
+      "pp_delta_pct": 5.294819056963718,
+      "tg_delta_pct": 0.25831142300358767
+    },
+    "qwen-rtx": {
+      "before": {
+        "pp": 500.408819056911,
+        "pp_sd": 6.312157371177748,
+        "tg": 17.374163296619983,
+        "decode_hashes": [
+          "cd4b987d7f4026b1751edd8890445de113b2ad134210daf43652233a3dca63a4"
+        ]
+      },
+      "fixed": {
+        "pp": 497.46207334498837,
+        "pp_sd": 3.334864911708358,
+        "tg": 17.337036949206333,
+        "decode_hashes": [
+          "3bc8db0fd22d8c8d5170f97be8058bbd2c62af5ec1ae755fc078295c08900d32"
+        ]
+      },
+      "pp_delta_pct": -0.5888676617402888,
+      "tg_delta_pct": -0.2136871098758042
+    },
+    "qwen-v100": {
+      "before": {
+        "pp": 453.62100405564337,
+        "pp_sd": 3.4148550415777317,
+        "tg": 16.394070457850187,
+        "decode_hashes": [
+          "38515f85df17faf67d02ea9faa68960a49d18d3f39a1c2d74d15bd56ec7f2cf6"
+        ]
+      },
+      "fixed": {
+        "pp": 453.5110003128614,
+        "pp_sd": 2.5961340806650073,
+        "tg": 16.383528538549456,
+        "decode_hashes": [
+          "ce394f1f587f21c2776a69cb9171bd205de713dad204d9a8a9ea0eed9df2a7df"
+        ]
+      },
+      "pp_delta_pct": -0.02425014313677254,
+      "tg_delta_pct": -0.06430324505335427
+    }
+  },
+  "state_tests": {
+    "boundary": {
+      "passed": true,
+      "full_raw_evidence": {
+        "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/boundary.json",
+        "sha256": "c9564f327243a8cc70e8522a39792409b3f738aebb82e9a3da1ebce02f1013b9"
+      },
+      "rounds": 6
+    },
+    "cold100k-off": {
+      "passed": true,
+      "full_raw_evidence": {
+        "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/cold100k-off.json",
+        "sha256": "833e3501d03402eb8209ac73115b326ab94877a87e083e45f538c171ac6f941e"
+      },
+      "rounds": 1
+    },
+    "cold100k-q4": {
+      "passed": true,
+      "full_raw_evidence": {
+        "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/cold100k-q4.json",
+        "sha256": "17c7829fe58237b42b265295c6398ad619497cec0d7452cd0d3f5d745228e7ca"
+      },
+      "rounds": 1
+    },
+    "stress-q4-head": {
+      "passed": true,
+      "mean_aggregate_tps": 103.39307868972206,
+      "unique_hashes_per_slot": [
+        7,
+        6,
+        7,
+        7
+      ],
+      "full_raw_evidence": {
+        "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/stress-q4-head.json",
+        "sha256": "c06036b16d734a5009dfbf0d162107ca96870528d9f8b66ffa6fd5a99fbca77e"
+      },
+      "rounds": 10
+    },
+    "stress-off": {
+      "passed": true,
+      "mean_aggregate_tps": 90.95974331791125,
+      "unique_hashes_per_slot": [
+        6,
+        5,
+        6,
+        6
+      ],
+      "full_raw_evidence": {
+        "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/stress-off.json",
+        "sha256": "0f49a9614a0cea96e8055e483926c1f4b8eed1c1317ad8cc1c793b7273b1389f"
+      },
+      "rounds": 10
+    },
+    "stress-q8-plain": {
+      "passed": true,
+      "mean_aggregate_tps": 104.86873023759,
+      "unique_hashes_per_slot": [
+        7,
+        5,
+        7,
+        6
+      ],
+      "full_raw_evidence": {
+        "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/stress-q8-plain.json",
+        "sha256": "a54208a77c5396460fa327ede3613ae90e4d9850dbc7d4118f10022de65d0b0f"
+      },
+      "rounds": 10
+    }
+  },
+  "identity_probes": {
+    "det-ornith-rtx-cached-base.json": {
+      "unique_hashes": 3,
+      "runs": 3
+    },
+    "det-ornith-rtx-cold-upstream-n64.json": {
+      "unique_hashes": 1,
+      "runs": 3
+    },
+    "det-ornith-rtx-cached-upstream-n64.json": {
+      "unique_hashes": 1,
+      "runs": 3
+    },
+    "det-ornith-rtx-cached-graphs-off.json": {
+      "unique_hashes": 3,
+      "runs": 3
+    },
+    "det-qwen-rtx-cached-base-n64-ssm-snapshot-fixed-normal.json": {
+      "unique_hashes": 1,
+      "runs": 2
+    },
+    "det-qwen-v100-cached-upstream-n64-build-sm70-75.json": {
+      "unique_hashes": 1,
+      "runs": 2
+    },
+    "det-ornith-rtx-cold-base-n64-ssm-direct-off.json": {
+      "unique_hashes": 1,
+      "runs": 3
+    },
+    "det-qwen-rtx-cached-int8-off-n64-ssm-snapshot-fixed-normal.json": {
+      "unique_hashes": 1,
+      "runs": 2
+    },
+    "det-qwen-v100-cached-base-n64-ssm-snapshot-fixed-normal.json": {
+      "unique_hashes": 1,
+      "runs": 2
+    },
+    "det-ornith-rtx-cached-base-n64-ssm-direct-off.json": {
+      "unique_hashes": 1,
+      "runs": 3
+    },
+    "det-qwen-rtx-cached-upstream-n64-build-sm70-75.json": {
+      "unique_hashes": 1,
+      "runs": 2
+    }
+  },
+  "evidence": {
+    "snapshot-before.log": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/snapshot-before.log",
+      "sha256": "4d00875dff471689b7c38863e430fd5f4aa909913e8591b42a885ba035c97aa2"
+    },
+    "snapshot-fixed.log": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/snapshot-fixed.log",
+      "sha256": "46c7e056dc2a1162b9de6229b62faebc85dc13dce484b00db2287e3932923631"
+    },
+    "snapshot-memcheck.log": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/snapshot-memcheck.log",
+      "sha256": "0013ae620d876f575f0873417c9ee83fc31b0cfc04484b9c122cc07e03938673"
+    },
+    "main-ctest.log": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/main-ctest.log",
+      "sha256": "243119305cf38ab2d0cce522d1525d0e784446ba38e44b2132ce3c28a1f89ef9"
+    },
+    "main-flash-GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79.log": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/main-flash-GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79.log",
+      "sha256": "99d7bad5f5230eb9d2829969c82c8d010e6d3c8dd91e523566ac3d387c153fe5"
+    },
+    "main-flash-GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29.log": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/main-flash-GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29.log",
+      "sha256": "22ab4a5d653ddf66d9262c31609f881cb8609641e9668cd9b962c1a2526d07eb"
+    },
+    "perf-ornith-rtx.json": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/perf-ornith-rtx.json",
+      "sha256": "f041c925627c1fa2c0e80fbd394ab040f340d5cfc4a774f3042549fd0ef63992"
+    },
+    "perf-ornith-dual.json": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/perf-ornith-dual.json",
+      "sha256": "1904dd946b54c585367dcec8849e9ac90990b7cf4c4ef65f93a49e92fd2a81db"
+    },
+    "perf-ornith-v100.json": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/perf-ornith-v100.json",
+      "sha256": "2a436a12eb4bba3b6e5faa51d39e664bbd3ae9a09b2c3f3c24a55093c63034f7"
+    },
+    "perf-qwen-rtx.json": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/perf-qwen-rtx.json",
+      "sha256": "719132a918f269fd9352f7b280d10628dcb6a9f85fe2c143a4e824f4354674d1"
+    },
+    "perf-qwen-v100.json": {
+      "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/perf-qwen-v100.json",
+      "sha256": "f2ac57dc7c18738c1f77cc5c40bc2aeb79806a024cf58a77653fbd680d69519f"
+    }
+  },
+  "qwen_upstream_identity": [
+    {
+      "profile": "qwen-rtx",
+      "fixed_unique": 1,
+      "upstream_unique": 1,
+      "identical_to_upstream": false,
+      "first_difference": 63
+    },
+    {
+      "profile": "qwen-v100",
+      "fixed_unique": 1,
+      "upstream_unique": 1,
+      "identical_to_upstream": true,
+      "first_difference": null
+    }
+  ],
+  "batch-controls": [
+    {
+      "name": "off-serial",
+      "unique_hashes_per_slot": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "off-concurrent-int8off",
+      "unique_hashes_per_slot": [
+        4,
+        4,
+        3,
+        1
+      ]
+    }
+  ],
+  "upstream-batch": [
+    {
+      "passed": true,
+      "unique_hashes_per_slot": [
+        3,
+        3,
+        3,
+        1
+      ],
+      "scope": "Native upstream has no prefix dedup/per-slot limit/pipeline-copies extensions; all 4 saved 100k target states fit in the same 1.4M physical pool."
+    }
+  ],
+  "not_covered": [
+    "Remaining RTX Qwen final-token discrepancy versus upstream (unchanged with INT8 QK disabled)",
+    "Dense Qwen MTP target-head-reuse validation",
+    "Reducing the draft compute arena",
+    "Universal batch-size-independent determinism"
+  ]
+}

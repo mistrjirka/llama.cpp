@@ -80,3 +80,7 @@ Original logs, binary hashes, and full records remain under `/models/.bench-orni
 [Compute Sanitizer log](e2e-results/fixed-boundary-memcheck.log).
 
 No production service or host launch configuration is changed by these validation scripts. Commit/push status must be checked independently; these records alone do not establish deployment.
+
+## Subsequent SSM repair
+
+The fixed-shape Ornith output instability was later isolated to undeclared CONCAT-ancestor reads in the SSM convolution shortcut and repaired in `580168936`. See [the follow-up report](nondeterminism/REPORT.md) for current results and remaining cross-engine/batching limitations. The measurements above remain the historical Stream-K-only comparison.

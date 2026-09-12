@@ -8,6 +8,8 @@ CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Tur
 
 The Ornith RTX 2080 Ti and mixed-GPU rows use a dedicated `GGML_CUDA_FORCE_MMQ=ON` build on both upstream and optimized arms; the Qwen rows use the normal build. Exact settings are documented below.
 
+**September 12 correctness update:** rebuild for the long-context Stream-K and recurrent-convolution fixes. The graph retains the earlier benchmark runs; current fix-isolation measurements, regression tests, and saved-state guidance are in the [correctness report](benches/correctness-0912/nondeterminism/REPORT.md).
+
 ## Build and run
 
 ### Build

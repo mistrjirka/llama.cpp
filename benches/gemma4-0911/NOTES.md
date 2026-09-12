@@ -1427,3 +1427,18 @@ Matched old-versus-fixed performance: dual Ornith layer14:35 PP -0.21%, TG +0.45
 The older Ornith greedy-output nondeterminism remains observable, including MTP off; this patch is not claimed to fix it. Dense Qwen MTP head-reuse coverage and the roughly 2.9 GiB draft compute-arena optimization remain separate items.
 
 Full report, exact configurations, manifests and raw evidence: `../correctness-0912/E2E_REPORT.md`. Persistent originals: `/models/.bench-ornith-mtp4/int8-streamk-validation/`.
+
+
+### 2026-09-12: recurrent convolution snapshot correctness
+
+Pushed fixes: `a70ee26ae` (partial Stream-K packed-INT8 flag), then `580168936` (SSM_CONV input lifetime). The latter removes the 83-line `ssm_conv_try_split_nc4` shortcut introduced by `9662bccd4`. It read CONCAT ancestors rather than the materialized SSM_CONV input, although those ancestors could already have been overwritten or reused. Native CUDA convolution and existing bias/SiLU fusion remain enabled; INT8, GQA8, GDN, MMQ, context capacity and launch configurations are unchanged.
+
+A new snapshot regression materializes CONCAT, poisons its ancestors, and consumes only the snapshot. Before: 72/108 pass (all 18 single-sequence cases fail on each GPU). Fixed: 108/108 on CPU/V100/RTX, and Compute Sanitizer reports zero errors. Both main builds and the registered CTest pass; all 20 Stream-K numerical cases pass again.
+
+Fixed-shape Ornith cold/restored 64-token requests repeat exactly and match actual upstream. Same-input cached-append ABBA improves PP by +6.58% on RTX, +4.50% on dual layer14:35 and +5.29% on V100; decode is effectively neutral. Qwen PP changes are -.59% RTX / -.02% V100. No claim of zero regression for every shape; these are the measured cached workloads.
+
+Fresh100k with/without Q4 MTP passes. All 30 four-slot stress rounds complete (120 requests) with Q4 MTP/head reuse, no MTP and Q8 MTP/no reuse. Concurrent hash invariance is not a pass: it also varies with INT8 QK disabled and in actual upstream. Four rounds of serial requests are stable for every slot. The upstream concurrent control has [3,3,3,1] distinct hashes per slot, versus [1,1,1,1] for the fixed serial control.
+
+Additional numerical gap: V100 Qwen matches upstream for 64/64 generated tokens; RTX matches 63/64, with a repeatable last-token difference that remains when INT8 QK is disabled. It is not classified as an insignificant near-tie. Further isolation is required before claiming complete cross-engine Qwen output identity. Dense Qwen MTP/head-reuse coverage and draft compute-arena shrinking remain separate tasks.
+
+Regenerate states created through the faulty SSM path for trusted use; restoring an old snapshot does not repair its numeric contents. No model files/saved states were deleted and no production service/launcher was changed. Main builds were rebuilt for validation. Full evidence and current limitations: `../correctness-0912/nondeterminism/REPORT.md`; persistent originals: `/models/.bench-ornith-mtp4/nondeterminism-0912/`.

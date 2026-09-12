@@ -1,0 +1,178 @@
+{
+  "passed": true,
+  "manifest": {
+    "argv": [
+      "/models/.bench-ornith-mtp4/nondeterminism-0912/ssm-snapshot-fixed-normal/bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "41610",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--slot-fork-prefix",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "512",
+      "--ubatch-size",
+      "128",
+      "--pipeline-copies",
+      "1",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/models/.bench-ornith-mtp4/cold-boundary",
+      "--no-warmup",
+      "--perf",
+      "--reasoning",
+      "off",
+      "--reasoning-format",
+      "none"
+    ],
+    "cuda_library_sha256": "d02179920536b527928c2c3edfe325a310caf7f52a939cc8b587f59df411cad5",
+    "env": {
+      "CUDA_VISIBLE_DEVICES": "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79,GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+      "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+      "GGML_CUDA_ALLREDUCE": "internal",
+      "GGML_CUDA_AR_COPY_THRESHOLD": "131072"
+    },
+    "exit_code": 0,
+    "library_unchanged": true,
+    "error_lines": [],
+    "memcheck_clean": null
+  },
+  "rows": [
+    {
+      "append": 128,
+      "wall_s": 0.36926829698495567,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 128,
+        "prompt_ms": 323.558,
+        "prompt_per_token_ms": 2.527796875,
+        "prompt_per_second": 395.60140685750315,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "sha256": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "append": 384,
+      "wall_s": 0.5230965579976328,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 384,
+        "prompt_ms": 458.978,
+        "prompt_per_token_ms": 1.1952552083333334,
+        "prompt_per_second": 836.6414076491683,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "sha256": "70fe06663b7565fde62c50cc5b2ec7637c81fff709492730d84f6fad5052ace5"
+    },
+    {
+      "append": 512,
+      "wall_s": 0.685515153047163,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 512,
+        "prompt_ms": 626.46,
+        "prompt_per_token_ms": 1.2235546875,
+        "prompt_per_second": 817.2908086709447,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "sha256": "589ffd3acf522ae81192579f297589e93b0c41f748b224d1b4bb5c857a2f70cb"
+    },
+    {
+      "append": 640,
+      "wall_s": 0.7579544080072083,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 640,
+        "prompt_ms": 695.337,
+        "prompt_per_token_ms": 1.0864640625,
+        "prompt_per_second": 920.4170064299757,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "sha256": "da07ad0b3cf2351fc55fff2a6d989e8d39d25f4beef4fd9a4ed0770233de7120"
+    },
+    {
+      "append": 1000,
+      "wall_s": 1.1540189819643274,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 1000,
+        "prompt_ms": 1106.842,
+        "prompt_per_token_ms": 1.106842,
+        "prompt_per_second": 903.4713174960833,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "sha256": "6e8aa5ca09e79713272fcb3a3c663c6764ec97900aa4ae307ae9ab297954ec89"
+    },
+    {
+      "append": 512,
+      "wall_s": 0.6657090199878439,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 512,
+        "prompt_ms": 610.668,
+        "prompt_per_token_ms": 1.1927109375,
+        "prompt_per_second": 838.4261169735437,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "sha256": "589ffd3acf522ae81192579f297589e93b0c41f748b224d1b4bb5c857a2f70cb"
+    }
+  ],
+  "full_raw_evidence": {
+    "path": "/models/.bench-ornith-mtp4/nondeterminism-0912/validation/boundary.json",
+    "sha256": "c9564f327243a8cc70e8522a39792409b3f738aebb82e9a3da1ebce02f1013b9"
+  }
+}

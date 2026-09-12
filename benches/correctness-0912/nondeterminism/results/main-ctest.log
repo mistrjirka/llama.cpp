@@ -1,0 +1,11 @@
+Internal ctest changing into directory: /workspace/llama-v100-optimized/build-compare-sm70-75
+Test project /workspace/llama-v100-optimized/build-compare-sm70-75
+    Start 48: test-ssm-conv-snapshot
+1/1 Test #48: test-ssm-conv-snapshot ...........   Passed    0.73 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Label Time Summary:
+main    =   0.73 sec*proc (1 test)
+
+Total Test time (real) =   1.34 sec
