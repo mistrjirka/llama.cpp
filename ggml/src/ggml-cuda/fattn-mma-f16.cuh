@@ -121,7 +121,11 @@ static constexpr __host__ __device__ fattn_mma_config ggml_cuda_fattn_mma_get_co
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(576, 512, 32, 128, 2,  32, 160, 128,  64, 1, false);
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(576, 512, 64, 256, 1,  32, 160, 128,  64, 1, false);
 
+#ifdef GGML_CUDA_FATTN_MMA_D128_NCOLS64_CONFIG
+    GGML_CUDA_FATTN_MMA_D128_NCOLS64_CONFIG;
+#else
     GGML_CUDA_FATTN_MMA_CONFIG_CASE(128, 128, 64, 128, 2, 64, 96, 32, 64, 2, false);
+#endif
 
     // NInfer's dedicated sm70 D256 config for the 32-column prompt tile.
     // This is performance-only: same MMA arithmetic, lower combine/shared-memory pressure.
