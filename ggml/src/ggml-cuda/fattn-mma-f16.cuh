@@ -2258,7 +2258,8 @@ static __global__ void flash_attn_ext_f16(
 
     constexpr bool is_fixup = true; // Last index writes its data to fixup buffer to avoid data races with other blocks.
     constexpr bool needs_fixup = false;
-    flash_attn_ext_f16_process_tile<DKQ, DV, ncols1, ncols2, nwarps, -1, -1, false, use_logit_softcap, V_is_K_view, use_sparse, needs_fixup, is_fixup>
+    // Partial Stream-K tiles must use the same packed Q/K layout as complete tiles.
+    flash_attn_ext_f16_process_tile<DKQ, DV, ncols1, ncols2, nwarps, -1, -1, false, use_logit_softcap, V_is_K_view, use_sparse, needs_fixup, is_fixup, int8_qk>
         (Q_f2, K_h2, V_h2, mask_h, indices, sinks_f, dstk, dst_meta, scale, slope, logit_softcap,
          ne01, ne02, gqa_ratio, ne11, stride_Q1, stride_Q2, stride_K, stride_V, stride_mask, jt, zt_gqa, kb0_start, kb0_stop);
 #else

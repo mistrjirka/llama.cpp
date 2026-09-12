@@ -1412,3 +1412,18 @@ Process ABBA retained means:
 This supersedes only the older numerical measurement for the *same* graph row (1327.01 -> 1500.26). No valid graph workload is removed. Hero-graph policy is to preserve existing rows by default and replace a row only when the same apples-to-apples workload has a newer validated measurement.
 
 Artifact: `benches/gemma4-0911/ornith-2080-force-mmq/abba.json`.
+
+
+### 2026-09-12: cold long-prefill Stream-K correctness fix
+
+The 65k cold-prefill illegal-memory fault is fixed by forwarding `int8_qk` to the final partial Stream-K tile call in `fattn-mma-f16.cuh`. Full-tile calls already forwarded the flag. The omitted argument defaulted to false, so the tail interpreted packed INT8 Q/K using normal FP32/FP16 layouts and byte strides incorrectly. This is a kernel bug; the earlier `cudaMemcpyPeerAsync` error location was not proof of a peer-copy/VMM defect.
+
+Only this argument and its explanatory comment are changed in production CUDA code. GQA8/GQA6 dispatch, INT8, Stream-K, VMM allocation order, MMQ tuning, batching, context, and production launch configuration remain unchanged. Earlier GQA8-disable, 16x2 reroute, and host-only non-Stream-K experiments are not the final fix.
+
+Validation: 10/10 numerical cases on RTX and 10/10 on V100; the original paired library crashes on the new GQA8 65536-KV/128-query fixture. Exact 65024-prefix appends {128,384,512,640,1000,512} pass; the previously failing 512 append passes Compute Sanitizer with zero errors and clean exit. Fresh 100k prefill passes with MTP off and with production q4 draft MTP. Thirty four-slot erase/restore/generate rounds pass (120 successful completions), covering q4 MTP head reuse, no MTP, and ordinary q8 MTP.
+
+Matched old-versus-fixed performance: dual Ornith layer14:35 PP -0.21%, TG +0.45%; Qwen RTX PP -0.09%, TG -0.09%; Qwen V100 PP +0.00%, TG +0.08%. Single-RTX Ornith shows a confirmed small PP cost: -1.36% ABBA and -1.59% reverse BAAB, while TG is unchanged. Do not call this zero-regression. These are fix-isolation checks, not replacements for historical upstream-versus-fork hero-graph rows.
+
+The older Ornith greedy-output nondeterminism remains observable, including MTP off; this patch is not claimed to fix it. Dense Qwen MTP head-reuse coverage and the roughly 2.9 GiB draft compute-arena optimization remain separate items.
+
+Full report, exact configurations, manifests and raw evidence: `../correctness-0912/E2E_REPORT.md`. Persistent originals: `/models/.bench-ornith-mtp4/int8-streamk-validation/`.

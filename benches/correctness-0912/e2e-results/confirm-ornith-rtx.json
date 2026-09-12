@@ -1,0 +1,1091 @@
+{
+  "order": "BAAB",
+  "profile": "ornith-rtx",
+  "build_mode": "force-mmq",
+  "summary": {
+    "baseline": {
+      "pp": 1488.6477926897333,
+      "pp_sd": 1.7457987414649778,
+      "tg": 58.66123265235787,
+      "pp_samples": 10
+    },
+    "fixed": {
+      "pp": 1464.94398578541,
+      "pp_sd": 3.6180128794845565,
+      "tg": 58.64257168321721,
+      "pp_samples": 10
+    },
+    "pp_delta_pct": -1.592304574710357,
+    "tg_delta_pct": -0.03181141666633858
+  },
+  "arms": [
+    {
+      "label": "confirm-ornith-rtx-fixed-0",
+      "pp": 1467.7282089336275,
+      "prompt_ms": 681.3272,
+      "tg": 58.953160310486645,
+      "decode": {
+        "wall_s": 1.8145009820000269,
+        "timings": {
+          "cache_n": 65536,
+          "prompt_n": 1000,
+          "prompt_ms": 681.081,
+          "prompt_per_token_ms": 0.681081,
+          "prompt_per_second": 1468.254143046128,
+          "predicted_n": 64,
+          "predicted_ms": 1068.645,
+          "predicted_per_token_ms": 16.962619047619047,
+          "predicted_per_second": 58.953160310486645
+        },
+        "tokens": [
+          33075,
+          561,
+          13,
+          3841,
+          220,
+          17907,
+          148389,
+          13,
+          3841,
+          11,
+          5388,
+          82,
+          64,
+          561,
+          561,
+          3841,
+          11,
+          13,
+          26863,
+          888,
+          220,
+          67,
+          13,
+          26863,
+          321,
+          3841,
+          11,
+          37550,
+          220,
+          14576,
+          220,
+          14576,
+          2972,
+          13,
+          26863,
+          13,
+          23554,
+          321,
+          33075,
+          5388,
+          13,
+          59,
+          11,
+          37550,
+          11,
+          8,
+          5388,
+          83,
+          328,
+          760,
+          3841,
+          11,
+          8,
+          13,
+          59,
+          11,
+          74,
+          220,
+          1719,
+          13,
+          220,
+          67,
+          641,
+          11
+        ],
+        "sha256": "29303415b62215ab2abb984df0180fffa82957e6dfa69456c5613887c3b80d82"
+      },
+      "rows": [
+        {
+          "rep": 0,
+          "warmup": true,
+          "wall_s": 0.7740259200218134,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 730.097,
+            "prompt_per_token_ms": 0.730097,
+            "prompt_per_second": 1369.6810149884193,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 1,
+          "warmup": false,
+          "wall_s": 0.7459921010304242,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 679.787,
+            "prompt_per_token_ms": 0.679787,
+            "prompt_per_second": 1471.0490197664856,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 2,
+          "warmup": false,
+          "wall_s": 0.7485701820114627,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 683.411,
+            "prompt_per_token_ms": 0.683411,
+            "prompt_per_second": 1463.2483234832334,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 3,
+          "warmup": false,
+          "wall_s": 0.7487401249818504,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 680.752,
+            "prompt_per_token_ms": 0.6807519999999999,
+            "prompt_per_second": 1468.9637342233295,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 4,
+          "warmup": false,
+          "wall_s": 0.7446078929933719,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 680.972,
+            "prompt_per_token_ms": 0.680972,
+            "prompt_per_second": 1468.4891596130237,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 5,
+          "warmup": false,
+          "wall_s": 0.7486212449730374,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 681.714,
+            "prompt_per_token_ms": 0.681714,
+            "prompt_per_second": 1466.890807582065,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        }
+      ],
+      "manifest": {
+        "argv": [
+          "/models/.bench-ornith-mtp4/int8-streamk-fixed-src/build-matched-force/bin/llama-server",
+          "--model",
+          "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q5_K-Q4_K.gguf",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "41300",
+          "--ctx-size",
+          "67584",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--gpu-layers",
+          "all",
+          "--flash-attn",
+          "on",
+          "--batch-size",
+          "4096",
+          "--ubatch-size",
+          "512",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--cache-ram",
+          "0",
+          "--ctx-checkpoints",
+          "0",
+          "--slot-save-path",
+          "/models/.bench-ornith2080",
+          "--no-warmup",
+          "--perf",
+          "--skip-chat-parsing",
+          "--pipeline-copies",
+          "1",
+          "--reasoning",
+          "off",
+          "--reasoning-format",
+          "none",
+          "--split-mode",
+          "none"
+        ],
+        "cuda_library_sha256": "62bb12578fd2ba6203e8f651ca3bef42cdd5f481bc7606128cbb3825584bdbd3",
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+          "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+          "GGML_CUDA_ALLREDUCE": "internal",
+          "GGML_CUDA_AR_COPY_THRESHOLD": "131072"
+        },
+        "exit_code": 0,
+        "library_unchanged": true,
+        "error_lines": [],
+        "memcheck_clean": null
+      },
+      "key": "fixed"
+    },
+    {
+      "label": "confirm-ornith-rtx-baseline-1",
+      "pp": 1488.925134485618,
+      "prompt_ms": 671.6256,
+      "tg": 58.565044848739504,
+      "decode": {
+        "wall_s": 1.8059057059581392,
+        "timings": {
+          "cache_n": 65536,
+          "prompt_n": 1000,
+          "prompt_ms": 673.122,
+          "prompt_per_token_ms": 0.673122,
+          "prompt_per_second": 1485.6147919693608,
+          "predicted_n": 64,
+          "predicted_ms": 1075.727,
+          "predicted_per_token_ms": 17.075031746031748,
+          "predicted_per_second": 58.565044848739504
+        },
+        "tokens": [
+          33075,
+          3841,
+          220,
+          37550,
+          328,
+          561,
+          561,
+          561,
+          561,
+          561,
+          561,
+          3841,
+          11,
+          220,
+          364,
+          26863,
+          220,
+          4219,
+          359,
+          63,
+          89,
+          13,
+          76,
+          13,
+          760,
+          561,
+          3841,
+          11,
+          847,
+          56891,
+          11,
+          75,
+          561,
+          561,
+          3841,
+          11,
+          39162,
+          13,
+          17907,
+          220650,
+          7018,
+          13,
+          59,
+          11,
+          13,
+          59,
+          3841,
+          11,
+          13,
+          90,
+          13,
+          4967,
+          328,
+          26,
+          30064,
+          561,
+          561,
+          26863,
+          220,
+          67,
+          328,
+          760,
+          26863,
+          220
+        ],
+        "sha256": "ca336cf45ee8756115978251b491ae8f601e7852c809010ceb67807a0b50ee6e"
+      },
+      "rows": [
+        {
+          "rep": 0,
+          "warmup": true,
+          "wall_s": 0.769502940995153,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 722.653,
+            "prompt_per_token_ms": 0.722653,
+            "prompt_per_second": 1383.7900070988428,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 1,
+          "warmup": false,
+          "wall_s": 0.7340495379758067,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 672.097,
+            "prompt_per_token_ms": 0.6720969999999999,
+            "prompt_per_second": 1487.8804696345915,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 2,
+          "warmup": false,
+          "wall_s": 0.7179710320197046,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 671.852,
+            "prompt_per_token_ms": 0.671852,
+            "prompt_per_second": 1488.4230455516988,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 3,
+          "warmup": false,
+          "wall_s": 0.7387410220107995,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 671.466,
+            "prompt_per_token_ms": 0.671466,
+            "prompt_per_second": 1489.2786827627906,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 4,
+          "warmup": false,
+          "wall_s": 0.7169142990023829,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 671.144,
+            "prompt_per_token_ms": 0.671144,
+            "prompt_per_second": 1489.9932056309824,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 5,
+          "warmup": false,
+          "wall_s": 0.7167154320050031,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 671.569,
+            "prompt_per_token_ms": 0.671569,
+            "prompt_per_second": 1489.050268848026,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        }
+      ],
+      "manifest": {
+        "argv": [
+          "/models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-force/bin/llama-server",
+          "--model",
+          "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q5_K-Q4_K.gguf",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "41301",
+          "--ctx-size",
+          "67584",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--gpu-layers",
+          "all",
+          "--flash-attn",
+          "on",
+          "--batch-size",
+          "4096",
+          "--ubatch-size",
+          "512",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--cache-ram",
+          "0",
+          "--ctx-checkpoints",
+          "0",
+          "--slot-save-path",
+          "/models/.bench-ornith2080",
+          "--no-warmup",
+          "--perf",
+          "--skip-chat-parsing",
+          "--pipeline-copies",
+          "1",
+          "--reasoning",
+          "off",
+          "--reasoning-format",
+          "none",
+          "--split-mode",
+          "none"
+        ],
+        "cuda_library_sha256": "6893bd9e7ef20e80fa197912edfe1effdbd1d851ab9849e63e1a30fd20ee260e",
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+          "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+          "GGML_CUDA_ALLREDUCE": "internal",
+          "GGML_CUDA_AR_COPY_THRESHOLD": "131072"
+        },
+        "exit_code": 0,
+        "library_unchanged": true,
+        "error_lines": [],
+        "memcheck_clean": null
+      },
+      "key": "baseline"
+    },
+    {
+      "label": "confirm-ornith-rtx-baseline-2",
+      "pp": 1488.3704508938488,
+      "prompt_ms": 671.8772,
+      "tg": 58.75742045597624,
+      "decode": {
+        "wall_s": 1.817542367032729,
+        "timings": {
+          "cache_n": 65536,
+          "prompt_n": 1000,
+          "prompt_ms": 674.209,
+          "prompt_per_token_ms": 0.674209,
+          "prompt_per_second": 1483.219595110715,
+          "predicted_n": 64,
+          "predicted_ms": 1072.205,
+          "predicted_per_token_ms": 17.019126984126984,
+          "predicted_per_second": 58.75742045597624
+        },
+        "tokens": [
+          33075,
+          561,
+          13,
+          13,
+          760,
+          13,
+          220,
+          13,
+          760,
+          561,
+          561,
+          561,
+          561,
+          561,
+          561,
+          561,
+          561,
+          561,
+          3841,
+          888,
+          220,
+          222229,
+          13,
+          17907,
+          225320,
+          1710,
+          1719,
+          13,
+          561,
+          561,
+          561,
+          26863,
+          888,
+          13,
+          26863,
+          13477,
+          13,
+          760,
+          26863,
+          220,
+          17907,
+          11,
+          37550,
+          328,
+          760,
+          561,
+          26863,
+          220,
+          67,
+          13,
+          13,
+          760,
+          9726,
+          760,
+          760,
+          561,
+          3841,
+          220,
+          36626,
+          13477,
+          13,
+          760,
+          5388,
+          13
+        ],
+        "sha256": "239de3b9d0d7b448119cd71cfe7c24e5c626be745f947c5182bfe0ac84e08d54"
+      },
+      "rows": [
+        {
+          "rep": 0,
+          "warmup": true,
+          "wall_s": 0.7846026350161992,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 720.943,
+            "prompt_per_token_ms": 0.720943,
+            "prompt_per_second": 1387.0722095921592,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 1,
+          "warmup": false,
+          "wall_s": 0.7299236429971643,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 670.628,
+            "prompt_per_token_ms": 0.670628,
+            "prompt_per_second": 1491.1396482103341,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 2,
+          "warmup": false,
+          "wall_s": 0.7379455200280063,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 672.241,
+            "prompt_per_token_ms": 0.672241,
+            "prompt_per_second": 1487.5617524072468,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 3,
+          "warmup": false,
+          "wall_s": 0.7385420410428196,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 671.059,
+            "prompt_per_token_ms": 0.671059,
+            "prompt_per_second": 1490.1819363126046,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 4,
+          "warmup": false,
+          "wall_s": 0.7427828029613011,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 673.467,
+            "prompt_per_token_ms": 0.673467,
+            "prompt_per_second": 1484.8537493299598,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 5,
+          "warmup": false,
+          "wall_s": 0.7397849560366012,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 671.991,
+            "prompt_per_token_ms": 0.671991,
+            "prompt_per_second": 1488.115168209098,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        }
+      ],
+      "manifest": {
+        "argv": [
+          "/models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-force/bin/llama-server",
+          "--model",
+          "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q5_K-Q4_K.gguf",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "41302",
+          "--ctx-size",
+          "67584",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--gpu-layers",
+          "all",
+          "--flash-attn",
+          "on",
+          "--batch-size",
+          "4096",
+          "--ubatch-size",
+          "512",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--cache-ram",
+          "0",
+          "--ctx-checkpoints",
+          "0",
+          "--slot-save-path",
+          "/models/.bench-ornith2080",
+          "--no-warmup",
+          "--perf",
+          "--skip-chat-parsing",
+          "--pipeline-copies",
+          "1",
+          "--reasoning",
+          "off",
+          "--reasoning-format",
+          "none",
+          "--split-mode",
+          "none"
+        ],
+        "cuda_library_sha256": "6893bd9e7ef20e80fa197912edfe1effdbd1d851ab9849e63e1a30fd20ee260e",
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+          "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+          "GGML_CUDA_ALLREDUCE": "internal",
+          "GGML_CUDA_AR_COPY_THRESHOLD": "131072"
+        },
+        "exit_code": 0,
+        "library_unchanged": true,
+        "error_lines": [],
+        "memcheck_clean": null
+      },
+      "key": "baseline"
+    },
+    {
+      "label": "confirm-ornith-rtx-fixed-3",
+      "pp": 1462.1597626371924,
+      "prompt_ms": 683.9202,
+      "tg": 58.331983055947774,
+      "decode": {
+        "wall_s": 1.8154595600208268,
+        "timings": {
+          "cache_n": 65536,
+          "prompt_n": 1000,
+          "prompt_ms": 684.126,
+          "prompt_per_token_ms": 0.684126,
+          "prompt_per_second": 1461.719040059872,
+          "predicted_n": 64,
+          "predicted_ms": 1080.025,
+          "predicted_per_token_ms": 17.14325396825397,
+          "predicted_per_second": 58.331983055947774
+        },
+        "tokens": [
+          33075,
+          561,
+          13,
+          760,
+          561,
+          13,
+          37550,
+          220,
+          37550,
+          220,
+          37550,
+          11,
+          37550,
+          11,
+          37550,
+          11,
+          37550,
+          11,
+          37550,
+          11,
+          13,
+          14576,
+          220,
+          364,
+          37550,
+          11,
+          13,
+          59,
+          11,
+          37550,
+          11,
+          83,
+          7018,
+          13,
+          59,
+          11,
+          37550,
+          11,
+          3841,
+          220,
+          89,
+          13,
+          17907,
+          1816,
+          220,
+          1,
+          11,
+          13,
+          26863,
+          321,
+          888,
+          220,
+          4120,
+          13,
+          7403,
+          3841,
+          11,
+          1719,
+          13,
+          49996,
+          220,
+          67,
+          2972,
+          13
+        ],
+        "sha256": "f4b4a908b407eec79183d349d6a097b7c04532030074110dcc8a2a71677a96d4"
+      },
+      "rows": [
+        {
+          "rep": 0,
+          "warmup": true,
+          "wall_s": 0.7797703449614346,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 736.02,
+            "prompt_per_token_ms": 0.73602,
+            "prompt_per_second": 1358.6587320996712,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 1,
+          "warmup": false,
+          "wall_s": 0.7508438380318694,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 683.568,
+            "prompt_per_token_ms": 0.683568,
+            "prompt_per_second": 1462.9122486716758,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 2,
+          "warmup": false,
+          "wall_s": 0.7453900349792093,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 683.074,
+            "prompt_per_token_ms": 0.683074,
+            "prompt_per_second": 1463.970228701429,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 3,
+          "warmup": false,
+          "wall_s": 0.752004221023526,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 684.547,
+            "prompt_per_token_ms": 0.684547,
+            "prompt_per_second": 1460.820075173801,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 4,
+          "warmup": false,
+          "wall_s": 0.7457853039959446,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 684.201,
+            "prompt_per_token_ms": 0.6842010000000001,
+            "prompt_per_second": 1461.5588109342136,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        },
+        {
+          "rep": 5,
+          "warmup": false,
+          "wall_s": 0.7289320270065218,
+          "timings": {
+            "cache_n": 65536,
+            "prompt_n": 1000,
+            "prompt_ms": 684.211,
+            "prompt_per_token_ms": 0.684211,
+            "prompt_per_second": 1461.5374497048426,
+            "predicted_n": 1,
+            "predicted_ms": 0.001,
+            "predicted_per_token_ms": 0.0,
+            "predicted_per_second": 0.0
+          },
+          "tokens": [
+            33075
+          ],
+          "sha256": "b635e821c1d729856dc8568227b6a3f9e0fee71a75ce354ad55adbad85d864d9"
+        }
+      ],
+      "manifest": {
+        "argv": [
+          "/models/.bench-ornith-mtp4/int8-streamk-fixed-src/build-matched-force/bin/llama-server",
+          "--model",
+          "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q5_K-Q4_K.gguf",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "41303",
+          "--ctx-size",
+          "67584",
+          "--parallel",
+          "1",
+          "--fit",
+          "off",
+          "--gpu-layers",
+          "all",
+          "--flash-attn",
+          "on",
+          "--batch-size",
+          "4096",
+          "--ubatch-size",
+          "512",
+          "--cache-type-k",
+          "q8_0",
+          "--cache-type-v",
+          "q8_0",
+          "--cache-ram",
+          "0",
+          "--ctx-checkpoints",
+          "0",
+          "--slot-save-path",
+          "/models/.bench-ornith2080",
+          "--no-warmup",
+          "--perf",
+          "--skip-chat-parsing",
+          "--pipeline-copies",
+          "1",
+          "--reasoning",
+          "off",
+          "--reasoning-format",
+          "none",
+          "--split-mode",
+          "none"
+        ],
+        "cuda_library_sha256": "62bb12578fd2ba6203e8f651ca3bef42cdd5f481bc7606128cbb3825584bdbd3",
+        "env": {
+          "CUDA_VISIBLE_DEVICES": "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+          "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+          "GGML_CUDA_ALLREDUCE": "internal",
+          "GGML_CUDA_AR_COPY_THRESHOLD": "131072"
+        },
+        "exit_code": 0,
+        "library_unchanged": true,
+        "error_lines": [],
+        "memcheck_clean": null
+      },
+      "key": "fixed"
+    }
+  ]
+}

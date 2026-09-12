@@ -1,0 +1,30 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 22000 MiB):
+  Device 0: NVIDIA GeForce RTX 2080 Ti, compute capability 7.5, VMM: yes, VRAM: 22000 MiB
+CUDA error: an illegal memory access was encountered
+  current device: 0, in function ggml_backend_cuda_synchronize at /workspace/llama-v100-optimized/ggml/src/ggml-cuda/ggml-cuda.cu:2781
+  cudaStreamSynchronize(cuda_ctx->stream())
+Testing 2 devices
+
+Backend 1/2: CUDA0
+  Device description: NVIDIA GeForce RTX 2080 Ti
+  Device memory: 22000 MB (21840 MB free)
+
+/workspace/llama-v100-optimized/ggml/src/ggml-cuda/ggml-cuda.cu:110: CUDA error
+[New LWP 37075]
+[New LWP 37074]
+[New LWP 37073]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007f17be95a7e3 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+#0  0x00007f17be95a7e3 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+#1  0x00007f17bee168d3 in ggml_print_backtrace () from /models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-normal/bin/libggml-base.so.0
+#2  0x00007f17bee16a7b in ggml_abort () from /models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-normal/bin/libggml-base.so.0
+#3  0x00007f17b8c62bd7 in ggml_cuda_error(char const*, char const*, char const*, int, char const*) () from /models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-normal/bin/libggml-cuda.so.0
+#4  0x00007f17b8c67588 in ggml_backend_cuda_synchronize(ggml_backend*) () from /models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-normal/bin/libggml-cuda.so.0
+#5  0x00007f17bee2ffac in ggml_backend_graph_compute () from /models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-normal/bin/libggml-base.so.0
+#6  0x00007f17bee35d51 in ggml_backend_compare_graph_backend () from /models/.bench-ornith-mtp4/int8-streamk-baseline-src/build-matched-normal/bin/libggml-base.so.0
+#7  0x0000564832b77556 in test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) ()
+#8  0x0000564832af91f7 in test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const ()
+#9  0x0000564832b281be in test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int) ()
+#10 0x0000564832add74f in main ()
+[Inferior 1 (process 37072) detached]

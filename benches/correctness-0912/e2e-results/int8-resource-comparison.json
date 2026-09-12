@@ -1,0 +1,66 @@
+{
+  "baseline": [
+    {
+      "arch": "arch = sm_70",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 16, 2, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:250 STACK:64 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_75",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 16, 2, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:255 STACK:16 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_70",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 4, 8, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:250 STACK:64 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_75",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 4, 8, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:255 STACK:16 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_70",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 8, 4, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:250 STACK:64 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_75",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 8, 4, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:255 STACK:80 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    }
+  ],
+  "fixed": [
+    {
+      "arch": "arch = sm_70",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 16, 2, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:24 STACK:40 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_75",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 16, 2, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:255 STACK:16 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_70",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 4, 8, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:24 STACK:40 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_75",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 4, 8, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:255 STACK:16 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_70",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 8, 4, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:24 STACK:40 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "arch": "arch = sm_75",
+      "kernel": "Function void flash_attn_ext_f16<256, 256, 8, 4, false, false, false, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long):",
+      "resources": "REG:255 STACK:16 SHARED:0 LOCAL:0 CONSTANT[0]:560 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    }
+  ]
+}

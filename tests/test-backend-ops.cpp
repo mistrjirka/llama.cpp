@@ -10681,6 +10681,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_flash_attn_ext(64, 128, 4, {1, 1}, 128, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q4_0, GGML_TYPE_Q2_0));
     test_cases.emplace_back(new test_flash_attn_ext(128, 64, 4, {1, 1}, 64, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q2_0, GGML_TYPE_F16));
 
+    // Long-Q8 D256 prefill: small/partial query tiles exercise fractional Stream-K
+    // work on SM75. The final partial tile must retain the packed INT8 Q/K mode.
+    // Cover both Qwen GQA6 and Ornith GQA8, plus the 65k dispatch boundary.
+    for (int gqa : {6, 8}) {
+        for (int nb : {128, 129, 512}) {
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {gqa, 1}, 65536, nb,
+                true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+        }
+        for (int kv : {65408, 65664}) {
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {gqa, 1}, kv, 128,
+                true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+        }
+    }
+
     // q8_0 KV cases: decode and prompt batches, KV pad, permuted KV, feature flags, and long context
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {16, 1},   113,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {16, 1},  1024,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));

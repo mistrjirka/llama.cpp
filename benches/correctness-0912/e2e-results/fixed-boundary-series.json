@@ -1,0 +1,195 @@
+{
+  "mode": "boundary",
+  "label": "fixed-boundary-series",
+  "binary": "/models/.bench-ornith-mtp4/int8-streamk-validation/fixed-normal-bin/llama-server",
+  "passed": true,
+  "rows": [
+    {
+      "append": 128,
+      "wall_s": 0.3608887619921006,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 128,
+        "prompt_ms": 325.741,
+        "prompt_per_token_ms": 2.5448515625,
+        "prompt_per_second": 392.9502273278464,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "tokens": [
+        198
+      ],
+      "sha256": "840d60afcf8aeb607ff32e9b4fba7e3132722c2148136c5f4e4816fec59f4ff3"
+    },
+    {
+      "append": 384,
+      "wall_s": 0.4982046469813213,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 384,
+        "prompt_ms": 461.212,
+        "prompt_per_token_ms": 1.2010729166666667,
+        "prompt_per_second": 832.5889178945907,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "tokens": [
+        318
+      ],
+      "sha256": "8b6ddb95e9b4de94dfb45c1f6dcc785236817f4d9b304f94a4b151d0065a3c65"
+    },
+    {
+      "append": 512,
+      "wall_s": 0.6657213640282862,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 512,
+        "prompt_ms": 633.907,
+        "prompt_per_token_ms": 1.238099609375,
+        "prompt_per_second": 807.6894560243063,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "tokens": [
+        26
+      ],
+      "sha256": "9cab0519f56f13acec86572516e8ebe7b99aa40011ec3171c9c8af90c08cae7a"
+    },
+    {
+      "append": 640,
+      "wall_s": 0.7433110969723202,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 640,
+        "prompt_ms": 696.584,
+        "prompt_per_token_ms": 1.0884125,
+        "prompt_per_second": 918.7693085112493,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "tokens": [
+        535
+      ],
+      "sha256": "e8a5394244ee6c507f1d64fcf87773387a322b00f20bbeb7f70f479d596db678"
+    },
+    {
+      "append": 1000,
+      "wall_s": 1.1361487460089847,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 1000,
+        "prompt_ms": 1101.54,
+        "prompt_per_token_ms": 1.10154,
+        "prompt_per_second": 907.8199611453057,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "tokens": [
+        262
+      ],
+      "sha256": "6e8aa5ca09e79713272fcb3a3c663c6764ec97900aa4ae307ae9ab297954ec89"
+    },
+    {
+      "append": 512,
+      "wall_s": 0.6380295010167174,
+      "timings": {
+        "cache_n": 65024,
+        "prompt_n": 512,
+        "prompt_ms": 592.889,
+        "prompt_per_token_ms": 1.157986328125,
+        "prompt_per_second": 863.5680540539629,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      },
+      "tokens": [
+        318
+      ],
+      "sha256": "8b6ddb95e9b4de94dfb45c1f6dcc785236817f4d9b304f94a4b151d0065a3c65"
+    }
+  ],
+  "manifest": {
+    "argv": [
+      "/models/.bench-ornith-mtp4/int8-streamk-validation/fixed-normal-bin/llama-server",
+      "-m",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "41051",
+      "--ctx-size",
+      "1400000",
+      "--parallel",
+      "4",
+      "--kv-unified",
+      "--kv-unified-per-slot",
+      "400000",
+      "--slot-fork-prefix",
+      "--cache-ram",
+      "0",
+      "--no-cache-idle-slots",
+      "--slot-prompt-similarity",
+      "0",
+      "--override-kv",
+      "qwen35moe.context_length=int:400000",
+      "--rope-scaling",
+      "yarn",
+      "--rope-scale",
+      "1.52587890625",
+      "--yarn-orig-ctx",
+      "262144",
+      "--split-mode",
+      "layer",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--device",
+      "CUDA1,CUDA0",
+      "--tensor-split",
+      "14,35",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "512",
+      "--ubatch-size",
+      "128",
+      "--pipeline-copies",
+      "1",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--slot-save-path",
+      "/models/.bench-ornith-mtp4/cold-boundary",
+      "--no-warmup",
+      "--perf",
+      "--reasoning",
+      "off",
+      "--reasoning-format",
+      "none"
+    ],
+    "cuda_library_sha256": "f4424551e8fcae9ea6a81d76da7ff8778952bea47a861033bbcde3cb6c8b5c80",
+    "env": {
+      "CUDA_VISIBLE_DEVICES": "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79,GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+      "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+      "GGML_CUDA_ALLREDUCE": "internal",
+      "GGML_CUDA_AR_COPY_THRESHOLD": "131072"
+    },
+    "exit_code": 0,
+    "library_unchanged": true,
+    "error_lines": [],
+    "memcheck_clean": null
+  }
+}

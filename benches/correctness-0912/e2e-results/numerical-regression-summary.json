@@ -1,0 +1,24 @@
+{
+  "fixed": {
+    "rtx": {
+      "cases_passed": 10,
+      "cases_total": 10,
+      "log": "/models/.bench-ornith-mtp4/int8-streamk-validation/numerical-rtx-ten.log",
+      "sha256": "22ab4a5d653ddf66d9262c31609f881cb8609641e9668cd9b962c1a2526d07eb"
+    },
+    "v100": {
+      "cases_passed": 10,
+      "cases_total": 10,
+      "log": "/models/.bench-ornith-mtp4/int8-streamk-validation/numerical-v100-ten.log",
+      "sha256": "99d7bad5f5230eb9d2829969c82c8d010e6d3c8dd91e523566ac3d387c153fe5"
+    }
+  },
+  "baseline": {
+    "expected_failure": true,
+    "exit_code": 134,
+    "case": "D256,2 KV heads,GQA8,65536 KV,128 queries,Q8_0 K/V",
+    "log": "/models/.bench-ornith-mtp4/int8-streamk-validation/numerical-baseline-gqa8-128.log",
+    "sha256": "dc4514d0017db8d3b60956afc470a7fd233d5014093eff96583f6b7dfe9c29a5"
+  },
+  "status": "passed"
+}
