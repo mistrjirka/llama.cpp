@@ -1,7 +1,10 @@
 #include "convert.cuh"
 #include "dequantize.cuh"
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <type_traits>
 
 #define CUDA_Q8_0_NE_ALIGN 2048
 
@@ -270,15 +273,128 @@ static void dequantize_block_q8_0_f16_cuda(const void * __restrict__ vx, half * 
     }
 }
 
+// Below this size launch overhead dominates and the grouped/packed paths can be
+// marginally slower. All measured model weight matrices are comfortably larger.
+static constexpr int VOLTA_KQUANT_MIN_BLOCKS = 512;
+
+// Vectorized loads below rely only on alignment guaranteed by the GGUF block
+// layouts themselves, so consecutive blocks remain safe as well.
+static_assert(sizeof(block_q3_K) % alignof(uint16_t) == 0 &&
+              offsetof(block_q3_K, hmask) % alignof(uint16_t) == 0 &&
+              offsetof(block_q3_K, qs) % alignof(uint16_t) == 0);
+static_assert(sizeof(block_q4_K) % alignof(uint32_t) == 0 &&
+              offsetof(block_q4_K, qs) % alignof(uint32_t) == 0);
+static_assert(sizeof(block_q5_K) % alignof(uint16_t) == 0 &&
+              offsetof(block_q5_K, qh) % alignof(uint16_t) == 0 &&
+              offsetof(block_q5_K, qs) % alignof(uint16_t) == 0);
+
+// Q2_K: group multiple independent stock 64-thread quant blocks into one CTA
+// while preserving the exact dequantization helper.
+static __global__ void dequantize_block_q2_K_grouped(const void * __restrict__ vx,
+        half * __restrict__ yy, const int nb) {
+    const int ib = (blockIdx.x * blockDim.x + threadIdx.x) / 64;
+    if (ib >= nb) {
+        return;
+    }
+
+    const int tid = threadIdx.x % 64;
+    dequantize_q2_K(vx, ib, yy + int64_t(ib) * QK_K, tid);
+}
+
 template<typename dst_t>
 static void dequantize_row_q2_K_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = k / QK_K;
+    if constexpr (std::is_same_v<dst_t, half>) {
+        static const int grouped = [] {
+            const char * v = std::getenv("GGML_CUDA_VOLTA_Q2K_GROUPED");
+            return v ? std::atoi(v) : 3;
+        }();
+        if (nb >= VOLTA_KQUANT_MIN_BLOCKS && (grouped == 2 || grouped == 3) &&
+                ggml_cuda_info().devices[ggml_cuda_get_device()].cc == GGML_CUDA_CC_VOLTA) {
+            const int threads = grouped == 2 ? 128 : 256;
+            const int blocks_per_cta = threads / 64;
+            dequantize_block_q2_K_grouped<<<(nb + blocks_per_cta - 1) / blocks_per_cta, threads, 0, stream>>>(vx, y, nb);
+            return;
+        }
+    }
     dequantize_block_q2_K<<<nb, 64, 0, stream>>>(vx, y);
+}
+
+// Volta Q3_K path: keep the stock thread/output mapping, but load each
+// thread's four q/hmask bytes as aligned 16-bit pairs and emit its four FP16
+// results with one aligned 64-bit store. This targets the unusually poor global
+// load/store sector utilization of the stock Q3_K conversion on Volta.
+static __global__ void dequantize_block_q3_K_packed(const void * __restrict__ vx,
+        half * __restrict__ yy, const int nb) {
+    const int ib = (blockIdx.x * blockDim.x + threadIdx.x) / 64;
+    if (ib >= nb) {
+        return;
+    }
+
+    const int tid = threadIdx.x % 64;
+    const int r = tid / 4;
+    const int t = r / 2;
+    const int is0 = r % 2;
+    const int l0 = 16 * is0 + 4 * (tid % 4);
+    const int n = t / 4;
+    const int j = t - 4 * n;
+    const int is = 8 * n + 2 * j + is0;
+    const int shift = 2 * j;
+    const uint8_t m = 1u << (4 * n + j);
+
+    const block_q3_K * x = (const block_q3_K *) vx + ib;
+    const int8_t us = is <  4 ? (x->scales[is-0] & 0xF) | (((x->scales[is+8] >> 0) & 3) << 4) :
+                      is <  8 ? (x->scales[is-0] & 0xF) | (((x->scales[is+4] >> 2) & 3) << 4) :
+                      is < 12 ? (x->scales[is-8] >>  4) | (((x->scales[is+0] >> 4) & 3) << 4) :
+                                (x->scales[is-8] >>  4) | (((x->scales[is-4] >> 6) & 3) << 4);
+    const float d_all = x->d;
+    const float dl = d_all * (us - 32);
+
+    // block_q3_K is 110 bytes, so consecutive blocks are only 2-byte aligned.
+    // Use aligned 16-bit pairs rather than relying on unaligned uint32_t loads.
+    const uint16_t q01 = *(const uint16_t *) (x->qs + 32 * n + l0 + 0);
+    const uint16_t q23 = *(const uint16_t *) (x->qs + 32 * n + l0 + 2);
+    const uint16_t hm01 = *(const uint16_t *) (x->hmask + l0 + 0);
+    const uint16_t hm23 = *(const uint16_t *) (x->hmask + l0 + 2);
+    const uint32_t q4 = uint32_t(q01) | (uint32_t(q23) << 16);
+    const uint32_t hm4 = uint32_t(hm01) | (uint32_t(hm23) << 16);
+
+    uint32_t out_lo = 0;
+    uint32_t out_hi = 0;
+#pragma unroll
+    for (int p = 0; p < 4; ++p) {
+        const uint8_t q = (q4 >> (8 * p)) & 0xff;
+        const uint8_t hm = (hm4 >> (8 * p)) & 0xff;
+        const int qv = int((q >> shift) & 3) - ((hm & m) ? 0 : 4);
+        const uint32_t h = __half_as_ushort(__float2half_rn(dl * qv));
+        if (p < 2) {
+            out_lo |= h << (16 * p);
+        } else {
+            out_hi |= h << (16 * (p - 2));
+        }
+    }
+
+    half * y = yy + int64_t(ib) * QK_K + 128 * n + 32 * j + l0;
+    const uint64_t packed_out = uint64_t(out_lo) | (uint64_t(out_hi) << 32);
+    *(uint64_t *) y = packed_out;
 }
 
 template<typename dst_t>
 static void dequantize_row_q3_K_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = k / QK_K;
+    if constexpr (std::is_same_v<dst_t, half>) {
+        static const int packed = [] {
+            const char * v = std::getenv("GGML_CUDA_VOLTA_Q3K_PACKED");
+            return v ? std::atoi(v) : 3;
+        }();
+        if (nb >= VOLTA_KQUANT_MIN_BLOCKS && packed >= 1 && packed <= 3 &&
+                ggml_cuda_info().devices[ggml_cuda_get_device()].cc == GGML_CUDA_CC_VOLTA) {
+            const int threads = packed == 1 ? 64 : packed == 2 ? 128 : 256;
+            const int blocks_per_cta = threads / 64;
+            dequantize_block_q3_K_packed<<<(nb + blocks_per_cta - 1) / blocks_per_cta, threads, 0, stream>>>(vx, y, nb);
+            return;
+        }
+    }
     dequantize_block_q3_K<<<nb, 64, 0, stream>>>(vx, y);
 }
 
@@ -296,21 +412,154 @@ static void dequantize_row_q4_1_cuda(const void * vx, dst_t * y, const int64_t k
     dequantize_block_q4_1<<<nb, 32, 0, stream>>>(vx, y, nb32);
 }
 
+// Volta Q4_K packed path retains FP32 dequantization arithmetic and FP16 rounding.
+static __global__ void dequantize_block_q4_K_packed(const void * __restrict__ vx,
+        half * __restrict__ yy, const int nb) {
+    const int ib = (blockIdx.x * blockDim.x + threadIdx.x) / WARP_SIZE;
+    if (ib >= nb) {
+        return;
+    }
+    const int tid = threadIdx.x % WARP_SIZE;
+    const int il = tid / 8;
+    const int ir = tid % 8;
+    const block_q4_K * x = (const block_q4_K *) vx + ib;
+    half * y = yy + int64_t(ib) * QK_K + 64 * il + 4 * ir;
+    const float dall = __low2half(x->dm);
+    const float dmin = __high2half(x->dm);
+    uint8_t sc, m;
+    get_scale_min_k4(2 * il, x->scales, sc, m);
+    const float d1 = dall * sc;
+    const float m1 = dmin * m;
+    get_scale_min_k4(2 * il + 1, x->scales, sc, m);
+    const float d2 = dall * sc;
+    const float m2 = dmin * m;
+    const uint32_t q = *(const uint32_t *) (x->qs + 32 * il + 4 * ir);
+    uint32_t lo[2] = {0, 0};
+    uint32_t hi[2] = {0, 0};
+#pragma unroll
+    for (int l = 0; l < 4; ++l) {
+        const uint32_t b = (q >> (8 * l)) & 255;
+        lo[l / 2] |= uint32_t(__half_as_ushort(__float2half_rn(d1 * (b & 15) - m1))) << (16 * (l % 2));
+        hi[l / 2] |= uint32_t(__half_as_ushort(__float2half_rn(d2 * (b >> 4) - m2))) << (16 * (l % 2));
+    }
+    *(uint2 *) (y +  0) = make_uint2(lo[0], lo[1]);
+    *(uint2 *) (y + 32) = make_uint2(hi[0], hi[1]);
+}
+
+// Volta Q5_K path: pair adjacent FP16 outputs into aligned 32-bit stores.
+// A Q5_K block uses 64 threads; multiple independent blocks share one CTA.
+static __global__ void dequantize_block_q5_K_packed(const void * __restrict__ vx,
+        half * __restrict__ yy, const int nb) {
+    const int ib = (blockIdx.x * blockDim.x + threadIdx.x) / 64;
+    if (ib >= nb) {
+        return;
+    }
+
+    const int tid = threadIdx.x % 64;
+    const int il = tid / 16;
+    const int ir = tid % 16;
+    const int is = 2 * il;
+
+    const block_q5_K * x = (const block_q5_K *) vx + ib;
+    half * y = yy + int64_t(ib) * QK_K + 64 * il + 2 * ir;
+
+    const float dall = __low2half(x->dm);
+    const float dmin = __high2half(x->dm);
+
+    uint8_t sc, m;
+    get_scale_min_k4(is + 0, x->scales, sc, m);
+    const float d1 = dall * sc;
+    const float m1 = dmin * m;
+    get_scale_min_k4(is + 1, x->scales, sc, m);
+    const float d2 = dall * sc;
+    const float m2 = dmin * m;
+
+    const uint16_t ql2 = *(const uint16_t *) (x->qs + 32 * il + 2 * ir);
+    const uint16_t qh2 = *(const uint16_t *) (x->qh + 2 * ir);
+    const uint8_t ql0 = ql2 & 0xff;
+    const uint8_t ql1 = ql2 >> 8;
+    const uint8_t qh0 = qh2 & 0xff;
+    const uint8_t qh1 = qh2 >> 8;
+    const uint8_t hm0 = 1u << (2 * il);
+    const uint8_t hm1 = hm0 << 1;
+
+    const uint32_t lo =
+        uint32_t(__half_as_ushort(__float2half_rn(d1 * ((ql0 & 0xF) + (qh0 & hm0 ? 16 : 0)) - m1))) |
+        (uint32_t(__half_as_ushort(__float2half_rn(d1 * ((ql1 & 0xF) + (qh1 & hm0 ? 16 : 0)) - m1))) << 16);
+    const uint32_t hi =
+        uint32_t(__half_as_ushort(__float2half_rn(d2 * ((ql0 >> 4) + (qh0 & hm1 ? 16 : 0)) - m2))) |
+        (uint32_t(__half_as_ushort(__float2half_rn(d2 * ((ql1 >> 4) + (qh1 & hm1 ? 16 : 0)) - m2))) << 16);
+
+    *(uint32_t *) (y +  0) = lo;
+    *(uint32_t *) (y + 32) = hi;
+}
+
+// Volta Q6_K path: keep the stock dequantization arithmetic and output
+// mapping, but group multiple independent 64-thread quant blocks into one CTA.
+static __global__ void dequantize_block_q6_K_grouped(const void * __restrict__ vx,
+        half * __restrict__ yy, const int nb) {
+    const int ib = (blockIdx.x * blockDim.x + threadIdx.x) / 64;
+    if (ib >= nb) {
+        return;
+    }
+
+    const int tid = threadIdx.x % 64;
+    dequantize_q6_K(vx, ib, yy + int64_t(ib) * QK_K, tid);
+}
+
 template<typename dst_t>
 static void dequantize_row_q4_K_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = k / QK_K;
+    if constexpr (std::is_same_v<dst_t, half>) {
+        static const int packed = [] {
+            const char * v = std::getenv("GGML_CUDA_VOLTA_Q4K_PACKED");
+            return v ? std::atoi(v) : 2;
+        }();
+        if (nb >= VOLTA_KQUANT_MIN_BLOCKS && packed >= 1 && packed <= 3 &&
+                ggml_cuda_info().devices[ggml_cuda_get_device()].cc == GGML_CUDA_CC_VOLTA) {
+            const int threads = packed == 1 ? 32 : packed == 2 ? 128 : 256;
+            dequantize_block_q4_K_packed<<<(nb + threads / 32 - 1) / (threads / 32), threads, 0, stream>>>(vx, y, nb);
+            return;
+        }
+    }
     dequantize_block_q4_K<<<nb, 32, 0, stream>>>(vx, y);
 }
 
 template<typename dst_t>
 static void dequantize_row_q5_K_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = k / QK_K;
+    if constexpr (std::is_same_v<dst_t, half>) {
+        static const int packed = [] {
+            const char * v = std::getenv("GGML_CUDA_VOLTA_Q5K_PACKED");
+            return v ? std::atoi(v) : 3;
+        }();
+        if (nb >= VOLTA_KQUANT_MIN_BLOCKS && packed >= 1 && packed <= 3 &&
+                ggml_cuda_info().devices[ggml_cuda_get_device()].cc == GGML_CUDA_CC_VOLTA) {
+            const int threads = packed == 1 ? 64 : packed == 2 ? 128 : 256;
+            const int blocks_per_cta = threads / 64;
+            dequantize_block_q5_K_packed<<<(nb + blocks_per_cta - 1) / blocks_per_cta, threads, 0, stream>>>(vx, y, nb);
+            return;
+        }
+    }
     dequantize_block_q5_K<<<nb, 64, 0, stream>>>(vx, y);
 }
 
 template<typename dst_t>
 static void dequantize_row_q6_K_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = k / QK_K;
+    if constexpr (std::is_same_v<dst_t, half>) {
+        static const int grouped = [] {
+            const char * v = std::getenv("GGML_CUDA_VOLTA_Q6K_GROUPED");
+            return v ? std::atoi(v) : 3;
+        }();
+        if (nb >= VOLTA_KQUANT_MIN_BLOCKS && (grouped == 2 || grouped == 3) &&
+                ggml_cuda_info().devices[ggml_cuda_get_device()].cc == GGML_CUDA_CC_VOLTA) {
+            const int threads = grouped == 2 ? 128 : 256;
+            const int blocks_per_cta = threads / 64;
+            dequantize_block_q6_K_grouped<<<(nb + blocks_per_cta - 1) / blocks_per_cta, threads, 0, stream>>>(vx, y, nb);
+            return;
+        }
+    }
     dequantize_block_q6_K<<<nb, 64, 0, stream>>>(vx, y);
 }
 
