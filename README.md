@@ -1,14 +1,14 @@
 # llama.cpp for V100 and RTX 2080 Ti
 
-CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Turing (SM75)**, tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB. The main Qwen setup uses Qwen3.8-27B `UD-Q5_K_XL` with llama.cpp `q8_0` K/V.
+CUDA paths tuned for long-context inference on NVIDIA **Volta (SM70)** and **Turing (SM75)**. The branch is tested on a Tesla V100-SXM2 32 GB and an RTX 2080 Ti 22 GB, both separately and together.
 
-![Prompt processing benchmarks: retained long-context upstream comparisons and the current Volta quantization regression gate](docs/benchmarks/long-context-prompt-processing.svg)
+![Long-context prompt processing throughput comparing current upstream llama.cpp with v100-optimized](docs/benchmarks/long-context-prompt-processing.svg)
 
-**Long-context highlights:** on a single V100, Ornith reaches **+49.0% PP**, Qwen3.8-27B **+44.3%**, Gemma 4 31B **+36.7%**, and Gemma 4 26B-A4B **+31.4%**. On a single RTX 2080 Ti, Qwen reaches **+29.5%** and Ornith **+13.1%**. Mixed V100 + RTX 2080 Ti reaches **+69.3%** for Qwen and **+17.0%** for Ornith. The new lower panel independently checks the generic Volta quantization work against the pre-quant V100 branch: **+6.86% Q2_K**, **+6.56% Q3_K**, **+12.64% Q4_K**, **+6.52% Q5_K/Q6_K**, and **+1.61% MXFP4**, while the unrelated PXQ4-HQ control is effectively unchanged (**-0.035%**).
+The headline measurements are against current upstream `3057bb66` after syncing the fork on 2026-09-12. The largest prompt-processing gains are **+71.4%** for Qwen on V100 + RTX 2080 Ti, **+47.4%** for Qwen on one V100, **+40.1%** for Ornith on one V100, **+40.1%** for Gemma 4 31B, and **+37.7%** for Gemma 4 26B-A4B. Muse Glimmer gains **+9.1%** from the generic Q4_K work plus its D128/GQA16 attention specialization.
 
-The Ornith RTX 2080 Ti and mixed-GPU rows use a dedicated `GGML_CUDA_FORCE_MMQ=ON` build on both upstream and optimized arms; the Qwen rows use the normal build. Exact settings are documented below.
+![Token-generation throughput comparing current upstream llama.cpp with v100-optimized](docs/benchmarks/token-generation-throughput.svg)
 
-**September 12 update:** the upper graph panel retains the established long-context benchmark runs. The lower panel is a fresh direct regression gate for the Q2_K-Q6_K and MXFP4 conversion work against pre-quant `v100-optimized` (`eae5d0ec`). Current correctness-fix isolation and saved-state guidance remain in the [correctness report](benches/correctness-0912/nondeterminism/REPORT.md).
+Decode is intentionally close to upstream on most single-GPU workloads. The main generation gain is the mixed Qwen setup at **+10.5% TG**; the other headline rows are approximately neutral to +1%.
 
 ## Build and run
 
@@ -23,16 +23,16 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CU
 cmake --build build -j --target llama-server
 ```
 
-`70;75` builds kernels for both V100 and RTX 2080 Ti, so the same build works on either GPU or on a mixed system. `-DLLAMA_BUILD_UI=OFF` skips the web UI and its build/download step; remove it if you use the built-in UI.
+`70;75` produces kernels for both GPUs. `-DLLAMA_BUILD_UI=OFF` avoids the UI download/build; remove it if you use the built-in web UI.
 
-The normal CUDA build is recommended for Qwen and for V100-only Ornith. On the V100, set `GGML_CUDA_VOLTA_FORCE_MMQ=moe`: it enables MMQ only for routed MoE experts and measured within 0.2% of normal dispatch on dense Qwen. RTX-only and mixed-GPU Ornith use the dedicated FORCE_MMQ build documented below.
+The normal CUDA build is recommended for Qwen and V100-only Ornith. For routed MoE experts on V100, set `GGML_CUDA_VOLTA_FORCE_MMQ=moe`. RTX-only and mixed-GPU Ornith use the dedicated FORCE_MMQ build shown below.
 
-### V100
+### Qwen on one V100
 
-For Qwen3.8-27B on a single V100, the server selects the measured `batch=4096`, `ubatch=4096` defaults when `-b/-ub` are omitted. Run `./build/bin/llama-server --list-devices` to check the CUDA name; the example below uses `CUDA0`.
+For Qwen3.8-27B, the server selects the measured `batch=4096`, `ubatch=4096` defaults at a 131072-token context when `-b/-ub` are omitted. Verify device names with `./build/bin/llama-server --list-devices`.
 
 ```bash
-GGML_CUDA_VOLTA_FORCE_MMQ=moe ./build/bin/llama-server \
+./build/bin/llama-server \
   --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
   --device CUDA0 --split-mode none \
   --gpu-layers all \
@@ -41,32 +41,29 @@ GGML_CUDA_VOLTA_FORCE_MMQ=moe ./build/bin/llama-server \
   --cache-type-k q8_0 --cache-type-v q8_0
 ```
 
-At 16k prompt processing, the measured V100 ubatch sweep was **876.49 tok/s at 1024**, **923.31 at 2048**, and **952.18 at 4096**.
+### Qwen on one RTX 2080 Ti
 
-### RTX 2080 Ti
-
-For a single RTX 2080 Ti, the server selects `batch=4096`, `ubatch=2048` for the tested Qwen3.8-27B contexts. Run `./build/bin/llama-server --list-devices` and use the RTX device name; the example below uses `CUDA0`.
+The tested 22 GB RTX setup uses `batch=4096`, `ubatch=2048`.
 
 ```bash
 ./build/bin/llama-server \
   --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
   --device CUDA0 --split-mode none \
   --gpu-layers all \
-  --ctx-size 32768 --parallel 1 \
+  --ctx-size 67584 --parallel 1 \
   --flash-attn on \
+  --batch-size 4096 --ubatch-size 2048 \
   --cache-type-k q8_0 --cache-type-v q8_0
 ```
 
-At 16k prompt processing, `ubatch=1024/2048/4096` measured **890.95 / 923.63 / 930.62 tok/s**. `ubatch=2048` keeps almost all of the performance while leaving more VRAM for context and server state.
+### Qwen on V100 + RTX 2080 Ti
 
-### V100 + RTX 2080 Ti
-
-Batch/ubatch and tensor placement stay explicit on mixed-GPU systems because free VRAM, context size, and tensor split materially change the best configuration. The following is the tested 400k-context configuration used for the long-context benchmark. Check `./build/bin/llama-server --list-devices` first; the device order below assumes the RTX 2080 Ti is `CUDA1` and the V100 is `CUDA0`.
+The tested production-style setup uses a 409600-token YaRN context and a 4:5 RTX:V100 tensor split. The example assumes the RTX is `CUDA1` and the V100 is `CUDA0`.
 
 ```bash
-export GGML_CUDA_VOLTA_FORCE_MMQ=moe
 export GGML_CUDA_ALLREDUCE=internal
 export GGML_CUDA_AR_COPY_THRESHOLD=131072
+
 ./build/bin/llama-server \
   --model /path/to/Qwen3.8-27B-UD-Q5_K_XL.gguf \
   --device CUDA1,CUDA0 --tensor-split 4,5 --split-mode tensor \
@@ -80,154 +77,82 @@ export GGML_CUDA_AR_COPY_THRESHOLD=131072
   --ctx-checkpoints 32 --checkpoint-min-step 8192
 ```
 
-The tested 400k profile uses `4096/2048`. `ubatch=4096` was a little faster in the sweep but left only about 1 GiB free on the RTX 2080 Ti before adding other server state.
+### Qwen batch defaults
 
-### Batch defaults
-
-| Setup | Qwen3.8 default | Selection |
+| Setup | Default | Selection |
 |---|---:|---|
-| Single V100, 131072 ctx | `4096/4096` | automatic |
-| Single RTX 2080 Ti, 32768 or 67584 ctx | `4096/2048` | automatic |
+| V100, 131072 ctx | `4096/4096` | automatic |
+| RTX 2080 Ti, 32768 or 67584 ctx | `4096/2048` | automatic |
 | V100 + RTX 2080 Ti, 409600 ctx | `4096/2048` | automatic |
 | Other model/topology/context | upstream behavior | unchanged |
 
-Explicit `-b/-ub`, `LLAMA_ARG_BATCH`/`LLAMA_ARG_UBATCH`, and configuration values take precedence. `LLAMA_V100_AUTO_BATCH=0` disables the hardware-aware Qwen batch defaults. The mixed 400k command above keeps `4096/2048` explicit so the complete tested setup is visible in one place.
+Explicit `-b/-ub`, `LLAMA_ARG_BATCH`/`LLAMA_ARG_UBATCH`, and configuration values take precedence. `LLAMA_V100_AUTO_BATCH=0` disables the hardware-aware defaults.
 
-## Benchmarks
+## Current upstream comparison
 
-The headline workload is **100,000 cached tokens followed by a 1,000-token prompt append**. Qwen uses `UD-Q5_K_XL`, `q8_0` K/V, FlashAttention, and MTP disabled on both engines. The benchmark report records the exact upstream revision, sync checks, and retained measurements.
+Server rows restore the same validated prefix, append 1,000 tokens, then generate 128 tokens. Gemma and Muse use `llama-bench -d 100000 -p 1000 -n 128` so the 100k state is outside the timed append. For V100 MoE rows, upstream is given its faster available global FORCE_MMQ build while the fork uses its more selective `GGML_CUDA_VOLTA_FORCE_MMQ=moe` policy; dense models stay on normal dispatch. Full commands, A-B-B-A controls, hashes, standard deviations, logs, and sync validation are in [`benches/upstream-sync-0912/REPORT.md`](benches/upstream-sync-0912/REPORT.md).
 
-### 100k cached + 1k append
+| Workload | Upstream PP | `v100-optimized` PP | PP gain | TTFT reduction | TG gain |
+|---|---:|---:|---:|---:|---:|
+| Qwen3.8 27B · V100 · 100k+1k | 298.47 | **440.08** | **+47.45%** | **-31.61%** | +0.08% |
+| Qwen3.8 27B · RTX 2080 Ti · 65k+1k | 383.73 | **493.53** | **+28.61%** | **-21.67%** | +0.05% |
+| Qwen3.8 27B · V100+RTX · 100k+1k | 405.93 | **695.92** | **+71.44%** | **-40.71%** | **+10.49%** |
+| Ornith 1.5 35B-A3B · V100 · 100k+1k | 696.70 | **976.39** | **+40.15%** | **-27.75%** | +0.62% |
+| Ornith 1.5 35B-A3B · RTX 2080 Ti · 65k+1k | 1317.78 | **1560.49** | **+18.42%** | **-14.92%** | +0.94% |
+| Ornith 1.5 35B-A3B · V100+RTX · 100k+1k | 1208.72 | **1474.71** | **+22.01%** | **-17.19%** | +1.14% |
+| Gemma 4 31B · V100 · 100k depth + 1k | 201.67 | **282.56** | **+40.11%** | — | -0.15% |
+| Gemma 4 26B-A4B · V100 · 100k depth + 1k | 691.68 | **952.20** | **+37.66%** | — | +0.55% |
+| Muse Glimmer 30B · V100 · 100k depth + 1k | 550.54 | **600.86** | **+9.14%** | — | -0.02% |
 
-| Hardware | Upstream PP | `v100-optimized` PP | PP gain | Upstream TTFT | `v100-optimized` TTFT | TTFT reduction |
-|---|---:|---:|---:|---:|---:|---:|
-| V100 32 GB | 297.69 tok/s | **429.66 tok/s** | **+44.33%** | 3.411 s | **2.380 s** | **-30.23%** |
-| V100 + RTX 2080 Ti | 408.08 tok/s | **690.96 tok/s** | **+69.32%** | 2.505 s | **1.505 s** | **-39.93%** |
+The Qwen V100/dual and all Ornith rows reproduced the same token hashes between upstream and current. Qwen RTX was stable within each arm but produced different upstream/current sequences; the performance comparison does not depend on token identity.
 
-The V100 row uses native 131072 context and matched `batch=4096`, `ubatch=4096`. The dual-GPU row uses the production-style 409600-token YaRN context, a 4:5 RTX 2080 Ti:V100 tensor split, and `batch=4096`, `ubatch=2048`.
+## What this fork changes
 
-With 64 generated tokens after the dual-GPU append, generation improves from **23.97 to 26.50 tok/s (+10.56%)** and total request time falls from **5.141 to 3.889 seconds (-24.35%)**.
+The user-facing performance work is concentrated in a few areas:
 
-### RTX 2080 Ti: 65k cached + 1k append
+- **Volta long-context attention:** tuned Q8-backed FlashAttention paths, including D128/GQA16 for Muse and D512 for Gemma.
+- **Volta quant conversion:** SM70-specialized FP16 conversion for Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, and MXFP4. The retained real-model regression matrix showed gains for every targeted format and no material change on an unrelated PXQ4-HQ control.
+- **Turing long-Q8 attention:** long-prompt specialization plus INT8 Tensor-Core QK on validated SM75 geometries.
+- **MoE dispatch:** selective Volta MMQ for routed experts and dedicated FORCE_MMQ builds where that is faster on RTX/mixed Ornith.
+- **Mixed-GPU serving:** internal CUDA all-reduce and tuned tensor/layer placement for V100 + RTX 2080 Ti.
+- **Serving features:** MTP, exact-prefix KV sharing, multi-slot serving, and related long-context state handling.
 
-The 22 GB RTX 2080 Ti can run the long-Q8 path at a 67,584-token context. Using 65,536 cached tokens leaves enough room for a 1,000-token append and directly exercises the Turing long-context kernel.
-
-| Metric | Upstream `43f3dda62` | `v100-optimized` | Change |
-|---|---:|---:|---:|
-| Prompt processing | 382.30 tok/s | **494.92 tok/s** | **+29.46%** |
-| TTFT | 2.656 s | **2.058 s** | **-22.53%** |
-| 64-token decode | 17.30 tok/s | 17.34 tok/s | +0.19% |
-
-The 67,584-token allocation leaves about 463 MiB free on the 22 GB card.
-
-### Gemma 4 on V100
-
-Gemma uses the same Release SM70/SM75 build, Q8 K/V and FlashAttention. These measurements use `llama-bench -d 100000 -p 1000`, which constructs the 100k KV state outside the timed region and measures only the 1,000-token append. The optimized branch changes the Volta D512 FlashAttention staging from the generic `FA32/K128/V128` layout to `FA128/K32/V32`; backend correctness passed all 22 supported D512 cases tested.
-
-| Model | Upstream PP | `v100-optimized` PP | PP gain |
-|---|---:|---:|---:|
-| Gemma 4 31B `UD-Q4_K_XL` | 199.84 tok/s | **273.19 tok/s** | **+36.70%** |
-| Gemma 4 26B-A4B `UD-Q4_K_XL` | 689.52 tok/s | **905.84 tok/s** | **+31.37%** |
-
-The gain scales with context length rather than trading away short-prompt speed. Gemma 31B measured **+1.74% at 1k**, **+8.59% at 16k**, and **+36.70% at 100k+1k**; Gemma 26B-A4B measured **+2.69%**, **+5.67%**, and **+31.37%** at the same points.
-
-For Gemma 26B-A4B, routed-expert MMQ is complementary to the attention change. With `GGML_CUDA_VOLTA_FORCE_MMQ=moe`, the optimized 100k+1k result reached **959.48 tok/s**, another **+5.9%** over the D512-attention-only result and **+39.2%** over the upstream baseline. This optional MoE setting is kept out of the main graph so its bars remain an apples-to-apples standard-build comparison.
-
-Cold-prompt results follow below.
-
-### Cold prompt processing
-
-Cold PP shows the same comparison on fresh 1k and 16k prompts, using upstream `43f3dda62` and the launch settings documented below.
-
-| Hardware | 1k upstream | 1k `v100-optimized` | Gain | 16k upstream | 16k `v100-optimized` | Gain |
-|---|---:|---:|---:|---:|---:|---:|
-| V100 32 GB | 859.13 | **904.11 tok/s** | **+5.24%** | 871.78 | **961.59 tok/s** | **+10.30%** |
-| RTX 2080 Ti 22 GB | 670.74 | **925.19 tok/s** | **+37.94%** | 642.02 | **929.52 tok/s** | **+44.78%** |
-| V100 + RTX 2080 Ti | 963.61 | **1088.98 tok/s** | **+13.01%** | 1025.85 | **1242.23 tok/s** | **+21.09%** |
-
-Full methodology, regression checks and retained measurements are in [`benches/upstream-sync-0911/REPORT.md`](benches/upstream-sync-0911/REPORT.md).
-
-## RTX 2080 Ti optimizations
-
-The RTX 2080 Ti path targets the parts of long-context attention where Turing differs from Volta.
-
-### Long-Q8 attention dispatch
-
-For the tested D256/GQA6 tensor-parallel geometry, Q8 K/V uses a dedicated `16x2` long-prompt attention specialization. This was the first large SM75 kernel improvement during the optimization work.
-
-### INT8 Tensor-Core QK
-
-The optimized path uses the existing `q8_0` K cache as the source data. K is packed into Tensor-Core-friendly INT8 codes and scales, Q is quantized once for the attention call, and the QK score calculation uses Turing's INT8 Tensor Cores. The mask, softmax, and value accumulation remain on the established attention path.
-
-
-Together these paths produce the standalone RTX 2080 Ti long-context gain shown above while keeping decode performance unchanged.
-
-## V100 optimizations
-
-The Volta path lets long-context Q8 K/V use the compact V100 Tensor-Core attention specialization. Q8-backed KV is now eligible for the tuned compact kernel after conversion to the FP16 attention input.
-
-The compact path remains specific to the validated long-context geometry. The regular FlashAttention dispatch handles other shapes.
+Low-level kernel sweeps and rejected experiments are intentionally kept out of this README. See the benchmark reports for implementation details.
 
 ## Ornith and MoE
 
-For the V100-only setup, use the normal build shown above and set:
+### V100
+
+Use the normal build and enable MMQ only for routed experts:
 
 ```bash
 export GGML_CUDA_VOLTA_FORCE_MMQ=moe
 ```
 
-This selects MMQ for routed expert matmuls on Volta. The setting is safe to keep in a shared launcher used for both dense Qwen3.8 and MoE models.
+This is safe in a shared Qwen/Ornith launcher: dense Qwen measured within ~0.2% of the selector being unset, while globally forcing MMQ is much slower for dense Qwen. On the fresh V100 Ornith control, selective `MMQ=moe` reached **976.39 tok/s** versus **943.65 tok/s** with global FORCE_MMQ.
 
-### Ornith 100k cached + 1k append
+### RTX 2080 Ti and mixed Ornith
 
-`Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf`, one V100, Q8 K/V, MTP off:
-
-| Metric | Upstream `43f3dda62` | `v100-optimized` + `MMQ=moe` | Change |
-|---|---:|---:|---:|
-| Prompt processing | 539.11 tok/s | **803.18 tok/s** | **+48.98%** |
-| TTFT | 1.911 s | **1.299 s** | **-32.06%** |
-| 64-token decode | 57.09 tok/s | 56.87 tok/s | -0.38% |
-
-### Why use the selective MMQ setting
-
-A mirrored Qwen test measured **429.86 PP/s** with the selector unset and **429.17 PP/s** with `GGML_CUDA_VOLTA_FORCE_MMQ=moe` (-0.16%). Dense Qwen has no routed experts, so the selector leaves its matmul policy unchanged.
-
-Global `GGML_CUDA_FORCE_MMQ=ON` is much less suitable as a common Qwen build: the same Qwen 100k+1k test fell to **295.70 PP/s**. For a V100-only shared Qwen/Ornith launcher, the normal build plus `GGML_CUDA_VOLTA_FORCE_MMQ=moe` remains the recommended setup.
-
-For **RTX 2080 Ti-only Ornith** and the **V100 + RTX 2080 Ti Ornith** configuration below, use a dedicated build with global MMQ forced at compile time. Both upstream and optimized benchmark arms used the same setting:
+For the tested RTX-only and V100+RTX Ornith configurations, both comparison arms use a dedicated FORCE_MMQ build:
 
 ```bash
 cmake -S . -B build-ornith-mmq -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_GRAPHS=ON -DGGML_CUDA_FORCE_MMQ=ON -DCMAKE_CUDA_ARCHITECTURES='70;75' -DLLAMA_BUILD_UI=OFF
 cmake --build build-ornith-mmq -j --target llama-server
 ```
 
-Do not use that dedicated FORCE_MMQ build for the dense Qwen benchmarks above.
+Do not use this globally forced build for dense Qwen.
 
-### Ornith on RTX 2080 Ti: 65k cached + 1k append
+The headline Ornith configurations are:
 
-`Ornith-1.5-35B-A3B-AD-Q5_K-Q4_K.gguf`, fully resident on the RTX 2080 Ti, 67,584-token context, Q8 K/V, MTP off, global FORCE_MMQ on both engines, `batch=4096`, `ubatch=512`:
+| Setup | Model | Batch / ubatch | Placement |
+|---|---|---:|---|
+| V100 | AD-Q6_K/Q5_K | `2048/512` | V100 only, selective `MMQ=moe` |
+| RTX 2080 Ti | AD-Q5_K/Q4_K | `4096/512` | RTX only, FORCE_MMQ build |
+| V100 + RTX | AD-Q6_K/Q5_K | `2048/1024` | tensor split `1:1`, internal all-reduce, FORCE_MMQ build |
 
-| Metric | Upstream `43f3dda62` | `v100-optimized` | Change |
-|---|---:|---:|---:|
-| Prompt processing | 1332.91 tok/s | **1505.73 tok/s** | **+12.97%** |
-| TTFT | 0.790 s | **0.702 s** | **-11.13%** |
+## Four active Ornith slots with MTP
 
-The model plus 67,584-token context fits on the 22 GB card with only a small VRAM margin; this row intentionally uses that maximum tested setup.
-
-### Ornith on V100 + RTX 2080 Ti: 100k cached + 1k append
-
-`Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf`, Q8 K/V, MTP off, global FORCE_MMQ on both engines. The best fair topology was **tensor split 1:1** with `batch=2048`, `ubatch=1024`, and internal CUDA all-reduce:
-
-| Metric | Upstream `43f3dda62` | `v100-optimized` | Change |
-|---|---:|---:|---:|
-| Prompt processing | 1247.39 tok/s | **1458.85 tok/s** | **+16.95%** |
-| TTFT | 0.856 s | **0.733 s** | **-14.44%** |
-
-A layer-split 14:35 RTX:V100 configuration reached 1108.32 tok/s on the optimized branch; tensor split is substantially faster for this Ornith workload, so the graph uses the matched tensor-split comparison.
-
-### Four active Ornith slots with MTP
-
-For the production-style four-agent workload, MTP1 is substantially better than the older MTP3 setting. The tested setup restores four 100k-token histories, generates 128 tokens per slot concurrently, and keeps four 400k logical slots in a 1.4M unified physical context. The best fair process-level ABBA comparison was:
+For the production-style four-agent workload, MTP1 is faster than the older MTP3 setup. Four restored 100k-token histories generate 128 tokens each concurrently:
 
 | Four active slots | Aggregate output | Mean per-agent TG |
 |---|---:|---:|
@@ -235,11 +160,10 @@ For the production-style four-agent workload, MTP1 is substantially better than 
 | Q4 Shisa, MTP1, target-head reuse | **106.59 tok/s** | **32.58 tok/s** |
 | Change | **+18.05%** | **+24.63%** |
 
-MTP acceptance was **87.41%** in that process-level Q8-draft-KV ABBA. The arm used a 14:35 RTX:V100 layer split, target `batch=512`, `ubatch=128`, draft `ubatch=64`, and the all-Q4 Shisa head. The target-head reuse avoids a second copy of the draft LM head on the RTX 2080 Ti, saving about **402 MiB** in the matched memory test. The draft token embedding remains local because sharing it did not reduce device memory and lowered acceptance.
+For this profile, q4_0 draft K/V recovers about 684 MiB on the RTX versus Q8 draft K/V with effectively unchanged aggregate throughput. Enable target-head reuse with `LLAMA_MTP_SHARE_TARGET_IO=head`.
 
-For the production profile, **q4_0 draft K/V is recommended**. On the corrected head-sharing runtime, a matched four-slot sweep measured **105.27 tok/s with q4_0/q4_0 versus 105.25 tok/s with Q8/Q8**, while RTX usage fell from **19,802 MiB to 19,118 MiB** (684 MiB recovered). The q4_0 run accepted 84.08% of drafts versus 85.70% for Q8, but aggregate throughput was effectively unchanged. Moving more target layers onto the RTX did not improve throughput: 16:33 and 17:32 were slower, while 18:31 still failed on the ~2.91 GiB draft compute arena.
-
-Enable the reuse path with `LLAMA_MTP_SHARE_TARGET_IO=head`. The draft scheduler must see both GPUs, with the RTX listed first; the branch keeps all draft-owned MTP layer/KV tensors on that first draft device while using the V100 backend only for the already-resident target LM head:
+<details>
+<summary>Example four-slot Ornith MTP command</summary>
 
 ```bash
 export GGML_CUDA_VOLTA_FORCE_MMQ=moe
@@ -264,24 +188,19 @@ export LLAMA_MTP_SHARE_TARGET_IO=head
   --spec-draft-ubatch 64 --spec-draft-n-max 1 --spec-mtp-defer-prompt
 ```
 
-This command assumes llama.cpp names the RTX 2080 Ti `CUDA1` and the V100 `CUDA0`; verify with `--list-devices`. The four-slot result used the normal SM70/SM75 build plus selective `GGML_CUDA_VOLTA_FORCE_MMQ=moe`. The q4_0 draft-KV production variant keeps the same 14:35 placement and MTP1 policy.
+The command assumes RTX=`CUDA1` and V100=`CUDA0`; verify with `--list-devices`.
 
-The tested Ornith Q6/Q5 model is about 25 GiB and fits on the V100 or the combined V100 + RTX 2080 Ti setup. Detailed MTP tuning and stability data are in [`benches/gemma4-0911/NOTES.md`](benches/gemma4-0911/NOTES.md) and earlier serving work is under [`benches/mtp-final-integration-0907/`](benches/mtp-final-integration-0907/).
+</details>
 
-## Other fork features
+Detailed MTP tuning, acceptance, memory, and rejected placement experiments are in [`benches/gemma4-0911/NOTES.md`](benches/gemma4-0911/NOTES.md).
 
-The branch also contains earlier work on MTP serving, exact-prefix KV sharing, parked agent sessions, V100 FlashAttention/GatedDeltaNet tuning, PXQ, and mixed-GPU scheduling. These features have separate benchmarks and controls:
+## Validation and benchmark reports
 
-- [`benches/mtp-final-integration-0907/REPORT.md`](benches/mtp-final-integration-0907/REPORT.md)
-- [`benches/parallel-serving-0907/RESEARCH.md`](benches/parallel-serving-0907/RESEARCH.md)
-- [`benches/readme-current-0908/REPORT.md`](benches/readme-current-0908/REPORT.md)
-- [`benches/upstream-vs-optimized-0911/REPORT.md`](benches/upstream-vs-optimized-0911/REPORT.md)
-- [`benches/upstream-sync-0911/REPORT.md`](benches/upstream-sync-0911/REPORT.md)
+- [Current upstream sync and headline benchmark report](benches/upstream-sync-0912/REPORT.md)
+- [Volta K-quant and MXFP4 validation](benches/volta-kquant-0912/ADDITIONAL_FORMATS.md)
+- [Current correctness / saved-state report](benches/correctness-0912/nondeterminism/REPORT.md)
+- [Gemma, Ornith and MTP optimization notes](benches/gemma4-0911/NOTES.md)
 
-## Benchmark notes
-
-The branch is synced through upstream `8172e6577`; the benchmarked upstream runtime is `43f3dda62` (2026-09-11). The intervening upstream change is confined to `tools/server/tests/unit/test_completion.py`.
-
-Benchmark percentages are measurements for the configurations above. Context length, quantization, tensor placement, batch size, and ubatch can move the bottleneck substantially. The current sync report contains the exact controls, retained measurements, MMQ comparison, and correctness checks used for the headline tables.
+The branch is synced through upstream `3057bb66` (2026-09-12). Benchmark percentages are measurements for the configurations above; context length, quantization, tensor placement, batch size, and ubatch can materially change the result.
 
 For general llama.cpp APIs, platform support, and build documentation, see upstream [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp), [`docs/`](docs/), and [`tools/server/README.md`](tools/server/README.md).

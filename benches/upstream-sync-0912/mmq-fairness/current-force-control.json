@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "pp": 943.6545900843212,
+    "prompt_ms": 1059.7185,
+    "tg": 57.38278065618586,
+    "ttft_wall_ms": 1107.4205534823705,
+    "e2e_wall_ms": 3330.307965981774
+  },
+  "arm": {
+    "profile": "ornith-v100-current-force-control",
+    "arm": "current",
+    "label": "Cforce",
+    "binary": "/workspace/muse-glimmer-v100/build-sync-sm70-75-force/bin/llama-server",
+    "env": {
+      "CUDA_VISIBLE_DEVICES": "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    },
+    "argv": [
+      "/workspace/muse-glimmer-v100/build-sync-sm70-75-force/bin/llama-server",
+      "--model",
+      "/models/Ornith-1.5-35B-A3B/Ornith-1.5-35B-A3B-AD-Q6_K-Q5_K.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "43250",
+      "--ctx-size",
+      "131072",
+      "--parallel",
+      "1",
+      "--fit",
+      "off",
+      "--gpu-layers",
+      "all",
+      "--flash-attn",
+      "on",
+      "--batch-size",
+      "2048",
+      "--ubatch-size",
+      "512",
+      "--cache-type-k",
+      "q8_0",
+      "--cache-type-v",
+      "q8_0",
+      "--cache-ram",
+      "0",
+      "--slot-save-path",
+      "/models/.bench-ornith-sync",
+      "--no-warmup",
+      "--perf",
+      "--skip-chat-parsing",
+      "--device",
+      "CUDA0",
+      "--split-mode",
+      "none",
+      "--ctx-checkpoints",
+      "0",
+      "--reasoning",
+      "off",
+      "--reasoning-format",
+      "none"
+    ],
+    "rows": [
+      {
+        "rep": 1,
+        "warmup": false,
+        "pp": 946.3611938914277,
+        "prompt_ms": 1056.679,
+        "tg": 57.386449387410956,
+        "predicted_ms": 2213.066,
+        "ttft_wall_ms": 1089.4741379888728,
+        "e2e_wall_ms": 3311.6898500011303,
+        "token_sha": "cdc456f6e4d818c1b6dd0b43b6579cc1f5dcd4d7515fc879ada50c7ad258f439"
+      },
+      {
+        "rep": 2,
+        "warmup": false,
+        "pp": 940.9479862772146,
+        "prompt_ms": 1062.758,
+        "tg": 57.37911192496077,
+        "predicted_ms": 2213.349,
+        "ttft_wall_ms": 1125.366968975868,
+        "e2e_wall_ms": 3348.926081962418,
+        "token_sha": "cdc456f6e4d818c1b6dd0b43b6579cc1f5dcd4d7515fc879ada50c7ad258f439"
+      }
+    ]
+  }
+}
