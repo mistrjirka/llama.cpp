@@ -246,6 +246,44 @@ static __global__ void dequantize_block_mxfp4(const void * __restrict__ vx, dst_
     dequantize_mxfp4(vx, i, yy + i*QK_K, threadIdx.x);
 }
 
+// Volta MXFP4 path: remap four lanes per 32-value block so both the packed input
+// bytes and the two 64-bit FP16 output stores are contiguous within each group.
+// FP32 arithmetic and final FP16 rounding are unchanged from the stock helper.
+static __global__ void dequantize_block_mxfp4_packed(const void * __restrict__ vx,
+        half * __restrict__ yy, const int nb) {
+    const int ibs = (blockIdx.x * blockDim.x + threadIdx.x) / WARP_SIZE;
+    if (ibs >= nb) {
+        return;
+    }
+
+    const int tid = threadIdx.x % WARP_SIZE;
+    const int ib = tid / 4;
+    const int il = tid % 4;
+    const block_mxfp4 * x = (const block_mxfp4 *) vx + int64_t(ibs) * (QK_K / QK_MXFP4);
+    const block_mxfp4 & xb = x[ib];
+    half * y = yy + int64_t(ibs) * QK_K + 32 * ib + 4 * il;
+    const uint8_t * q4 = xb.qs + 4 * il;
+    const float d = ggml_cuda_e8m0_to_fp32(xb.e);
+
+    uint32_t lo0 = 0, lo1 = 0, hi0 = 0, hi1 = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const uint8_t q = q4[j];
+        const uint32_t lo = __half_as_ushort(ggml_cuda_cast<half>(d * kvalues_mxfp4[q & 0xf] * 0.5f));
+        const uint32_t hi = __half_as_ushort(ggml_cuda_cast<half>(d * kvalues_mxfp4[q >> 4] * 0.5f));
+        if (j < 2) {
+            lo0 |= lo << (16 * j);
+            hi0 |= hi << (16 * j);
+        } else {
+            lo1 |= lo << (16 * (j - 2));
+            hi1 |= hi << (16 * (j - 2));
+        }
+    }
+
+    *(uint2 *) (y +  0) = make_uint2(lo0, lo1);
+    *(uint2 *) (y + 16) = make_uint2(hi0, hi1);
+}
+
 template <int qk, int qr, dequantize_kernel_t dequantize_kernel, typename dst_t>
 static void dequantize_block_cuda(const void * vx, dst_t * y,
         const int64_t ne00, const int64_t ne01, const int64_t ne02, const int64_t ne03,
@@ -620,6 +658,19 @@ static void dequantize_row_iq4_xs_cuda(const void * vx, dst_t * y, const int64_t
 template<typename dst_t>
 static void dequantize_row_mxfp4_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = (k + QK_K - 1) / QK_K;
+    if constexpr (std::is_same_v<dst_t, half>) {
+        static const int packed = [] {
+            const char * v = std::getenv("GGML_CUDA_VOLTA_MXFP4_PACKED");
+            return v ? std::atoi(v) : 3;
+        }();
+        if (nb >= 128 && packed >= 1 && packed <= 3 &&
+                ggml_cuda_info().devices[ggml_cuda_get_device()].cc == GGML_CUDA_CC_VOLTA) {
+            const int threads = packed == 1 ? 32 : packed == 2 ? 128 : 256;
+            const int blocks_per_cta = threads / WARP_SIZE;
+            dequantize_block_mxfp4_packed<<<(nb + blocks_per_cta - 1) / blocks_per_cta, threads, 0, stream>>>(vx, y, nb);
+            return;
+        }
+    }
     dequantize_block_mxfp4<<<nb, 32, 0, stream>>>(vx, y);
 }
 
