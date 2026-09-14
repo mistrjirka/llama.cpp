@@ -4,6 +4,12 @@
 #include "mmid.cuh"
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#include <unordered_map>
+#include <memory>
+#include "moe-stream.cuh"
 
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     switch (args.type_x) {
@@ -81,6 +87,236 @@ static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, con
             break;
     }
 }
+
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+namespace {
+struct moe_stream_options {
+    bool enabled = false;
+    bool trace = false;
+    int group = 16;
+    int min_tokens = 64;
+    size_t bytes = 64u * 1024u * 1024u;
+};
+
+static const moe_stream_options & moe_stream_config() {
+    static const moe_stream_options config = [] {
+        moe_stream_options c;
+        const char * enable = std::getenv("GGML_CUDA_MOE_STREAM");
+        c.enabled = enable && std::strcmp(enable, "1") == 0;
+        c.trace = std::getenv("GGML_CUDA_MOE_STREAM_TRACE") != nullptr;
+        auto integer = [](const char * name, long fallback, long low, long high) {
+            const char * value = std::getenv(name);
+            if (!value) { return fallback; }
+            char * end = nullptr;
+            const long parsed = std::strtol(value, &end, 10);
+            if (end == value || *end || parsed < low || parsed > high) {
+                GGML_LOG_WARN("moe-stream: ignoring invalid %s=%s\n", name, value);
+                return fallback;
+            }
+            return parsed;
+        };
+        c.group = integer("GGML_CUDA_MOE_STREAM_GROUP", 16, 1, 512);
+        c.min_tokens = integer("GGML_CUDA_MOE_STREAM_MIN_TOKENS", 64, 2, 16384);
+        c.bytes = size_t(integer("GGML_CUDA_MOE_STREAM_MIB", 64, 2, 2048)) * 1024 * 1024;
+        return c;
+    }();
+    return config;
+}
+
+constexpr size_t moe_stream_padding = 512;
+constexpr int moe_stream_max_experts = 4096;
+
+// One pool per backend context, reused across layers; never shared across models
+// or independent contexts. This first version streams individual projections.
+struct moe_stream_state {
+    int device;
+    cudaStream_t copy = nullptr;
+    cudaEvent_t metadata = nullptr;
+    cudaEvent_t ready[2] = {nullptr, nullptr};
+    cudaEvent_t consumed[2] = {nullptr, nullptr};
+    char * weights[2] = {nullptr, nullptr};
+    char * staging[2] = {nullptr, nullptr};
+    int32_t * bounds = nullptr;
+    bool used[2] = {false, false};
+    size_t slot_bytes;
+    uint64_t calls = 0, waves = 0, h2d_bytes = 0, staged_bytes = 0;
+
+    explicit moe_stream_state(int device) : device(device), slot_bytes(moe_stream_config().bytes / 2) {
+        ggml_cuda_set_device(device);
+        CUDA_CHECK(cudaStreamCreateWithFlags(&copy, cudaStreamNonBlocking));
+        CUDA_CHECK(cudaEventCreateWithFlags(&metadata, cudaEventDisableTiming));
+        CUDA_CHECK(cudaMallocHost(reinterpret_cast<void **>(&bounds), (moe_stream_max_experts + 1) * sizeof(int32_t)));
+        for (int s = 0; s < 2; ++s) {
+            CUDA_CHECK(cudaEventCreateWithFlags(&ready[s], cudaEventDisableTiming));
+            CUDA_CHECK(cudaEventCreateWithFlags(&consumed[s], cudaEventDisableTiming));
+            CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&weights[s]), slot_bytes));
+            CUDA_CHECK(cudaMemsetAsync(weights[s], 0, slot_bytes, copy));
+        }
+        if (moe_stream_config().trace) {
+            GGML_LOG_INFO("moe-stream: device=%d pool=%.2f MiB group=%d min_tokens=%d\n", device,
+                2.0 * slot_bytes / (1024 * 1024), moe_stream_config().group, moe_stream_config().min_tokens);
+        }
+    }
+
+    ~moe_stream_state() {
+        ggml_cuda_set_device(device);
+        // DMA and the last readers must finish before freeing either side.
+        CUDA_CHECK(cudaStreamSynchronize(copy));
+        for (int s = 0; s < 2; ++s) {
+            if (used[s]) { CUDA_CHECK(cudaEventSynchronize(consumed[s])); }
+            CUDA_CHECK(cudaFree(weights[s]));
+            if (staging[s]) { CUDA_CHECK(cudaFreeHost(staging[s])); }
+            CUDA_CHECK(cudaEventDestroy(ready[s]));
+            CUDA_CHECK(cudaEventDestroy(consumed[s]));
+        }
+        CUDA_CHECK(cudaFreeHost(bounds));
+        CUDA_CHECK(cudaEventDestroy(metadata));
+        CUDA_CHECK(cudaStreamDestroy(copy));
+        if (moe_stream_config().trace) {
+            GGML_LOG_INFO("moe-stream: calls=%llu waves=%llu H2D=%.3f GiB RAM-staging=%.3f GiB\n",
+                (unsigned long long) calls, (unsigned long long) waves,
+                h2d_bytes / double(1ull << 30), staged_bytes / double(1ull << 30));
+        }
+    }
+};
+
+static std::mutex moe_stream_mutex;
+static std::unordered_map<ggml_backend_cuda_context *, std::unique_ptr<moe_stream_state>> moe_stream_states;
+
+static moe_stream_state & moe_stream_get_state(ggml_backend_cuda_context & ctx) {
+    std::lock_guard<std::mutex> lock(moe_stream_mutex);
+    auto & state = moe_stream_states[&ctx];
+    if (!state) { state.reset(new moe_stream_state(ctx.device)); }
+    return *state;
+}
+} // namespace
+
+bool ggml_cuda_moe_stream_supported(const ggml_tensor * op, const int cc) {
+#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
+    GGML_UNUSED(op); GGML_UNUSED(cc);
+    return false;
+#else
+    const auto & cfg = moe_stream_config();
+    if (!cfg.enabled || (cc != GGML_CUDA_CC_VOLTA && cc != GGML_CUDA_CC_TURING) ||
+        op->op != GGML_OP_MUL_MAT_ID || op->ne[2] < cfg.min_tokens) { return false; }
+    const auto * w = op->src[0];
+    const auto * x = op->src[1];
+    const auto * ids = op->src[2];
+    if (!w || !x || !ids || !w->buffer || w->view_src || !ggml_backend_buffer_is_host(w->buffer) ||
+        ggml_backend_buffer_get_usage(w->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS ||
+        !ggml_is_contiguous(w) || w->ne[3] != 1 || x->ne[3] != 1 || ids->ne[2] != 1 || ids->ne[3] != 1 ||
+        x->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32 || ids->type != GGML_TYPE_I32 ||
+        w->ne[1] % 128 != 0 || w->ne[2] < 2 || w->ne[2] > moe_stream_max_experts ||
+        ids->nb[0] != sizeof(int32_t) || x->nb[2] % x->nb[1] || op->nb[2] % op->nb[1] ||
+        w->nb[2] + moe_stream_padding > cfg.bytes / 2) { return false; }
+    switch (w->type) {
+        case GGML_TYPE_Q2_K: case GGML_TYPE_Q3_K: case GGML_TYPE_Q4_K:
+        case GGML_TYPE_Q5_K: case GGML_TYPE_Q6_K: case GGML_TYPE_Q4_0:
+        case GGML_TYPE_Q4_1: case GGML_TYPE_Q5_0: case GGML_TYPE_Q5_1:
+        case GGML_TYPE_Q8_0: case GGML_TYPE_IQ1_S: case GGML_TYPE_IQ2_XXS:
+        case GGML_TYPE_IQ2_XS: case GGML_TYPE_IQ2_S: case GGML_TYPE_IQ3_XXS:
+        case GGML_TYPE_IQ3_S: case GGML_TYPE_IQ4_XS: case GGML_TYPE_IQ4_NL:
+            return true;
+        default: return false;
+    }
+#endif
+}
+
+void ggml_cuda_moe_stream_release(ggml_backend_cuda_context & ctx) {
+    std::lock_guard<std::mutex> lock(moe_stream_mutex);
+    moe_stream_states.erase(&ctx);
+}
+
+static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+                                    const mmq_args & original, cudaStream_t compute) {
+    auto & state = moe_stream_get_state(ctx);
+    const int n_experts = src0->ne[2];
+    const size_t expert_bytes = src0->nb[2];
+    const int group = std::min<int>(moe_stream_config().group,
+        (state.slot_bytes - moe_stream_padding) / expert_bytes);
+    GGML_ASSERT(group > 0 && original.ids_dst != nullptr);
+    CUDA_CHECK(cudaMemcpyAsync(state.bounds, original.expert_bounds, (n_experts + 1) * sizeof(int32_t),
+        cudaMemcpyDeviceToHost, compute));
+    CUDA_CHECK(cudaEventRecord(state.metadata, compute));
+    // Exactly one host metadata wait per projection, not one per expert.
+    CUDA_CHECK(cudaEventSynchronize(state.metadata));
+
+    cudaPointerAttributes attributes{};
+    const cudaError_t pointer_result = cudaPointerGetAttributes(&attributes, src0->data);
+    bool pinned = false;
+    if (pointer_result == cudaSuccess) {
+        pinned = attributes.type == cudaMemoryTypeHost;
+    } else if (pointer_result == cudaErrorInvalidValue) {
+        (void) cudaGetLastError();
+    } else {
+        CUDA_CHECK(pointer_result);
+    }
+
+    ++state.calls;
+    int wave = 0;
+    for (int first = 0; first < n_experts; first += group) {
+        const int count = std::min(group, n_experts - first);
+        if (state.bounds[first] == state.bounds[first + count]) { continue; }
+        const int s = wave++ % 2;
+        if (state.used[s]) {
+            // GPU readers protect the device slot; DMA completion separately
+            // protects the reusable pinned host staging slot.
+            CUDA_CHECK(cudaStreamWaitEvent(state.copy, state.consumed[s], 0));
+            if (!pinned) { CUDA_CHECK(cudaEventSynchronize(state.ready[s])); }
+        }
+        if (!pinned && !state.staging[s]) {
+            CUDA_CHECK(cudaMallocHost(reinterpret_cast<void **>(&state.staging[s]), state.slot_bytes));
+        }
+
+        // Consecutive live experts are coalesced. Empty experts keep zero rows
+        // in the original bounds map, so no token routing has to be repeated.
+        int e = first;
+        while (e < first + count) {
+            if (state.bounds[e] == state.bounds[e + 1]) { ++e; continue; }
+            const int begin = e++;
+            while (e < first + count && state.bounds[e] != state.bounds[e + 1]) { ++e; }
+            const size_t bytes = size_t(e - begin) * expert_bytes;
+            const size_t dst_offset = size_t(begin - first) * expert_bytes;
+            const char * source = static_cast<const char *>(src0->data) + size_t(begin) * expert_bytes;
+            if (!pinned) {
+                std::memcpy(state.staging[s] + dst_offset, source, bytes);
+                source = state.staging[s] + dst_offset;
+                state.staged_bytes += bytes;
+            }
+            CUDA_CHECK(cudaMemcpyAsync(state.weights[s] + dst_offset, source, bytes, cudaMemcpyHostToDevice, state.copy));
+            state.h2d_bytes += bytes;
+        }
+        CUDA_CHECK(cudaMemsetAsync(state.weights[s] + size_t(count) * expert_bytes, 0, moe_stream_padding, state.copy));
+        CUDA_CHECK(cudaEventRecord(state.ready[s], state.copy));
+        CUDA_CHECK(cudaStreamWaitEvent(compute, state.ready[s], 0));
+
+        mmq_args args = original;
+        args.x = state.weights[s];
+        args.expert_bounds = original.expert_bounds + first;
+        args.nchannels_x = args.nchannels_y = count;
+        // Keep original logical model geometry/tile selection. Only physical
+        // channels and their weight base change; output IDs stay global.
+        ggml_cuda_mul_mat_q_switch_type(ctx, args, compute);
+        CUDA_CHECK(cudaEventRecord(state.consumed[s], compute));
+        state.used[s] = true;
+        ++state.waves;
+    }
+}
+
+#else
+bool ggml_cuda_moe_stream_supported(const ggml_tensor * op, int cc) {
+    GGML_UNUSED(op); GGML_UNUSED(cc);
+    return false;
+}
+void ggml_cuda_moe_stream_release(ggml_backend_cuda_context & ctx) {
+    GGML_UNUSED(ctx);
+}
+static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+                                    const mmq_args & args, cudaStream_t stream) {
+    GGML_UNUSED(ctx); GGML_UNUSED(src0); GGML_UNUSED(args); GGML_UNUSED(stream);
+    GGML_ABORT("MoE host streaming is only implemented for NVIDIA SM70/SM75");
+}
+#endif
 
 void ggml_cuda_mul_mat_q(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst) {
@@ -291,7 +527,11 @@ void ggml_cuda_mul_mat_q(
         ne03, ne13, s03, s13, s3,
         ne12, ncols_opt};
 
-    ggml_cuda_mul_mat_q_switch_type(ctx, args, stream);
+    if (ggml_cuda_moe_stream_supported(dst, cc)) {
+        ggml_cuda_moe_stream_mmq(ctx, src0, args, stream);
+    } else {
+        ggml_cuda_mul_mat_q_switch_type(ctx, args, stream);
+    }
 }
 
 bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t n_experts) {

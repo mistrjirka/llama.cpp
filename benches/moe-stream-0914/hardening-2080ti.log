@@ -1,0 +1,5 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 22000 MiB):
+  Device 0: NVIDIA GeForce RTX 2080 Ti, compute capability 7.5, VMM: yes, VRAM: 22000 MiB
+moe-stream: device=0 pool=64.00 MiB group=16 min_tokens=64
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+moe-stream: calls=4 waves=128 H2D=1.758 GiB RAM-staging=0.000 GiB

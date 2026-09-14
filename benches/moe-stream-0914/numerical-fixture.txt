@@ -1,0 +1,79 @@
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.
+
+The experiment compares two implementations of the same mathematical operation. A router chooses several experts for each token. The selected experts transform the hidden state, and their outputs are combined with the original routing weights. Changing the order of execution should not change the intended computation. Numerical rounding can produce small differences, so every output must be checked against a reference.
+
+When a matrix does not fit in device memory, its blocks can remain in system memory. The program copies a bounded group of blocks while the accelerator computes an earlier group. An event records when each buffer is ready and when its previous reader is finished. These dependencies prevent a new transfer from overwriting weights that are still in use.
+
+A useful benchmark controls the model, the input, the quantization format, and the memory budget. Measurements should include the complete elapsed time rather than adding overlapping durations. A small kernel speedup does not necessarily imply the same improvement in an application. Both prompt processing and subsequent token generation need separate measurements.
+
+The following function adds all positive elements in an array: start with a total of zero, inspect each element in order, and add it only when it is greater than zero. An empty array produces zero. Negative values are ignored. Tests should include an empty input, repeated values, very large values, and a mixture of positive and negative numbers.

@@ -1,0 +1,1 @@
+{"device":"NVIDIA GeForce RTX 2080 Ti","tensor":"blk.0.ffn_down_exps.weight","type":"iq4_nl","tokens":1024,"top_k":10,"route":"skew","host_kind":"pinned","stream":true,"group":16,"weight_mib":450.000,"sched_gpu_mib":100.000,"resident_ms":7.657032,"host_ms":36.618222,"max_abs":0,"relative_l2":0,"nonfinite":0,"pass":true}

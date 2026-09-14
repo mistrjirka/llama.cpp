@@ -30,6 +30,7 @@
 #include "ggml-cuda/im2col.cuh"
 #include "ggml-cuda/mmf.cuh"
 #include "ggml-cuda/mmq.cuh"
+#include "ggml-cuda/moe-stream.cuh"
 #include "ggml-cuda/pxq4-port.cuh"
 #include "ggml-cuda/pxq4.cuh"
 #include "ggml-cuda/mmvf.cuh"
@@ -703,6 +704,7 @@ static std::atomic<int> ggml_cuda_lock_counter;
 ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     std::unique_lock<std::mutex> lock(ggml_cuda_lock);
     ggml_cuda_lock_cv.wait(lock, []{ return ggml_cuda_lock_counter.load(std::memory_order_relaxed) == 0; });
+    ggml_cuda_moe_stream_release(*this);
 
     if (turing_src1_f16_cache != nullptr) {
         CUDA_CHECK(cudaFree(turing_src1_f16_cache));
@@ -2106,6 +2108,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
 // returns true when ggml_cuda_mul_mat_id takes the fallback path that requires stream synchronization
 // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
 static bool ggml_cuda_mul_mat_id_needs_sync(const ggml_tensor * dst, const int cc) {
+    if (ggml_cuda_moe_stream_supported(dst, cc)) { return true; }
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
 
@@ -2148,6 +2151,10 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
 
+    if (ggml_cuda_moe_stream_supported(dst, cc)) {
+        ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst);
+        return;
+    }
     if (ggml_cuda_pxq_prefill_supported(dst,cc)) {
         ggml_cuda_pxq_prefill(ctx,dst);
         return;
@@ -4673,7 +4680,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     if (node->src[j] != nullptr) {
                         assert(node->src[j]->buffer);
                         assert(node->src[j]->buffer->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) ||
-                               (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
+                               (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)) ||
+                               (j == 0 && ggml_cuda_moe_stream_supported(node, ggml_cuda_info().devices[cuda_ctx->device].cc)));
                     }
                 }
 #else
@@ -6014,7 +6022,19 @@ static void ggml_backend_cuda_set_prefill_reuse(ggml_backend_t backend, uint32_t
     ctx->prefill_reuse = n;
 }
 
+// Optional scheduler capability: only this operation's host weight input is
+// consumed without a full scheduler-created device copy. Other host inputs
+// remain unsupported by the CUDA buffer interface.
+static bool ggml_backend_cuda_handles_host_input(ggml_backend_t backend, const ggml_tensor * op, int input) {
+    const auto * ctx = static_cast<ggml_backend_cuda_context *>(backend->context);
+    return input == 0 && ggml_cuda_moe_stream_supported(op, ggml_cuda_info().devices[ctx->device].cc) &&
+        size_t(op->ne[2]) * sizeof(int32_t) <= ggml_cuda_info().devices[ctx->device].smpbo;
+}
+
 static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
+    if (strcmp(name, "ggml_backend_handles_host_input") == 0) {
+        return (void *) ggml_backend_cuda_handles_host_input;
+    }
     GGML_UNUSED(reg);
     if (strcmp(name, "ggml_backend_comm_init") == 0) {
         return (void *)ggml_backend_cuda_comm_init;

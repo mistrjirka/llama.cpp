@@ -1,0 +1,11 @@
+0.22.320.451 I cmn          init: llama threadpool init, n_threads = 16
+0.22.420.811 I 
+0.22.420.951 I system_info: n_threads = 16 (n_threads_batch = 16) / 48 | CUDA : ARCHS = 700,750 | USE_GRAPHS = 1 | FA_QUANTS = q4_0-q4_0,q8_0-q8_0,f16-f16,bf16-bf16 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+0.22.421.194 I perplexity: saving all logits to benches/moe-stream-0914/ornith-numerical-base.bin
+0.22.421.202 I perplexity: tokenizing the input ..
+0.22.430.843 I perplexity: tokenization took 9.637 ms
+0.22.430.860 I perplexity: calculating perplexity over 1 chunks, n_ctx=512, batch_size=512, n_seq=1
+0.24.003.200 I perplexity: 1.44 seconds per pass - ETA 0.02 minutes
+[1]1.0837,
+0.24.048.342 I Final estimate: PPL = 1.0837 +/- 0.03179
+

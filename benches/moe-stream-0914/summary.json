@@ -1,0 +1,117 @@
+{
+  "ornith": {
+    "raw": [
+      {
+        "run": "a1",
+        "stream": false,
+        "n_prompt": 2048,
+        "n_gen": 0,
+        "avg_ts": 888.676689,
+        "stddev_ts": 5.561415
+      },
+      {
+        "run": "a1",
+        "stream": false,
+        "n_prompt": 0,
+        "n_gen": 64,
+        "avg_ts": 51.825462,
+        "stddev_ts": 0.710891
+      },
+      {
+        "run": "b1",
+        "stream": true,
+        "n_prompt": 2048,
+        "n_gen": 0,
+        "avg_ts": 968.718448,
+        "stddev_ts": 4.210634
+      },
+      {
+        "run": "b1",
+        "stream": true,
+        "n_prompt": 0,
+        "n_gen": 64,
+        "avg_ts": 47.023785,
+        "stddev_ts": 2.251072
+      },
+      {
+        "run": "b2",
+        "stream": true,
+        "n_prompt": 2048,
+        "n_gen": 0,
+        "avg_ts": 976.250561,
+        "stddev_ts": 7.238769
+      },
+      {
+        "run": "b2",
+        "stream": true,
+        "n_prompt": 0,
+        "n_gen": 64,
+        "avg_ts": 54.461339,
+        "stddev_ts": 2.105927
+      },
+      {
+        "run": "a2",
+        "stream": false,
+        "n_prompt": 2048,
+        "n_gen": 0,
+        "avg_ts": 888.731118,
+        "stddev_ts": 3.409459
+      },
+      {
+        "run": "a2",
+        "stream": false,
+        "n_prompt": 0,
+        "n_gen": 64,
+        "avg_ts": 53.587967,
+        "stddev_ts": 1.486258
+      }
+    ],
+    "prefill": {
+      "baseline": 888.7039035,
+      "streamed": 972.4845045,
+      "change_percent": 9.427279510087129
+    },
+    "decode": {
+      "baseline": 52.706714500000004,
+      "streamed": 50.742562,
+      "change_percent": -3.726569790268386
+    }
+  },
+  "next": {
+    "raw": [
+      {
+        "run": "a1",
+        "stream": false,
+        "n_prompt": 2048,
+        "n_gen": 0,
+        "avg_ts": 204.184205,
+        "stddev_ts": 0.916172
+      },
+      {
+        "run": "b1",
+        "stream": true,
+        "n_prompt": 2048,
+        "n_gen": 0,
+        "avg_ts": 303.473817,
+        "stddev_ts": 4.426082
+      }
+    ],
+    "prefill": {
+      "baseline": 204.184205,
+      "streamed": 303.473817,
+      "change_percent": 48.6274694950082
+    }
+  },
+  "v100": {
+    "tests": 30,
+    "all_pass": true,
+    "max_abs": 4.76837158e-07,
+    "max_relative_l2": 1.70099597e-07
+  },
+  "2080ti": {
+    "tests": 30,
+    "all_pass": true,
+    "max_abs": 4.76837158e-07,
+    "max_relative_l2": 2.04191984e-07
+  }
+}

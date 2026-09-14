@@ -855,6 +855,23 @@ struct ggml_backend_sched {
 #define tensor_id_copy(id, backend_id, copy_id) sched->hv_tensor_copies[(id) * sched->n_backends * sched->n_copies + (backend_id) * sched->n_copies + (copy_id)]
 #define tensor_copy(tensor, backend_id, copy_id) tensor_id_copy(hash_id(tensor), backend_id, copy_id)
 
+// Optional backend-private external-input capability. Unlike supports_buft,
+// this is scoped to an exact operation/input pair and does not make host
+// memory generally GPU-accessible. No public backend ABI change is needed.
+static bool ggml_backend_sched_handles_host_input(ggml_backend_sched_t sched,
+        const ggml_tensor * op, int input, int backend_id) {
+    if (input != 0 || op->op != GGML_OP_MUL_MAT_ID || !op->src[0] || !op->src[0]->buffer ||
+        !ggml_backend_buffer_is_host(op->src[0]->buffer)) { return false; }
+    ggml_backend_t backend = sched->backends[backend_id];
+    ggml_backend_dev_t device = ggml_backend_get_device(backend);
+    if (!device) { return false; }
+    ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(device);
+    if (!reg) { return false; }
+    using fn_type = bool (*)(ggml_backend_t, const ggml_tensor *, int);
+    auto fn = reinterpret_cast<fn_type>(ggml_backend_reg_get_proc_address(reg, "ggml_backend_handles_host_input"));
+    return fn && fn(backend, op, input);
+}
+
 static void ggml_backend_sched_split_inputs_grow(struct ggml_backend_sched_split * split) {
     int new_cap = GGML_SCHED_MAX_SPLIT_INPUTS;
     if (split->inputs_capacity > 0) {
@@ -1320,6 +1337,7 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
         split->i_start = 0;
         split->n_inputs = 0;
         int cur_backend_id = split->backend_id;
+        bool previous_streamed = false;
         for (; i < graph->n_nodes; i++) {
             struct ggml_tensor * node = graph->nodes[i];
 
@@ -1332,7 +1350,11 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
             GGML_ASSERT(node_backend_id != -1); // all nodes should be assigned by now, this can happen if there is no CPU fallback
 
             // check if we should start a new split based on the sources of the current node
-            bool need_new_split = false;
+            const bool streamed = ggml_backend_sched_handles_host_input(sched, node, 0, node_backend_id);
+            // Isolate host-driven streaming from CUDA graph capture/fusion.
+            // Normal prefill/decode splits keep their existing behavior.
+            bool need_new_split = i > split->i_start && (streamed || previous_streamed);
+            previous_streamed = streamed;
             if (node_backend_id == cur_backend_id && split->n_inputs > 0) {
                 for (int j = 0; j < GGML_MAX_SRC; j++) {
                     struct ggml_tensor * src = node->src[j];
@@ -1381,6 +1403,9 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
                 size_t src_id = hash_id(src);
                 const int src_backend_id = sched->hv_tensor_backend_ids[src_id];
                 GGML_ASSERT(src_backend_id != -1); // all inputs should be assigned by now
+                if (ggml_backend_sched_handles_host_input(sched, node, j, cur_backend_id)) {
+                    continue; // keep the original host weights; allocate no full device copy
+                }
 
                 if (src->flags & GGML_TENSOR_FLAG_INPUT && sched->n_copies > 1) {
                     if (tensor_id_copy(src_id, src_backend_id, 0) == NULL) {

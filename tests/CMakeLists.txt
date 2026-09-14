@@ -394,3 +394,10 @@ if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
+
+# Manual real-model probe; requires a user-supplied GGUF, so not in default CTest.
+if (GGML_CUDA AND TARGET ggml-cuda AND TARGET ggml-cpu)
+    add_executable(test-moe-stream test-moe-stream.cpp)
+    target_link_libraries(test-moe-stream PRIVATE ggml ggml-cuda ggml-cpu)
+    target_compile_features(test-moe-stream PRIVATE cxx_std_17)
+endif()

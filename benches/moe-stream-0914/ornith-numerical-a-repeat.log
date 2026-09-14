@@ -1,0 +1,49 @@
+0.13.124.063 I cmn          init: llama threadpool init, n_threads = 16
+0.13.257.073 I 
+0.13.257.237 I system_info: n_threads = 16 (n_threads_batch = 16) / 48 | CUDA : ARCHS = 700,750 | USE_GRAPHS = 1 | FA_QUANTS = q4_0-q4_0,q8_0-q8_0,f16-f16,bf16-bf16 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+0.13.274.485 I kl_divergence: computing over 1 chunks, n_ctx=512, batch_size=512, n_seq=1
+0.14.726.885 I kl_divergence: 1.45 seconds per pass - ETA 0.02 minutes
+
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+   1       1.0837 ±    0.0318      -0.00000 ±       -nan       0.00000 ±    0.00000     0.000 ±  0.000 %    100.000 ±  0.000 %
+
+====== Perplexity statistics ======
+Mean PPL(Q)                   :   1.083749 ±   0.031792
+Mean PPL(base)                :   1.083749 ±   0.031793
+Cor(ln(PPL(Q)), ln(PPL(base))): 100.00%
+Mean ln(PPL(Q)/PPL(base))     :  -0.000000 ±       -nan
+Mean PPL(Q)/PPL(base)         :   1.000000 ±       -nan
+Mean PPL(Q)-PPL(base)         :  -0.000000 ±       -nan
+
+====== KL divergence statistics ======
+Mean    KLD:   0.000000 ±   0.000000
+Maximum KLD:   0.000041
+99.9%   KLD:   0.000037
+99.0%   KLD:   0.000008
+95.0%   KLD:   0.000002
+90.0%   KLD:   0.000001
+Median  KLD:  -0.000000
+10.0%   KLD:  -0.000001
+ 5.0%   KLD:  -0.000001
+ 1.0%   KLD:  -0.000007
+ 0.1%   KLD:  -0.000012
+Minimum KLD:  -0.000012
+
+====== Token probability statistics ======
+Mean    Δp:  0.000 ± 0.000 %
+Maximum Δp:  0.000%
+99.9%   Δp:  0.000%
+99.0%   Δp:  0.000%
+95.0%   Δp:  0.000%
+90.0%   Δp:  0.000%
+75.0%   Δp:  0.000%
+Median  Δp:  0.000%
+25.0%   Δp:  0.000%
+10.0%   Δp: -0.000%
+ 5.0%   Δp: -0.000%
+ 1.0%   Δp: -0.000%
+ 0.1%   Δp: -0.000%
+Minimum Δp: -0.000%
+RMS Δp    :  0.000 ± 0.000 %
+Same top p: 100.000 ± 0.000 %
+

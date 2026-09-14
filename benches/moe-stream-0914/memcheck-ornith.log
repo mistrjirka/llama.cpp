@@ -1,0 +1,8 @@
+========= COMPUTE-SANITIZER
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32494 MiB):
+  Device 0: Tesla V100-SXM2-32GB, compute capability 7.0, VMM: yes, VRAM: 32494 MiB
+moe-stream: device=0 pool=64.00 MiB group=7 min_tokens=64
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+moe-stream: calls=3 waves=51 H2D=0.034 GiB RAM-staging=0.034 GiB
+{"device":"Tesla V100-SXM2-32GB","tensor":"blk.0.ffn_down_exps.weight","type":"q5_K","tokens":512,"top_k":8,"route":"sparse","host_kind":"pageable","stream":true,"group":7,"weight_mib":176.000,"sched_gpu_mib":32.000,"resident_ms":27.349021,"host_ms":54.467205,"max_abs":0,"relative_l2":0,"nonfinite":0,"pass":true}
+========= ERROR SUMMARY: 0 errors
