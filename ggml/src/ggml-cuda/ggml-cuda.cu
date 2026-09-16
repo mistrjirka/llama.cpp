@@ -3940,7 +3940,8 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
                 // Other external operands retain the original alias safety check.
                 const bool route_staged = !route_memory && ggml_cuda_check_fusion_memory_ranges(
                     cgraph, i, ops.size(), out_nodes, 2, /*is_topk_moe=*/true, logits);
-                if (route_subgraph && route_shape && (route_memory || route_staged)) {
+                const bool route_enabled = ids->op_params[15] == 0;
+                if (route_enabled && route_subgraph && route_shape && (route_memory || route_staged)) {
                     ggml_cuda_op_topk_moe(*cuda_ctx, logits, weights, ids, clamp, scale, bias, args);
                     return ops.size() - 1;
                 }
@@ -3953,7 +3954,8 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
                 const ggml_tensor * softmax = cgraph->nodes[i + 4];
 
                 int out_nodes[2] = { i + 1, i + 5 };
-                if (ggml_can_fuse_subgraph(cgraph, i, ops.size(), ops.data(), out_nodes, 2) &&
+                if (ids->op_params[15] == 0 &&
+                        ggml_can_fuse_subgraph(cgraph, i, ops.size(), ops.data(), out_nodes, 2) &&
                         ggml_cuda_should_use_topk_moe(softmax, logits, weights, ids) &&
                         ggml_cuda_check_fusion_memory_ranges(cgraph, i, ops.size(), out_nodes, 2, /*is_topk_moe=*/true)) {
                     ggml_cuda_op_topk_moe(*cuda_ctx, logits, weights, ids, clamp, scale, bias, args);

@@ -1381,8 +1381,7 @@ private:
             }
         }
 
-        const char * request_mode = std::getenv("LLAMA_MOE_LAYER_FIRST");
-        full_request_prefill = request_mode && std::string(request_mode) == "1";
+        full_request_prefill = params_base.moe_layer_first;
         if (full_request_prefill && (params_base.n_parallel != 1 || spec || mctx ||
                 !params_base.lora_adapters.empty() || !llama_supports_prefill_request(ctx_tgt))) {
             SRV_ERR("%s", "request-prefill currently requires a supported single-slot text context without speculative decoding or LoRA\n");

@@ -1792,6 +1792,30 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
                            }
                        }).set_env("LLAMA_ARG_FLASH_ATTN"));
     add_opt(common_arg(
+        {"--moe-layer-first"},
+        {"--no-moe-layer-first"},
+        string_format("request-wide MoE expert scheduling (default: %s)", params.moe_layer_first ? "on" : "off"),
+        [](common_params & params, bool value) { params.moe_layer_first = value; }
+    ).set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--moe-router-fusion"},
+        {"--no-moe-router-fusion"},
+        string_format("fuse compatible MoE routing graphs (default: %s)", params.moe_router_fusion ? "on" : "off"),
+        [](common_params & params, bool value) { params.moe_router_fusion = value; }
+    ).set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--exact-set-top-k"},
+        {"--no-exact-set-top-k"},
+        string_format("exact selected-set top-k on compatible model graphs (default: %s)", params.exact_set_top_k ? "on" : "off"),
+        [](common_params & params, bool value) { params.exact_set_top_k = value; }
+    ).set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
+        {"--selected-attn"},
+        {"--no-selected-attn"},
+        string_format("direct selected-entry attention for model-defined sparse attention (default: %s)", params.selected_attn ? "on" : "off"),
+        [](common_params & params, bool value) { params.selected_attn = value; }
+    ).set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
         {"-p", "--prompt"}, "PROMPT",
         "prompt to start generation with; for system message, use -sys",
         [](common_params & params, const std::string & value) {

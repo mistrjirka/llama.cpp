@@ -504,6 +504,10 @@ struct common_params {
     enum llama_pooling_type      pooling_type      = LLAMA_POOLING_TYPE_UNSPECIFIED; // pooling type for embeddings
     enum llama_attention_type    attention_type    = LLAMA_ATTENTION_TYPE_UNSPECIFIED; // attention type for embeddings
     enum llama_flash_attn_type   flash_attn_type   = LLAMA_FLASH_ATTN_TYPE_AUTO; // whether to use Flash Attention
+    bool moe_layer_first   = false; // request-wide MoE expert scheduling
+    bool moe_router_fusion = true;  // fuse compatible MoE routing graphs
+    bool exact_set_top_k   = false; // exact selected-set top-k for compatible model graphs
+    bool selected_attn   = true;  // direct selected-entry attention where supported
 
     struct common_params_sampling    sampling;
     struct common_params_speculative speculative;

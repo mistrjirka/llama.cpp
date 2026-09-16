@@ -1757,6 +1757,10 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.pooling_type      = params.pooling_type;
     cparams.attention_type    = params.attention_type;
     cparams.flash_attn_type   = params.flash_attn_type;
+    cparams.moe_layer_first   = params.moe_layer_first;
+    cparams.moe_router_fusion = params.moe_router_fusion;
+    cparams.exact_set_top_k   = params.exact_set_top_k;
+    cparams.selected_attn     = params.selected_attn;
     cparams.cb_eval           = params.cb_eval;
     cparams.cb_eval_user_data = params.cb_eval_user_data;
     cparams.offload_kqv       = !params.no_kv_offload;

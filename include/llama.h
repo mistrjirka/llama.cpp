@@ -431,6 +431,10 @@ extern "C" {
         uint32_t n_pipeline_copies; // pipeline scheduler copies, 0 = backend default [EXPERIMENTAL]
         uint32_t prefill_reuse;     // CUDA prefill GEMM tile for lossless weight reuse, 0 = disabled [EXPERIMENTAL]
         bool rs_rollback_prompt_only; // keep recurrent rollback snapshots for PP but not TG [EXPERIMENTAL]
+        bool moe_layer_first;       // request-wide MoE expert scheduling [EXPERIMENTAL]
+        bool moe_router_fusion;     // fuse compatible MoE routing graphs on supported backends [EXPERIMENTAL]
+        bool exact_set_top_k;       // use exact-set top-k where model semantics allow it [EXPERIMENTAL]
+        bool selected_attn;         // direct selected-entry attention where supported [EXPERIMENTAL]
     };
 
     struct llama_model_tensor_override {
@@ -1085,6 +1089,10 @@ extern "C" {
     // Set whether to use causal attention or not
     // If set to true, the model will only attend to the past tokens
     LLAMA_API void llama_set_causal_attn(struct llama_context * ctx, bool causal_attn);
+
+    // Enable or disable direct selected-entry attention for model-defined sparse attention.
+    // Unsupported shapes still use the regular attention path.
+    LLAMA_API void llama_set_selected_attn(struct llama_context * ctx, bool enabled);
 
     // Set whether the model is in warmup mode or not
     // If true, all model tensors are activated during llama_decode() to load and cache their weights.

@@ -825,8 +825,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
         }
         cb(expanded, "indexer_score_tokens", il);
         auto * selected=ggml_top_k(ctx0,expanded,width);
-        const char * radix=std::getenv("QWEN4EXP_QSA_RADIX_TOPK");
-        if(radix && radix[0]=='1' && !gather && n_tps>1 && n_kv>=8192)selected->op_params[0]=0x5153544b;
+        if(cparams.exact_set_top_k && !gather && n_tps>1 && n_kv>=8192)selected->op_params[0]=0x5153544b;
         top_k=ggml_cont(ctx0,selected);
     }
 
@@ -1078,8 +1077,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
     ggml_tensor * k = mctx_cur->get_k(ctx0, il);
     ggml_tensor * v = mctx_cur->get_v(ctx0, il);
 
-    const char * sparse_env = std::getenv("QWEN4EXP_QSA_SPARSE_ATTN");
-    const bool sparse = sparse_env && sparse_env[0] == '1' && top_k->ne[1] > 1 && kq_mask->ne[0] >= 32768;
+    const bool sparse = cparams.selected_attn && top_k->ne[1] > 1 && kq_mask->ne[0] >= 32768;
     const int32_t selected_bound = sparse ? int32_t(top_k->ne[0]) : 0;
     ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, selected_bound, kq_scale, il);
     cb(cur, "kqv_out", il);

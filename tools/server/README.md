@@ -54,6 +54,10 @@ For the full list of features, please refer to [server's changelog](https://gith
 | `--keep N` | number of tokens to keep from the initial prompt (default: 0, -1 = all) |
 | `--swa-full` | use full-size SWA cache (default: false)<br/>[(more info)](https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)<br/>(env: LLAMA_ARG_SWA_FULL) |
 | `-fa, --flash-attn [on\|off\|auto]` | set Flash Attention use ('on', 'off', or 'auto', default: 'auto')<br/>(env: LLAMA_ARG_FLASH_ATTN) |
+| `--moe-layer-first, --no-moe-layer-first` | request-wide MoE expert scheduling (default: off) |
+| `--moe-router-fusion, --no-moe-router-fusion` | fuse compatible MoE routing graphs (default: on) |
+| `--exact-set-top-k, --no-exact-set-top-k` | exact selected-set top-k on compatible model graphs (default: off) |
+| `--selected-attn, --no-selected-attn` | direct selected-entry attention for model-defined sparse attention (default: on) |
 | `--perf, --no-perf` | whether to enable internal libllama performance timings (default: false)<br/>(env: LLAMA_ARG_PERF) |
 | `-e, --escape, --no-escape` | whether to process escapes sequences (\n, \r, \t, \', \", \\) (default: true) |
 | `--rope-scaling {none,linear,yarn}` | RoPE frequency scaling method, defaults to linear unless specified by the model<br/>(env: LLAMA_ARG_ROPE_SCALING_TYPE) |

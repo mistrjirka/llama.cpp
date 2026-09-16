@@ -2124,6 +2124,9 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         selected_experts = ggml_argsort_top_k(ctx0, selection_probs, n_expert_used); // [n_expert_used, n_tokens]
         cb(selected_experts->src[0], "ffn_moe_argsort", il);
     }
+    if (!cparams.moe_router_fusion) {
+        selected_experts->op_params[15] = 1;
+    }
     cb(selected_experts, "ffn_moe_topk", il);
 
     if (arch == LLM_ARCH_GROVEMOE && n_expert != hparams.n_expert) {

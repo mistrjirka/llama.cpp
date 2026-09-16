@@ -125,11 +125,6 @@ struct llama_lf_residency {
     std::map<std::pair<int,size_t>,entry> groups;
 };
 
-bool llama_layer_first_requested() {
-    const char * value=std::getenv("LLAMA_MOE_LAYER_FIRST");
-    return value && std::strcmp(value,"1")==0;
-}
-
 bool llama_context::layer_first_supported() const {
     if (model.arch!=LLM_ARCH_QWEN4EXP || cparams.ctx_type!=LLAMA_CONTEXT_TYPE_DEFAULT ||
         !cparams.causal_attn || cparams.n_seq_max!=1 || cparams.n_rs_seq!=0 ||

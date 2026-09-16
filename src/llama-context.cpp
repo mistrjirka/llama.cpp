@@ -232,8 +232,12 @@ llama_context::llama_context(
         cparams.causal_attn = params.attention_type == LLAMA_ATTENTION_TYPE_CAUSAL;
     }
 
-    cparams.flash_attn = params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
-    cparams.auto_fa    = params.flash_attn_type == LLAMA_FLASH_ATTN_TYPE_AUTO;
+    cparams.flash_attn      = params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    cparams.auto_fa         = params.flash_attn_type == LLAMA_FLASH_ATTN_TYPE_AUTO;
+    cparams.moe_layer_first   = params.moe_layer_first;
+    cparams.moe_router_fusion = params.moe_router_fusion;
+    cparams.exact_set_top_k   = params.exact_set_top_k;
+    cparams.selected_attn   = params.selected_attn;
 
     cparams.fused_gdn_ar = true;
     cparams.fused_gdn_ch = true;
@@ -320,6 +324,10 @@ llama_context::llama_context(
     LLAMA_LOG_INFO("%s: prefill_reuse         = %u\n",   __func__, cparams.prefill_reuse);
     LLAMA_LOG_INFO("%s: causal_attn           = %d\n",   __func__, cparams.causal_attn);
     LLAMA_LOG_INFO("%s: flash_attn            = %s\n",   __func__, llama_flash_attn_type_name(params.flash_attn_type));
+    LLAMA_LOG_INFO("%s: moe_layer_first       = %s\n",   __func__, cparams.moe_layer_first ? "true" : "false");
+    LLAMA_LOG_INFO("%s: moe_router_fusion     = %s\n",   __func__, cparams.moe_router_fusion ? "true" : "false");
+    LLAMA_LOG_INFO("%s: exact_set_top_k       = %s\n",   __func__, cparams.exact_set_top_k ? "true" : "false");
+    LLAMA_LOG_INFO("%s: selected_attn         = %s\n",   __func__, cparams.selected_attn ? "true" : "false");
     LLAMA_LOG_INFO("%s: kv_unified            = %s\n",   __func__, cparams.kv_unified ? "true" : "false");
     LLAMA_LOG_INFO("%s: freq_base             = %.1f\n", __func__, cparams.rope_freq_base);
     LLAMA_LOG_INFO("%s: freq_scale            = %g\n",   __func__, cparams.rope_freq_scale);
@@ -1275,6 +1283,17 @@ void llama_context::set_causal_attn(bool value) {
     sched_need_reserve = true;
 }
 
+void llama_context::set_selected_attn(bool value) {
+    LLAMA_LOG_DEBUG("%s: value = %d\n", __func__, value);
+
+    if (cparams.selected_attn == value) {
+        return;
+    }
+
+    cparams.selected_attn = value;
+    sched_need_reserve = true;
+}
+
 void llama_context::set_warmup(bool value) {
     LLAMA_LOG_DEBUG("%s: value = %d\n", __func__, value);
 
@@ -1814,7 +1833,7 @@ int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only, bo
     const char * all_tokens_env=std::getenv("LLAMA_MOE_LAYER_FIRST_ALL_TOKENS");
     const bool all_tokens=all_tokens_env && std::strcmp(all_tokens_env,"1")==0;
     const bool layer_first = kv_ring || (!single_chunk && (request_prefill ||
-        (((llama_layer_first_requested() && n_tokens_all > 1) || all_tokens) && !cparams.warmup)));
+        (((cparams.moe_layer_first && n_tokens_all > 1) || all_tokens) && !cparams.warmup)));
     if(single_chunk) {
         LLAMA_LOG_INFO("request-prefill: native single-chunk path tokens=%u\n",n_tokens_all);
     }
@@ -3861,6 +3880,10 @@ llama_context_params llama_context_default_params() {
         /*.n_pipeline_copies           =*/ 0,
         /*.prefill_reuse               =*/ 0,
         /*.rs_rollback_prompt_only     =*/ false,
+        /*.moe_layer_first             =*/ false,
+        /*.moe_router_fusion           =*/ true,
+        /*.exact_set_top_k             =*/ false,
+        /*.selected_attn               =*/ true,
     };
 
     return result;
@@ -4049,6 +4072,10 @@ void llama_set_embeddings(llama_context * ctx, bool embeddings) {
 
 void llama_set_causal_attn(llama_context * ctx, bool causal_attn) {
     ctx->set_causal_attn(causal_attn);
+}
+
+void llama_set_selected_attn(llama_context * ctx, bool enabled) {
+    ctx->set_selected_attn(enabled);
 }
 
 void llama_set_warmup(llama_context * ctx, bool warmup) {

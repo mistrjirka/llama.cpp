@@ -42,6 +42,10 @@ struct llama_cparams {
     bool offload_kqv;
     bool flash_attn;
     bool auto_fa;
+    bool moe_layer_first;
+    bool moe_router_fusion;
+    bool exact_set_top_k;
+    bool selected_attn;
     bool fused_gdn_ar;       // use fused gated delta net (autoregressive)
     bool fused_gdn_ch;       // use fused gated delta net (chunked)
     bool auto_fgdn;

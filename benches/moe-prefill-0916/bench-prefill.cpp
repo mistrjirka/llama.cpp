@@ -143,14 +143,14 @@ int main(int argc,char **argv) {try {
         }
         require(suffixes.size()==size_t(reps+1),"suffix sequence count");
     }
-    auto cp=llama_context_default_params();cp.n_ctx=env_int("BENCH_CONTEXT",std::max(4096,n+prefix+512));cp.n_batch=cp.n_ubatch=chunk;cp.n_seq_max=1;cp.n_outputs_max=cp.n_outputs_max_per_seq=env_int("DIAG_ALL_OUTPUTS",0)?n:32;cp.n_threads=cp.n_threads_batch=24;cp.type_k=cp.type_v=GGML_TYPE_Q8_0;cp.flash_attn_type=LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    auto cp=llama_context_default_params();cp.n_ctx=env_int("BENCH_CONTEXT",std::max(4096,n+prefix+512));cp.n_batch=cp.n_ubatch=chunk;cp.n_seq_max=1;cp.n_outputs_max=cp.n_outputs_max_per_seq=env_int("DIAG_ALL_OUTPUTS",0)?n:32;cp.n_threads=cp.n_threads_batch=24;cp.type_k=cp.type_v=GGML_TYPE_Q8_0;cp.flash_attn_type=LLAMA_FLASH_ATTN_TYPE_ENABLED;cp.exact_set_top_k=env_int("BENCH_EXACT_SET_TOP_K",1)!=0;
     std::unique_ptr<llama_context,decltype(&llama_free)> ctx(llama_init_from_model(model.get(),cp),llama_free);require(bool(ctx),"context init failed");
     require(llama_supports_prefill_request(ctx.get()),"request API unavailable");
     std::vector<int> positions;std::vector<int8_t> flags(n,env_int("DIAG_ALL_OUTPUTS",0)?1:0);
     for(int i=0;i<samples;++i) {int p=samples==1?n-1:i*(n-1)/(samples-1);positions.push_back(p);flags[p]=1;}
     std::vector<uint8_t> snapshot;
     if(prefix) {
-        setenv("LLAMA_MOE_LAYER_FIRST","0",1);auto begin=clock_type::now();
+        auto begin=clock_type::now();
         if(const char * state=std::getenv("BENCH_PREFIX_STATE")) {
             std::vector<llama_token> saved(prefix);size_t count=0;
             require(llama_state_seq_load_file(ctx.get(),state,0,saved.data(),saved.size(),&count)>0,"saved prefix restore failed");
@@ -215,15 +215,15 @@ int main(int argc,char **argv) {try {
         }
         if(!sparse_sequence.empty()) {
             const int setting=sparse_sequence[round];require(setting==0 || setting==1,"sparse setting");
-            setenv("QWEN4EXP_QSA_SPARSE_ATTN",setting?"1":"0",1);
+            llama_set_selected_attn(ctx.get(),setting!=0);
             std::fprintf(stderr,"SPARSE_SETTING round=%d sparse=%d\n",round,setting);
         }
 
         if(!attention_sequence.empty()) {
             const int setting=attention_sequence[round];require(setting>=0 && setting<=3,"attention setting");
             setenv("LLAMA_MOE_LAYER_FIRST_SHARE_MASK_HOST",(setting&1)?"1":"0",1);
-            setenv("QWEN4EXP_QSA_RADIX_TOPK",(setting&2)?"1":"0",1);
-            std::fprintf(stderr,"ATTENTION_SETTING round=%d share_host=%d radix=%d\n",round,setting&1,(setting>>1)&1);
+            require(((setting>>1)&1)==int(cp.exact_set_top_k),"attention sequence radix setting differs from context parameter");
+            std::fprintf(stderr,"ATTENTION_SETTING round=%d share_host=%d radix=%d\n",round,setting&1,int(cp.exact_set_top_k));
         }
 
         if(!preparation_sequence.empty()) {
@@ -252,7 +252,6 @@ int main(int argc,char **argv) {try {
             }
             llama_synchronize(ctx.get());llama_memory_clear(llama_get_memory(ctx.get()),true);
             if(prefix)require(llama_state_seq_set_data(ctx.get(),snapshot.data(),snapshot.size(),0)==snapshot.size(),"prefix restore failed");
-            setenv("LLAMA_MOE_LAYER_FIRST",mode=="baseline"?"0":"1",1);
             setenv("LLAMA_MOE_LAYER_FIRST_ACCUMULATE",mode=="adaptive"?"2":(mode=="accum" || mode=="shared" || mode=="residency" || mode=="residency-tight" || mode=="stagger")?"1":"0",1);
             setenv("LLAMA_MOE_LAYER_FIRST_DEFER_SHARED",(mode=="shared" || mode=="residency" || mode=="residency-tight" || mode=="stagger")?"1":"0",1);
             setenv("LLAMA_MOE_LAYER_FIRST_REQUIRE_RESIDENT",(mode=="shared" || mode=="residency" || mode=="residency-tight" || mode=="stagger")?"1":std::to_string(env_int("BENCH_REQUIRE_RESIDENT",0)).c_str(),1);
@@ -307,7 +306,7 @@ int main(int argc,char **argv) {try {
             require(llama_memory_seq_pos_max(llama_get_memory(ctx.get()),0)==prefix+n-1,"suffix position wrong");
             require(actual.size()==size_t(samples)*nv,"sample count wrong");
 
-            setenv("LLAMA_MOE_LAYER_FIRST","0",1);std::vector<float> next;
+            std::vector<float> next;
             std::vector<double> continuation_losses;
             const auto continuation_begin=clock_type::now();
             for(int i=0;i<continuation_count;++i) {
@@ -335,7 +334,8 @@ int main(int argc,char **argv) {try {
                 rows<<",\"mean_nll\":"<<total/losses.size()<<",\"perplexity\":"<<std::exp(total/losses.size());
             }
 
-            rows<<",\"fixture\":\""<<suffix_label<<"\",\"sparse\":"<<env_int("QWEN4EXP_QSA_SPARSE_ATTN",0);
+            const int sparse_setting=sparse_sequence.empty()?int(cp.selected_attn):sparse_sequence[round];
+            rows<<",\"fixture\":\""<<suffix_label<<"\",\"sparse\":"<<sparse_setting;
             rows<<",\"all_outputs\":"<<env_int("DIAG_ALL_OUTPUTS",0)<<",\"continuation_rows\":"<<continuation_count<<",\"continuation_ms\":"<<continuation_ms;
             rows<<",\"output_alias\":"<<env_int("LLAMA_MOE_LAYER_FIRST_OUTPUT_ALIAS",0);
             if(!std::getenv("BENCH_RECORD_NUMERIC_DIFFERENCE"))require(repeat.maximum==0 && repeat_next.maximum==0,"changed checked outputs");

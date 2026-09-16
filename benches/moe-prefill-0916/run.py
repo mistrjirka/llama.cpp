@@ -134,6 +134,7 @@ def main() -> None:
         "GGML_CUDA_PREFETCH_WEIGHTS": "0", "GGML_OP_OFFLOAD_MIN_BATCH": "1", "GGML_CUDA_LF_ACCUM_FUSE": "1",
         "QWEN4EXP_QSA_PP_BLOCK_TOPK": "0", "QWEN4EXP_QSA_PP_GATHER": "0", "LLAMA_MOE_LAYER_FIRST_AUTO": "0",
         "BENCH_MODES": "stagger", "BENCH_SAMPLES": "8", "BENCH_QUALITY": "0", "DIAG_ALL_OUTPUTS": "0",
+        "BENCH_EXACT_SET_TOP_K": "1",
         "BENCH_CONTINUATION": "8", "BENCH_EXPERT_ROWS": "1024", "BENCH_DEVICE_MIB": str(args.workspace_mib),
         "BENCH_CONTEXT": str(max(131072 if prefix else 32768, prefix + n + 512)),
         "BENCH_SEQUENCE": ",".join(str(n) for _ in variants), "BENCH_SPARSE_SEQUENCE": ",".join(map(str, variants)),
