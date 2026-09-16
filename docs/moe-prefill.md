@@ -1,6 +1,6 @@
-# Experimental Flash-Next prefill
+# Qwen3.8-Flash-Next: experimental MoE prefill
 
-This feature changes how Qwen3.8-Flash-Next processes a prompt when expert weights are partly offloaded to system RAM. It is separate from the standard Qwen3.8-27B settings in the [README](../README.md#qwen38-settings).
+Qwen3.8-Flash-Next is a very large mixture-of-experts (MoE) model. The measured setup keeps canonical expert weights in system RAM and moves the experts needed by the new input onto the GPU. This is separate from the dense [Qwen3.8-27B](qwen38-27b.md) path. Build for your hardware first: [SM70](build-sm70.md), [SM75](build-sm75.md), or [mixed SM70 + SM75](build-sm70-sm75.md).
 
 ## What happens during a request
 
@@ -10,7 +10,7 @@ This design matters most when a prompt contains multiple new-token chunks. The 1
 
 The optional selected-entry attention kernel skips masked history entries during calculation. It preserves the model's existing selection for identical inputs, but changes floating-point arithmetic. Different intermediate values can change later routing and attention selection. The [numerical audit](../benches/moe-prefill-0916/NUMERICS.md) found an inherited FP32-request/FP16-accumulator mismatch and did not certify broad quality equivalence.
 
-Both the request-wide executor and the selected-entry candidate remain opt-in. Merging this code does not change ordinary server launches into expert-streaming runs.
+The request-wide expert scheduler remains opt-in. **Selected-entry attention is on by default when this model, history length, and CUDA shape are eligible**; unsupported cases fall back to the previous attention path. Ordinary server launches do not automatically become host-expert-streaming runs.
 
 
 ## Runtime switches
@@ -28,7 +28,7 @@ Each has a matching `--no-*` form. `--no-selected-attn` is the comparison/escape
 
 ## Start with a short benchmark
 
-Build the CUDA server as described in the [README](../README.md#build). The benchmark wrapper needs Python 3.10 or later, a C++ compiler and CUDA headers. It compiles the included harness against your build; it does not download models, install packages or modify server defaults.
+Build llama.cpp using the guide for your GPU: [SM70](build-sm70.md), [SM75](build-sm75.md), or [mixed SM70 + SM75](build-sm70-sm75.md). The benchmark wrapper needs Python 3.10 or later, a C++ compiler and CUDA headers. It compiles the included harness against your build; it does not download models, install packages or modify server defaults.
 
 ```bash
 python3 benches/moe-prefill-0916/run.py \

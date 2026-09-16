@@ -1,6 +1,8 @@
-# Ornith and multi-slot tuning
+# Ornith 1.5 35B-A3B
 
-### V100
+Ornith is a mixture-of-experts model, so its best tested matrix path differs from dense Qwen3.8. Build for the hardware first: [SM70](build-sm70.md), [SM75](build-sm75.md), or [mixed SM70 + SM75](build-sm70-sm75.md). If MMQ or MTP are unfamiliar, see [Terms used in this fork](fork-concepts.md).
+
+## V100 / SM70
 
 Use the normal build and enable MMQ only for routed experts:
 
@@ -10,7 +12,7 @@ export GGML_CUDA_VOLTA_FORCE_MMQ=moe
 
 This is safe in a shared Qwen/Ornith launcher: dense Qwen measured within ~0.2% of the selector being unset, while globally forcing MMQ is much slower for dense Qwen. On the fresh V100 Ornith control, selective `MMQ=moe` reached **976.39 tok/s** versus **943.65 tok/s** with global FORCE_MMQ.
 
-### RTX 2080 Ti and mixed Ornith
+## RTX 2080 Ti / SM75 and mixed Ornith
 
 For the tested RTX-only and V100+RTX Ornith configurations, both comparison arms use a dedicated FORCE_MMQ build:
 
