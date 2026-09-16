@@ -2036,8 +2036,10 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor, bool
         return false;
     }
 
-    if (tensor->op == GGML_OP_MUL_MAT_ID && dst->ne[2] > get_mmvq_mmid_max_batch(src0->type, cc)) {
-        return false;
+    if (tensor->op == GGML_OP_MUL_MAT_ID) {
+        const int64_t rows = tensor->op_params[0] == 0x4c464d51 && tensor->op_params[1] > 0
+            ? tensor->op_params[1] : dst->ne[2];
+        if (rows > get_mmvq_mmid_max_batch(src0->type, cc)) { return false; }
     }
 
     return use_mul_mat_vec_q;
@@ -2157,6 +2159,21 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     }
     if (ggml_cuda_pxq_prefill_supported(dst,cc)) {
         ggml_cuda_pxq_prefill(ctx,dst);
+        return;
+    }
+
+    // Layer-first assignment tiles may contain just one row from a larger
+    // chronological tail. Select arithmetic using that original token count,
+    // independently of the assignment tile's physical shape. The hint is private
+    // to marked experimental operations and never changes ordinary dispatch.
+    const int reference_tokens = dst->op_params[0] == 0x4c464d51 ? dst->op_params[1] : 0;
+    if (reference_tokens > 0 && ggml_is_quantized(src0->type)) {
+        GGML_ASSERT(reference_tokens <= MMVQ_MAX_BATCH_SIZE && ne2 <= reference_tokens);
+        if (reference_tokens <= get_mmvq_mmid_max_batch(src0->type, cc)) {
+            ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
+        } else {
+            ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst);
+        }
         return;
     }
 
@@ -3056,6 +3073,13 @@ static int ggml_cuda_try_gdn_cache_fusion(
 }
 
 static bool ggml_cuda_topk_moe_fusion(const struct ggml_cgraph * cgraph, int node_idx, ggml_cuda_topk_moe_args & args) {
+    // Diagnostic control: isolate router fusion without changing other kernels.
+    // A fresh process is required when changing this environment variable.
+    static const bool diag_disable_topk = [] {
+        const char * e = std::getenv("GGML_CUDA_DIAG_DISABLE_TOPK_MOE");
+        return e && std::atoi(e) != 0;
+    }();
+    if (diag_disable_topk) { return false; }
     args.sigmoid         = false;
     args.sqrt_softplus   = false;
     args.softmax         = false;
@@ -3215,7 +3239,8 @@ static bool ggml_cuda_check_fusion_memory_ranges(const ggml_cgraph * cgraph,
                                                  const int           node_count,
                                                  const int *         out_nodes,
                                                  const int           out_count,
-                                                 const bool          is_topk_moe = false) {
+                                                 const bool          is_topk_moe = false,
+                                                 const ggml_tensor * staged_input = nullptr) {
     auto nodes_overlap = [&](const ggml_tensor * a, const ggml_tensor * b) {
         const int64_t a_start = (int64_t) a->data;
         const int64_t a_end   = a_start + ggml_backend_buft_get_alloc_size(a->buffer->buft, a);
@@ -3248,7 +3273,7 @@ static bool ggml_cuda_check_fusion_memory_ranges(const ggml_cgraph * cgraph,
             for (int src_idx = 0; src_idx < GGML_MAX_SRC; ++src_idx) {
                 const ggml_tensor * src = cgraph->nodes[j]->src[src_idx];
 
-                if (!src || src->op == GGML_OP_NONE || src == logits_may_alias) {
+                if (!src || src->op == GGML_OP_NONE || src == logits_may_alias || src == staged_input) {
                     continue;
                 }
 
@@ -3698,6 +3723,80 @@ static bool ggml_cuda_no_shifted_overlap(const ggml_tensor * dst, const ggml_ten
     return d1 <= s0 || s1 <= d0;
 }
 
+
+struct ggml_cuda_lf_accum_match {
+    const ggml_tensor * state = nullptr;
+    const ggml_tensor * tokens = nullptr;
+    const ggml_tensor * weighted = nullptr;
+    const ggml_tensor * mapping = nullptr;
+    ggml_tensor * dst = nullptr;
+    int ranks = 0;
+    int node_count = 0;
+};
+
+static bool ggml_cuda_match_lf_accum(const ggml_cgraph * graph, int start, ggml_cuda_lf_accum_match & match) {
+    const ggml_tensor * first = graph->nodes[start];
+    if (first->op != GGML_OP_GET_ROWS || strcmp(first->name,"lf3_accum_gather") != 0 ||
+        first->type != GGML_TYPE_F32 || !ggml_is_contiguous(first) || first->ne[2] != 1 || first->ne[3] != 1) {
+        return false;
+    }
+    const ggml_tensor * state = first->src[0];
+    const ggml_tensor * tokens = first->src[1];
+    if (!state || !tokens || state->type != GGML_TYPE_F32 || tokens->type != GGML_TYPE_I32 ||
+        !ggml_is_contiguous(state) || !ggml_is_matrix(state) || state->ne[0] != first->ne[0] ||
+        !ggml_is_contiguous(tokens) || !ggml_is_vector(tokens) || tokens->ne[0] != first->ne[1]) {
+        return false;
+    }
+    const ggml_tensor * previous = first;
+    const ggml_tensor * weighted = nullptr;
+    const ggml_tensor * mapping = nullptr;
+    std::vector<ggml_op> ops = {GGML_OP_GET_ROWS};
+    int ranks = 0, next = start+1;
+    while (ranks < 10 && next+2 < graph->n_nodes) {
+        auto * view = graph->nodes[next];
+        auto * gather = graph->nodes[next+1];
+        auto * add = graph->nodes[next+2];
+        if (view->op != GGML_OP_VIEW || gather->op != GGML_OP_GET_ROWS || add->op != GGML_OP_ADD) {
+            break;
+        }
+        if (!mapping) {mapping=view->src[0];weighted=gather->src[0];}
+        if (!mapping || !weighted || mapping->type != GGML_TYPE_I32 || weighted->type != GGML_TYPE_F32 ||
+            !ggml_is_contiguous(mapping) || !ggml_is_vector(mapping) || !ggml_is_contiguous(weighted) ||
+            weighted->ne[0] != first->ne[0] || weighted->ne[1] != first->ne[1]+1 ||
+            weighted->ne[2] != 1 || weighted->ne[3] != 1 ||
+            view->src[0] != mapping || view->view_src != mapping || view->type != GGML_TYPE_I32 ||
+            view->ne[0] != first->ne[1] || ggml_nelements(view) != first->ne[1] ||
+            !ggml_is_contiguous(view) || view->view_offs != size_t(ranks*first->ne[1])*sizeof(int32_t) ||
+            gather->src[0] != weighted || gather->src[1] != view ||
+            add->src[0] != previous || add->src[1] != gather ||
+            gather->type != GGML_TYPE_F32 || add->type != GGML_TYPE_F32 ||
+            !ggml_are_same_shape(first,gather) || !ggml_are_same_shape(first,add) || !ggml_is_contiguous(add)) {
+            return false;
+        }
+        ops.insert(ops.end(),{GGML_OP_VIEW,GGML_OP_GET_ROWS,GGML_OP_ADD});
+        previous=add;next+=3;++ranks;
+    }
+    if (!ranks || next >= graph->n_nodes || mapping->ne[0] != first->ne[1]*ranks ||
+        graph->nodes[next]->op != GGML_OP_SET_ROWS || graph->nodes[next]->src[0] != previous ||
+        graph->nodes[next]->src[1] != tokens || graph->nodes[next]->src[2] != state) {
+        return false;
+    }
+    const int output=next-1;
+    std::vector<int> compute_nodes;
+    std::vector<ggml_op> compute_ops;
+    for(size_t offset=0; offset<ops.size(); ++offset) {
+        if(ops[offset] != GGML_OP_VIEW) {
+            compute_nodes.push_back(start+int(offset));compute_ops.push_back(ops[offset]);
+        }
+    }
+    // Row views only describe immutable mapping inputs during this execution.
+    if (!ggml_can_fuse_subgraph_ext(graph,compute_nodes.data(),int(compute_nodes.size()),compute_ops.data(),&output,1)) {
+        return false;
+    }
+    match={state,tokens,weighted,mapping,graph->nodes[output],ranks,int(ops.size())};
+    return true;
+}
+
 // try and fuse nodes and return the number of nodes to skip
 static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
 
@@ -3707,6 +3806,27 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     }
 
     ggml_tensor * node = cgraph->nodes[i];
+
+    static const bool lf_accum_fuse = [] {
+        const char * value = getenv("GGML_CUDA_LF_ACCUM_FUSE");
+        return value && std::atoi(value) != 0;
+    }();
+    if (lf_accum_fuse && node->op == GGML_OP_GET_ROWS) {
+        ggml_cuda_lf_accum_match match;
+        if (ggml_cuda_match_lf_accum(cgraph,i,match)) {
+            const int output=i+match.node_count-1;
+            bool disjoint=true;
+            const uintptr_t dst=(uintptr_t)match.dst->data;
+            for(const auto * input : {match.state,match.tokens,match.weighted,match.mapping}) {
+                const uintptr_t src=(uintptr_t)input->data;
+                if(dst < src+ggml_nbytes(input) && src < dst+ggml_nbytes(match.dst))disjoint=false;
+            }
+            if (disjoint && ggml_cuda_check_fusion_memory_ranges(cgraph,i,match.node_count,&output,1)) {
+                ggml_cuda_op_lf_accum(*cuda_ctx,match.state,match.tokens,match.weighted,match.mapping,match.ranks,match.dst);
+                return match.node_count-1;
+            }
+        }
+    }
 
     // Qwen4Exp PP indexer: fuse RELU -> PERMUTE(head-first) -> CONT -> SUM_ROWS.
     // This is opt-in and private-marked so generic models keep their established path.
@@ -3808,9 +3928,19 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
                 weights      = cgraph->nodes[i + ops.size() - 1];
                 out_nodes[1] = i + ops.size() - 1;
 
-                if (ggml_can_fuse_subgraph(cgraph, i, ops.size(), ops.data(), out_nodes, 2) &&
-                        ggml_cuda_should_use_topk_moe(node, logits, weights, ids) &&
-                        ggml_cuda_check_fusion_memory_ranges(cgraph, i, ops.size(), out_nodes, 2, /*is_topk_moe=*/true)) {
+                const bool route_subgraph = ggml_can_fuse_subgraph(cgraph, i, ops.size(), ops.data(), out_nodes, 2);
+                const bool route_shape = ggml_cuda_should_use_topk_moe(node, logits, weights, ids);
+                const bool route_memory = ggml_cuda_check_fusion_memory_ranges(cgraph, i, ops.size(), out_nodes, 2, /*is_topk_moe=*/true);
+                if (std::getenv("GGML_CUDA_DIAG_ROUTER_MATCH")) {
+                    std::fprintf(stderr, "ROUTER_MATCH name=%s rows=%lld subgraph=%d shape=%d memory=%d input=%p ids=%p weights=%p norm=%d\n",
+                        logits->name, (long long)logits->ne[1], int(route_subgraph), int(route_shape), int(route_memory),
+                        logits->data, ids->data, weights->data, int(args.norm));
+                }
+                // The fused router protects overlapping logits in device scratch.
+                // Other external operands retain the original alias safety check.
+                const bool route_staged = !route_memory && ggml_cuda_check_fusion_memory_ranges(
+                    cgraph, i, ops.size(), out_nodes, 2, /*is_topk_moe=*/true, logits);
+                if (route_subgraph && route_shape && (route_memory || route_staged)) {
                     ggml_cuda_op_topk_moe(*cuda_ctx, logits, weights, ids, clamp, scale, bias, args);
                     return ops.size() - 1;
                 }

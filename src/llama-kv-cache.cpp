@@ -4,8 +4,11 @@
 #include "llama-io.h"
 #include "llama-model.h"
 #include "llama-context.h"
+#include "llama-layer-first-profile.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdlib>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -62,6 +65,147 @@ static void ggml_gen_hadamard(ggml_tensor * tensor) {
 // llama_kv_cache
 //
 
+struct llama_lf_kv_rotation {
+    struct bank {
+        ggml_backend_ptr transfer;
+        ggml_context_ptr context;
+        ggml_backend_buffer_ptr buffer;
+        std::array<ggml_tensor *,2> tensor={};
+        ggml_backend_event_t ready=nullptr,consumed=nullptr;
+        std::vector<int32_t> layers;
+        int32_t prepared=-1,active=-1;
+        ~bank() {
+            if(transfer)ggml_backend_synchronize(transfer.get());
+            if(ready)ggml_backend_event_free(ready);
+            if(consumed)ggml_backend_event_free(consumed);
+        }
+    };
+    std::map<ggml_backend_dev_t,std::unique_ptr<bank>> banks;
+    std::vector<std::pair<uint32_t,uint32_t>> writes;
+    uint32_t n_kv=0;
+    bool running=false;
+    size_t h2d=0,d2h=0,loads=0;
+};
+static void lf_kv_require(bool ok,const char * msg) {
+    if(!ok)throw std::runtime_error(msg);
+}
+llama_kv_cache::~llama_kv_cache() {
+    layer_rotation.reset(); // finish DMA before the host backing buffers are destroyed
+}
+bool llama_kv_cache::layer_rotation_enabled() const {return bool(layer_rotation);}
+size_t llama_kv_cache::layer_rotation_saved_bytes(ggml_backend_dev_t device) const {
+    if(!layer_rotation)return 0;
+    size_t total=0,bank=0;
+    for(const auto & layer:layers)if(model.dev_layer(layer.il)==device) {
+        const size_t bytes=ggml_nbytes(layer.k)+ggml_nbytes(layer.v);
+        total+=bytes;bank=std::max(bank,bytes);
+    }
+    return total-bank;
+}
+
+ggml_tensor * llama_kv_cache::layer_rotation_tensor(int32_t il,bool value) const {
+    if(layer_rotation && layer_rotation->running) {
+        auto it=layer_rotation->banks.find(model.dev_layer(il));
+        lf_kv_require(it!=layer_rotation->banks.end() && it->second->active==il,"KV graph accessed a layer outside its active lease");
+        return it->second->tensor[value];
+    }
+    const auto & layer=layers.at(map_layer_ids.at(il));
+    return value ? layer.v : layer.k; // graph reservation / state APIs use canonical host storage
+}
+void llama_kv_cache::layer_rotation_prefetch(int32_t il) {
+    auto & state=*layer_rotation;auto & bank=*state.banks.at(model.dev_layer(il));
+    lf_kv_require(bank.active<0,"KV bank still has a reader");
+    const auto & source=layers.at(map_layer_ids.at(il));
+    const std::array<ggml_tensor *,2> tensors={source.k,source.v};
+    for(size_t j=0;j<2;++j) {
+        lf_kv_require(tensors[j]->type==bank.tensor[j]->type && tensors[j]->nb[1]==bank.tensor[j]->nb[1],"KV layer shape changed");
+        const size_t bytes=size_t(state.n_kv)*tensors[j]->nb[1];
+        lf_profile_scope range("LF.kv_upload layer=%d projection=%zu rows=%u bytes=%zu",il,j,state.n_kv,bytes);
+        ggml_backend_tensor_set_async(bank.transfer.get(),bank.tensor[j],tensors[j]->data,0,bytes);
+        state.h2d+=bytes;
+    }
+    ggml_backend_event_record(bank.ready,bank.transfer.get());
+    bank.prepared=il;++state.loads;
+}
+void llama_kv_cache::layer_rotation_begin(const slot_info & slots,uint32_t n_kv) {
+    if(!layer_rotation)return;
+    auto & state=*layer_rotation;
+    lf_kv_require(!state.running && n_stream==1 && slots.s0==0 && slots.s1==0 && slots.idxs.size()==1,"unsupported KV ring request layout");
+    lf_kv_require(n_kv<=get_size(),"KV ring read exceeds capacity");
+    state.n_kv=n_kv;state.h2d=state.d2h=state.loads=0;state.writes.clear();
+    auto ids=slots.idxs.at(0);std::sort(ids.begin(),ids.end());
+    lf_kv_require(std::adjacent_find(ids.begin(),ids.end())==ids.end(),"duplicate KV write slot");
+    for(size_t i=0;i<ids.size();) {
+        const uint32_t first=ids[i++];uint32_t count=1;
+        while(i<ids.size() && ids[i]==first+count){++count;++i;}
+        lf_kv_require(first+count<=get_size(),"KV ring write exceeds capacity");
+        state.writes.push_back({first,count});
+    }
+    if(state.banks.empty())for(const auto & layer:layers) {
+        auto * dev=model.dev_layer(layer.il);auto & entry=state.banks[dev];
+        if(!entry) {
+            entry=std::make_unique<llama_lf_kv_rotation::bank>();auto & bank=*entry;
+            bank.transfer.reset(ggml_backend_dev_init(dev,nullptr));
+            lf_kv_require(bool(bank.transfer),"KV copy backend creation");
+            bank.context.reset(ggml_init({ggml_tensor_overhead()*8,nullptr,true}));
+            lf_kv_require(bool(bank.context),"KV ring descriptor allocation");
+            const std::array<ggml_tensor *,2> source={layer.k,layer.v};
+            for(size_t j=0;j<2;++j) {
+                bank.tensor[j]=ggml_new_tensor_3d(bank.context.get(),source[j]->type,source[j]->ne[0],source[j]->ne[1],1);
+                ggml_format_name(bank.tensor[j],"lf_kv_ring_%s_%zu",ggml_backend_dev_name(dev),j);
+            }
+            bank.buffer.reset(ggml_backend_alloc_ctx_tensors(bank.context.get(),bank.transfer.get()));
+            lf_kv_require(bool(bank.buffer),"KV ring buffer allocation");
+            ggml_backend_buffer_clear(bank.buffer.get(),0);
+            bank.ready=ggml_backend_event_new(dev);bank.consumed=ggml_backend_event_new(dev);
+            lf_kv_require(bank.ready && bank.consumed,"KV ring events");
+        }
+        entry->layers.push_back(layer.il);
+    }
+    state.running=true;
+    for(auto & item:state.banks) {
+        item.second->active=-1;item.second->prepared=-1;
+        layer_rotation_prefetch(item.second->layers.front());
+    }
+}
+void llama_kv_cache::layer_rotation_enter(int32_t il,ggml_backend_t compute) {
+    if(!layer_rotation)return;
+    auto & state=*layer_rotation;auto & bank=*state.banks.at(model.dev_layer(il));
+    lf_kv_require(state.running && bank.prepared==il && bank.active<0,"KV layer entered before its lease");
+    ggml_backend_event_wait(compute,bank.ready);bank.active=il;
+}
+void llama_kv_cache::layer_rotation_leave(int32_t il,ggml_backend_t compute) {
+    if(!layer_rotation)return;
+    auto & state=*layer_rotation;auto & bank=*state.banks.at(model.dev_layer(il));
+    lf_kv_require(state.running && bank.active==il,"KV layer lease mismatch");
+    ggml_backend_event_record(bank.consumed,compute);
+    ggml_backend_event_wait(bank.transfer.get(),bank.consumed);
+    const auto & target=layers.at(map_layer_ids.at(il));
+    const std::array<ggml_tensor *,2> tensors={target.k,target.v};
+    for(size_t j=0;j<2;++j)for(const auto & span:state.writes) {
+        const size_t offset=size_t(span.first)*tensors[j]->nb[1],bytes=size_t(span.second)*tensors[j]->nb[1];
+        lf_profile_scope range("LF.kv_writeback layer=%d projection=%zu first=%u rows=%u bytes=%zu",il,j,span.first,span.second,bytes);
+        ggml_backend_tensor_get_async(bank.transfer.get(),bank.tensor[j],static_cast<char *>(tensors[j]->data)+offset,offset,bytes);
+        state.d2h+=bytes;
+    }
+    bank.active=-1;bank.prepared=-1;
+    auto pos=std::find(bank.layers.begin(),bank.layers.end(),il);
+    lf_kv_require(pos!=bank.layers.end(),"KV ring layer not found");
+    if(++pos!=bank.layers.end())layer_rotation_prefetch(*pos);
+}
+void llama_kv_cache::layer_rotation_end() {
+    if(!layer_rotation || !layer_rotation->running)return;
+    auto & state=*layer_rotation;size_t device_bytes=0;
+    for(auto & item:state.banks) {
+        auto & bank=*item.second;ggml_backend_synchronize(bank.transfer.get());
+        bank.active=-1;bank.prepared=-1;device_bytes+=ggml_backend_buffer_get_size(bank.buffer.get());
+    }
+    state.running=false;
+    LLAMA_LOG_INFO("layer-first: KV_RING layers=%zu banks=%zu device_bytes=%zu host_to_device_bytes=%zu device_to_host_bytes=%zu layer_loads=%zu\n",
+                   layers.size(),state.banks.size(),device_bytes,state.h2d,state.d2h,state.loads);
+}
+
+
 llama_kv_cache::llama_kv_cache(
         const llama_model & model,
         const llama_hparams & hparams,
@@ -97,6 +241,12 @@ llama_kv_cache::llama_kv_cache(
         }
     }
 
+    const char * ring_env=std::getenv("LLAMA_MOE_LAYER_FIRST_KV_RING");
+    if(ring_env && std::strcmp(ring_env,"1")==0 && name_tag[0]=='\0') {
+        lf_kv_require(model.arch==LLM_ARCH_QWEN4EXP && offload && !v_trans && n_stream==1 && !other && !reuse && !share && !n_swa && !hparams.no_alloc,
+                      "KV layer ring requires the supported Qwen single-stream FlashAttention cache");
+        layer_rotation=std::make_unique<llama_lf_kv_rotation>();
+    }
     GGML_ASSERT(kv_size % n_pad == 0);
 
     const uint32_t n_layer = hparams.n_layer_all;
@@ -215,7 +365,8 @@ llama_kv_cache::llama_kv_cache(
 
         if (offload) {
             auto * dev = model.dev_layer(il);
-            buft = ggml_backend_dev_buffer_type(dev);
+            buft = layer_rotation ? ggml_backend_dev_host_buffer_type(dev) : ggml_backend_dev_buffer_type(dev);
+            lf_kv_require(buft!=nullptr,"KV ring requires pinned host storage");
 
             dev_name = ggml_backend_dev_name(dev);
         }
@@ -729,6 +880,10 @@ std::map<ggml_backend_buffer_type_t, size_t> llama_kv_cache::memory_breakdown() 
         }
     }
 
+    if(layer_rotation)for(const auto & item:layer_rotation->banks) {
+        auto * buf=item.second->buffer.get();
+        ret[ggml_backend_buffer_get_type(buf)]+=ggml_backend_buffer_get_size(buf);
+    }
     return ret;
 }
 
@@ -1296,10 +1451,35 @@ uint32_t llama_kv_cache::get_n_kv(const slot_info & sinfo) const {
     return result;
 }
 
-ggml_tensor * llama_kv_cache::get_k(ggml_context * ctx, int32_t il, uint32_t n_kv, const slot_info & sinfo) const {
-    const int32_t ikv = map_layer_ids.at(il);
+// A layer-first request reserves every suffix cell before computing its first
+// chronological chunk. Future reservations are not part of this chunk's history.
+// Match the normal padded extent using cell indices, not an assumed dense layout.
+uint32_t llama_kv_cache::get_n_kv_visible(const slot_info & sinfo, llama_pos max_position) const {
+    const uint32_t padding=std::max(n_pad,256u);
+    uint32_t result=0;
+    for (uint32_t s=0;s<sinfo.n_stream();++s) {
+        const auto & cells=v_cells[sinfo.strm[s]];
+        uint32_t high=0;
+        for (uint32_t j=0;j<cells.used_max_p1();++j) {
+            if (!cells.is_empty(j) && cells.pos_get(j)<=max_position) { high=j+1; }
+        }
+        result=std::max(result,std::min(cells.size(),std::max(padding,GGML_PAD(high,padding))));
+    }
+    return result;
+}
 
-    auto * k = layers[ikv].k;
+uint32_t llama_kv_cache_context::layer_slice_n_kv(const llama_ubatch & ubatch) const {
+    GGML_ASSERT(ubatch.n_tokens>0 && ubatch.n_seqs==1);
+    const llama_pos end=ubatch.pos[ubatch.n_tokens-1];
+    auto it=layer_visible_extents.find(end);
+    if (it!=layer_visible_extents.end()) { return it->second; }
+    const uint32_t extent=kv->get_n_kv_visible(sinfos.at(i_cur),end);
+    layer_visible_extents.emplace(end,extent);
+    return extent;
+}
+
+ggml_tensor * llama_kv_cache::get_k(ggml_context * ctx, int32_t il, uint32_t n_kv, const slot_info & sinfo) const {
+    auto * k = layer_rotation_tensor(il,false);
 
     const uint64_t kv_size      = get_size();
     const uint64_t n_embd_k_gqa = k->ne[0];
@@ -1317,9 +1497,7 @@ ggml_tensor * llama_kv_cache::get_k(ggml_context * ctx, int32_t il, uint32_t n_k
 }
 
 ggml_tensor * llama_kv_cache::get_v(ggml_context * ctx, int32_t il, uint32_t n_kv, const slot_info & sinfo) const {
-    const int32_t ikv = map_layer_ids.at(il);
-
-    auto * v = layers[ikv].v;
+    auto * v = layer_rotation_tensor(il,true);
 
     const uint64_t kv_size      = get_size();
     const uint64_t n_embd_v_gqa = v->ne[0];
@@ -1351,9 +1529,7 @@ ggml_tensor * llama_kv_cache::get_v(ggml_context * ctx, int32_t il, uint32_t n_k
 ggml_tensor * llama_kv_cache::cpy_k(ggml_context * ctx, ggml_tensor * k_cur, ggml_tensor * k_idxs, int32_t il, const slot_info & sinfo) const {
     GGML_UNUSED(sinfo);
 
-    const int32_t ikv = map_layer_ids.at(il);
-
-    ggml_tensor * k = layers[ikv].k;
+    ggml_tensor * k = layer_rotation_tensor(il,false);
 
     const int64_t n_embd_head = k_cur->ne[0];
     const int64_t n_head      = k_cur->ne[1];
@@ -1386,9 +1562,7 @@ ggml_tensor * llama_kv_cache::cpy_k(ggml_context * ctx, ggml_tensor * k_cur, ggm
 ggml_tensor * llama_kv_cache::cpy_v(ggml_context * ctx, ggml_tensor * v_cur, ggml_tensor * v_idxs, int32_t il, const slot_info & sinfo) const {
     GGML_UNUSED(sinfo);
 
-    const int32_t ikv = map_layer_ids.at(il);
-
-    auto * v = layers[ikv].v;
+    auto * v = layer_rotation_tensor(il,true);
 
     const int64_t n_embd_head = v_cur->ne[0];
     const int64_t n_head      = v_cur->ne[1];
@@ -2899,6 +3073,7 @@ bool llama_kv_cache_context::apply() {
         return true;
     }
 
+    layer_visible_extents.clear();
     kv->apply_ubatch(sinfos[i_cur], ubatches[i_cur]);
     n_kv = kv->get_n_kv(sinfos[i_cur]);
 
@@ -2989,4 +3164,14 @@ void llama_kv_cache_context::set_input_v_rot(ggml_tensor * dst) const {
 
 void llama_kv_cache_context::get_prev_tokens(const llama_ubatch & ubatch, uint32_t n, std::vector<llama_token> & res) const {
     kv->get_prev_tokens(ubatch, n, res);
+}
+
+llama_kv_cache::slot_info llama_kv_cache_context::layer_slice_slots(uint32_t offset, uint32_t count) const {
+    const auto & full = sinfos.at(i_cur);
+    if (full.n_stream() != 1 || offset > full.size() || count > full.size() - offset) {
+        throw std::runtime_error("layer-first cache slice outside applied single-stream window");
+    }
+    auto out = full;
+    out.idxs[0].assign(full.idxs[0].begin() + offset, full.idxs[0].begin() + offset + count);
+    return out;
 }

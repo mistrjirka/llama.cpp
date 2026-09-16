@@ -1,4 +1,5 @@
 #include "llama-graph.h"
+#include "llama-layer-first-inputs.h"
 
 #include "llama-impl.h"
 #include "llama-model.h"
@@ -1089,26 +1090,32 @@ void llm_graph_input_attn_cross::set_input(const llama_ubatch * ubatch) {
 }
 
 void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
-    mctx->get_attn()->set_input_k_idxs(inp_attn->self_k_idxs, ubatch);
-    mctx->get_attn()->set_input_v_idxs(inp_attn->self_v_idxs, ubatch);
+    if (inp_attn->self_k_idxs->buffer) { mctx->get_attn()->set_input_k_idxs(inp_attn->self_k_idxs, ubatch); }
+    if (inp_attn->self_v_idxs->buffer) { mctx->get_attn()->set_input_v_idxs(inp_attn->self_v_idxs, ubatch); }
 
     // qwen4exp's QSA gather graphs never reference the mask, so it has no buffer;
     // the same guard the other attention inputs carry
-    if (inp_attn->self_kq_mask && inp_attn->self_kq_mask->buffer) {
+    if (inp_attn->lf_cached_mask) {
+        auto * cached=inp_attn->lf_cached_mask;
+        if(!cached->ready) {
+            if(!cached->host_ready())mctx->get_attn()->set_input_kq_mask(cached->host, ubatch, cparams.causal_attn);
+            cached->upload();
+        }
+    } else if (inp_attn->self_kq_mask && inp_attn->self_kq_mask->buffer) {
         mctx->get_attn()->set_input_kq_mask(inp_attn->self_kq_mask, ubatch, cparams.causal_attn);
     }
 
-    if (inp_attn->self_k_rot) {
+    if (inp_attn->self_k_rot && inp_attn->self_k_rot->buffer) {
         mctx->get_attn()->set_input_k_rot(inp_attn->self_k_rot);
     }
 
-    if (inp_attn->self_v_rot) {
+    if (inp_attn->self_v_rot && inp_attn->self_v_rot->buffer) {
         mctx->get_attn()->set_input_v_rot(inp_attn->self_v_rot);
     }
 
     const int64_t n_rs = mctx->get_recr()->get_n_rs();
 
-    if (inp_rs->s_copy) {
+    if (inp_rs->s_copy && inp_rs->s_copy->buffer) {
         GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
         int32_t * data = (int32_t *) inp_rs->s_copy->data;
 
@@ -1326,6 +1333,7 @@ int64_t llm_graph_result::get_max_nodes() const {
 }
 
 void llm_graph_result::reset() {
+    lf_in.fill(nullptr); lf_out.fill(nullptr); lf_route_only = false; lf_input_cache = nullptr;
     t_inp_tokens  = nullptr;
     t_inp_embd    = nullptr;
     t_logits      = nullptr;
@@ -1366,6 +1374,7 @@ void llm_graph_result::set_inputs(const llama_ubatch * ubatch) {
 }
 
 void llm_graph_result::set_outputs(const llm_graph_params & params) {
+    for (auto * t : lf_out) { if (t) { ggml_set_output(t); } }
     if (t_logits != nullptr) {
         ggml_set_output(t_logits);
     }
@@ -2157,6 +2166,18 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         cb(weights, "ffn_moe_weights_scaled", il);
     }
 
+    // Reuse the exact router/normalization for the layer-first window.
+    if (res->lf_route_only) {
+        GGML_ASSERT(arch == LLM_ARCH_QWEN4EXP && !weight_before_ffn);
+        res->lf_out[1] = ggml_cont(ctx0, selected_experts);
+        res->lf_out[2] = ggml_cont(ctx0, weights);
+        // Keep the original router's softmax, top-k and normalization together.
+        // Expanding the ID copy first would split that sequence and change the
+        // CUDA fusion path (and its floating-point evaluation order).
+        ggml_build_forward_expand(gf, res->lf_out[2]);
+        ggml_build_forward_expand(gf, res->lf_out[1]);
+        return ggml_scale(ctx0, cur, 0.0f);
+    }
     //call early so that topk-moe can be used
     ggml_build_forward_expand(gf, weights);
 

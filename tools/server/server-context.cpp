@@ -6,6 +6,7 @@
 #include "server-queue.h"
 #include "server-schema.h"
 #include "server-stream.h"
+#include "server-request-prefill.h"
 
 #include "build-info.h"
 #include "common.h"
@@ -127,6 +128,7 @@ struct server_batch {
     server_slot * slot_batched = nullptr;
 
     // in embd mode, we temporarily swap out the tokens arr and restore it on clear()
+    server_request_prefill request_prefill;
     bool has_embd = false;
     llama_token * tokens_ptr = nullptr;
     std::vector<float> embd;
@@ -178,6 +180,7 @@ struct server_batch {
         tokens.clear();
         embd.clear();
         common_batch_clear(batch);
+        request_prefill.reset();
         slot_batched      = nullptr;
         alora_scale       = -1.0f;
         alora_disabled_id = 0;
@@ -201,6 +204,7 @@ struct server_batch {
     void render() {
         GGML_ASSERT(!batch_rendered);
         GGML_ASSERT(batch.pos != nullptr);
+        request_prefill.validate_assembly(size());
         common_batch_clear(batch);
         for (int32_t i = 0; i < size(); i++) {
             const auto & t = tokens[i];
@@ -920,6 +924,7 @@ private:
     llama_context * ctx_tgt = nullptr;
 
     server_batch batch;
+    bool full_request_prefill = false;
 
     llama_model   * model_dft = nullptr;
     llama_context * ctx_dft   = nullptr;
@@ -1376,12 +1381,23 @@ private:
             }
         }
 
-        // the update_slots() logic will always submit a maximum of n_batch or n_parallel tokens
-        // note that n_batch can be > n_ctx (e.g. for non-causal attention models such as BERT where the KV cache is not used)
+        const char * request_mode = std::getenv("LLAMA_MOE_LAYER_FIRST");
+        full_request_prefill = request_mode && std::string(request_mode) == "1";
+        if (full_request_prefill && (params_base.n_parallel != 1 || spec || mctx ||
+                !params_base.lora_adapters.empty() || !llama_supports_prefill_request(ctx_tgt))) {
+            SRV_ERR("%s", "request-prefill currently requires a supported single-slot text context without speculative decoding or LoRA\n");
+            return false;
+        }
+        if (full_request_prefill) {
+            SRV_INF("%s", "request-prefill: complete uncached suffix per execution; CPU sampling; checkpoints at request boundaries\n");
+        }
+        // Full-request mode stores token descriptors up to context capacity.
+        // GPU computation scratch still follows n_ubatch and expert-row limits.
         {
             const int32_t n_batch = llama_n_batch(ctx_tgt);
             const int32_t n_embd  = llama_model_n_embd_inp(model_tgt);
-            batch.init(std::max(n_batch, params_base.n_parallel), n_embd);
+            const int32_t capacity = full_request_prefill ? int32_t(llama_n_ctx(ctx_tgt)) : n_batch;
+            batch.init(std::max({n_batch, capacity, params_base.n_parallel}), n_embd);
         }
 
         if (params_base.cache_ram_mib != 0) {
@@ -1822,6 +1838,11 @@ private:
     }
 
     bool launch_slot_with_task(server_slot & slot, server_task && task) {
+        if (full_request_prefill && (task.type != SERVER_TASK_TYPE_COMPLETION ||
+                task.tokens.has_mtmd || !task.params.lora.empty())) {
+            send_error(task, "request-prefill accepts ordinary text completions with the loaded model", ERROR_TYPE_INVALID_REQUEST);
+            return false;
+        }
         // process per-request lora adapters
         if (!task.params.lora.empty()) {
             auto task_loras = construct_lora_list(task.params.lora);
@@ -1906,7 +1927,7 @@ private:
 
             const bool need_pre_sample_logits = task.params.sampling.n_probs > 0 && !task.params.post_sampling_probs;
 
-            bool use_backend_sampling = task.params.sampling.backend_sampling;
+            bool use_backend_sampling = task.params.sampling.backend_sampling && !full_request_prefill;
 
             // TODO: getting pre sampling logits is not yet supported with backend sampling
             use_backend_sampling &= !need_pre_sample_logits;
@@ -3269,7 +3290,7 @@ private:
 
         llama_batch batch_view;
         int32_t off_next = 0;
-        int32_t n_batch = llama_n_batch(ctx_tgt);
+        int32_t n_batch = batch.request_prefill.active() ? batch.size() : llama_n_batch(ctx_tgt);
         for (int32_t off = 0; off < batch.size(); off = off_next) {
             const int32_t n_tokens = std::min(n_batch, batch.size() - off);
             try {
@@ -3515,8 +3536,8 @@ private:
             slot.handle_last_sampled_token(batch);
         });
 
-        // process in chunks of params.n_batch
-        int32_t n_batch  = llama_n_batch(ctx_tgt);
+        // Full-request admission uses the entire suffix; physical chunks remain internal.
+        int32_t n_batch  = full_request_prefill ? llama_n_ctx(ctx_tgt) : llama_n_batch(ctx_tgt);
         int32_t n_ubatch = llama_n_ubatch(ctx_tgt);
 
         auto & alora_scale       = batch.alora_scale;
@@ -3849,6 +3870,14 @@ private:
                         }
                     } // end of SLOT_STATE_STARTED
 
+                    if (full_request_prefill) {
+                        if (batch.size() != 0 || slot.stats.n_prompt_processed != 0) {
+                            throw std::runtime_error("request-prefill requires one complete, unsubmitted suffix");
+                        }
+                        batch.request_prefill.begin(slot.task->id,
+                            slot.task->n_tokens() - slot.prompt.n_tokens());
+                    }
+
                     if (!slot.can_split()) {
                         // cannot fit the prompt in the current batch - will try next iter
                         if (batch.size() + slot.task->n_tokens() > n_batch) {
@@ -3971,7 +4000,7 @@ private:
                         slot.prompt.tokens.push_back(cur_tok);
 
                         // break at the last user message, or at user messages at least min step past the last checkpoint
-                        if (do_checkpoint && spans.is_user_start(slot.prompt.n_tokens())) {
+                        if (!full_request_prefill && do_checkpoint && spans.is_user_start(slot.prompt.n_tokens())) {
                             const auto pos = slot.prompt.n_tokens();
                             const auto & checkpoints = slot.prompt.checkpoints;
 
@@ -3985,7 +4014,7 @@ private:
                         //  - 4 + n_ubatch
                         //  - 4
                         // ref: https://github.com/ggml-org/llama.cpp/pull/20288
-                        if (do_checkpoint) {
+                        if (!full_request_prefill && do_checkpoint) {
                             // Lossless prefill reuse may use a larger physical ubatch while
                             // preserving the baseline GEMM tile. Keep semantic checkpoint
                             // boundaries tied to that baseline tile too; otherwise enabling
@@ -4018,6 +4047,12 @@ private:
                         }
                     }
 
+                    if (full_request_prefill) {
+                        batch.request_prefill.validate_assembly(batch.size());
+                        if (slot.prompt.n_tokens() != slot.task->n_tokens()) {
+                            throw std::runtime_error("request-prefill suffix assembly is incomplete");
+                        }
+                    }
                     // the number of tokens added to the batch for the current slot
                     const auto n_tokens_cur = batch.size() - n_tokens_prev;
 
@@ -4137,6 +4172,15 @@ private:
             all_prompt = all_prompt && batch.tokens[i].is_prompt;
         }
 
+        const bool request_call = batch.request_prefill.active();
+        if (request_call) {
+            if (!all_prompt || spec || batch.has_embd) {
+                throw std::runtime_error("request-prefill dispatch must contain only its text prompt");
+            }
+            batch.request_prefill.submit(batch.size(), off, batch_view.n_tokens);
+            SRV_INF("request-prefill: request=%d suffix_tokens=%d decode_calls=1\n",
+                    batch.request_prefill.id(), batch_view.n_tokens);
+        }
         bool defer_mtp = params_base.speculative.mtp_defer_prompt && all_prompt &&
                 common_speculative_can_defer_prompt(spec.get());
         if (defer_mtp) {
@@ -4147,7 +4191,8 @@ private:
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
         queue_tasks.yield_to_queue([&]() {
-            ret = llama_decode(ctx_tgt, batch_view);
+            ret = request_call ? llama_prefill_request(ctx_tgt, batch_view)
+                               : llama_decode(ctx_tgt, batch_view);
             // The async capture was already queued by llama_decode(). Disarm the
             // one-decode sink without synchronizing; its pinned storage remains alive
             // in the deferred MTP batch until flush_deferred().
@@ -4162,6 +4207,9 @@ private:
         if (ret != 0) {
             {
                 std::string err;
+                if (request_call) {
+                    err = string_format("Full-request prefill failed (ret=%d); the request was not subdivided or replayed", ret);
+                }
 
                 if (n_batch == 1 && ret == 1) {
                     // TODO: try to terminate only the largest active slot/sequence and continue with the rest
@@ -4290,6 +4338,11 @@ private:
             }
 
             if (slot.state == SLOT_STATE_DONE_PROMPT) {
+                if (batch.request_prefill.active() && params_base.n_ctx_checkpoints > 0) {
+                    const auto lo = llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), slot.id);
+                    const auto hi = llama_memory_seq_pos_max(llama_get_memory(ctx_tgt), slot.id);
+                    create_checkpoint(slot, 0, lo, hi, true, 0, true);
+                }
                 const bool snapshot_prev = params_base.checkpoint_recurrent_prev &&
                         params_base.n_ctx_checkpoints > 0 && spec == nullptr &&
                         llama_n_rs_seq(ctx_tgt) > 0 && slot.stats.n_prompt_processed > 64 &&

@@ -653,6 +653,7 @@ bool llama_memory_hybrid_idx_context::next() {
 }
 
 bool llama_memory_hybrid_idx_context::apply() {
+    if (is_layer_view) { return true; }
     bool res = llama_memory_hybrid_context::apply();
 
     if (ctx_idx) {
@@ -868,4 +869,25 @@ void llama_memory_hybrid_idx_context::set_input_qsa(
             }
         }
     }
+}
+
+std::unique_ptr<llama_memory_hybrid_idx_context> llama_memory_hybrid_idx_context::layer_slice(
+        const llama_ubatch & ubatch, uint32_t offset, bool continuation) const {
+    if (!mem || ubatch.n_seqs != 1 || ubatch.n_seqs_unq != 1 || get_recr()->get_n_rs() != 1) {
+        throw std::runtime_error("layer-first currently requires one recurrent sequence/state row");
+    }
+    slot_info_vec_t attn{get_attn()->layer_slice_slots(offset, ubatch.n_tokens)};
+    slot_info_vec_t idx;
+    if (get_idx()) { idx.push_back(get_idx()->layer_slice_slots(offset, ubatch.n_tokens)); }
+    auto view = std::make_unique<llama_memory_hybrid_idx_context>(
+        const_cast<llama_memory_hybrid_idx *>(mem), std::move(attn), std::move(idx),
+        std::vector<llama_ubatch>{ubatch});
+    view->is_layer_view = true;
+    // Keep future request reservations out of this chronological slice's
+    // attention extent. Both caches still own the complete request's storage.
+    view->set_layer_view(get_attn()->layer_slice_n_kv(ubatch), continuation);
+    if (view->ctx_idx) {
+        static_cast<llama_kv_cache_context *>(view->ctx_idx.get())->set_layer_view_n_kv(get_idx()->layer_slice_n_kv(ubatch));
+    }
+    return view;
 }

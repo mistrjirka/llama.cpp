@@ -6,6 +6,7 @@
 #include "llama-adapter.h"
 
 #include <cstdint>
+#include <array>
 #include <cstdlib>
 #include <vector>
 #include <memory>
@@ -94,6 +95,8 @@ struct llama_cross {
 };
 
 struct llm_graph_params;
+struct llama_lf_cached_input;
+struct llama_lf_input_cache;
 
 //
 // llm_graph_input
@@ -343,6 +346,7 @@ public:
     ggml_tensor * self_k_idxs = nullptr; // I64 [n_batch]
     ggml_tensor * self_v_idxs = nullptr; // I64 [n_batch] or [n_batch*n_embd_v_gqa]
 
+    llama_lf_cached_input * lf_cached_mask = nullptr;
     ggml_tensor * self_kq_mask     = nullptr; // F32/F16 [n_kv, n_batch/n_stream, 1, n_stream]
     ggml_tensor * self_kq_mask_cnv = nullptr; //         [n_kv, n_batch/n_stream, 1, n_stream]
 
@@ -810,10 +814,25 @@ struct llm_graph_params {
     llm_graph_cb cb;
 
     llm_graph_result * res;
+    // 1=mixer, 2=router/shared FFN, 3=resident experts, 4=reduction, 5=head.
+    int lf_stage = 0;
+    int lf_layer = -1;
+    std::array<ggml_tensor *, 3> lf_weights = {};
+    // Request-wide expert inputs and contribution slots, when budgeted in VRAM.
+    // x, expert slots or sum, layer input, post-attention residual, shared, injection, route weights.
+    std::array<ggml_tensor *, 7> lf_activations = {};
+    size_t lf_token_offset = 0;
+    size_t lf_valid_rows = 0;
+    bool lf_accumulate = false;
+    bool lf_accum_audit = false;
+    bool lf_defer_shared = false;
+    // Preserve the original small chronological batch arithmetic after routing.
+    uint32_t lf_reference_tokens = 0;
 
     // return true if the "other" params would result in a graph with the same topology as with the current params
     //   having the same topology allows us to reuse the graph in some cases
     bool allow_reuse(const llm_graph_params & other) const {
+        if (lf_stage != 0 || other.lf_stage != 0) { return false; }
         // first check the ubatch
         bool can_reuse_ubatch =
             ubatch.equal_seqs() == other.ubatch.equal_seqs() &&
@@ -929,6 +948,11 @@ public:
     const std::vector<llm_graph_fused_node> & get_fused_nodes() const { return fused_nodes; }
 
     void set_params(const llm_graph_params & params);
+
+    std::array<ggml_tensor *, 5> lf_in = {};
+    std::array<ggml_tensor *, 3> lf_out = {};
+    bool lf_route_only = false;
+    llama_lf_input_cache * lf_input_cache = nullptr;
 
     // important graph nodes
     ggml_tensor * t_inp_tokens  = nullptr;

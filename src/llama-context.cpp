@@ -1,4 +1,6 @@
 #include "llama-context.h"
+#include "llama-memory-hybrid.h"
+#include "llama-layer-first.h"
 
 #include "ggml.h"
 #include "llama-arch.h"
@@ -495,6 +497,11 @@ llama_context::llama_context(
 llama_context::~llama_context() {
     // wait for any pending asynchronous copies into the output buffers before they are freed
     synchronize();
+    if (layer_first_residency) {
+        ggml_backend_sched_reset(sched.get());
+        gf_res_prev->reset();
+        layer_first_residency.reset();
+    }
 
     // when training, ggml_opt allocates extra buffers through the scheduler, so the sizes no longer match the expectation
     if (!model.hparams.no_alloc && !opt_ctx) {
@@ -1707,7 +1714,13 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
     return false; // all sequences use backend sampling
 }
 
-int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
+int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only, bool request_prefill) {
+    if (request_prefill && (!layer_first_supported() || cparams.warmup || !memory ||
+            mtp_cache_only || !batch_inp.token || batch_inp.embd || batch_inp.n_tokens <= 0 ||
+            uint64_t(batch_inp.n_tokens) > cparams.n_ctx)) {
+        LLAMA_LOG_ERROR("request-prefill: unsupported context or suffix outside context capacity\n");
+        return -1;
+    }
     if (mtp_cache_only) {
         // This explicit API must never suppress outputs requested by a caller.
         if (batch_inp.n_tokens <= 0 || !batch_inp.token || !batch_inp.embd || !batch_inp.logits ||
@@ -1792,6 +1805,23 @@ int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
 
     const uint32_t n_tokens_all  = balloc->get_n_tokens();
     const uint32_t n_outputs_all = balloc->get_n_outputs();
+    const char * auto_prefill = std::getenv("LLAMA_MOE_LAYER_FIRST_AUTO");
+    const bool single_chunk = request_prefill && auto_prefill && auto_prefill[0]=='1' &&
+        n_tokens_all <= std::min(cparams.n_batch,cparams.n_ubatch);
+    // A single ordinary chunk already uploads each needed expert only once.
+    const auto * hybrid_kv=dynamic_cast<llama_memory_hybrid *>(memory.get());
+    const bool kv_ring=hybrid_kv && hybrid_kv->get_mem_attn()->layer_rotation_enabled();
+    const char * all_tokens_env=std::getenv("LLAMA_MOE_LAYER_FIRST_ALL_TOKENS");
+    const bool all_tokens=all_tokens_env && std::strcmp(all_tokens_env,"1")==0;
+    const bool layer_first = kv_ring || (!single_chunk && (request_prefill ||
+        (((llama_layer_first_requested() && n_tokens_all > 1) || all_tokens) && !cparams.warmup)));
+    if(single_chunk) {
+        LLAMA_LOG_INFO("request-prefill: native single-chunk path tokens=%u\n",n_tokens_all);
+    }
+    if (layer_first && (!layer_first_supported() || !batch_inp.token || batch_inp.embd || mtp_cache_only)) {
+        LLAMA_LOG_ERROR("layer-first: unsupported model/context; explicitly disable LLAMA_MOE_LAYER_FIRST for the ordinary path\n");
+        return -1;
+    }
 
     if (output_all) {
         // require that all tokens are output
@@ -1802,7 +1832,9 @@ int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
         }
     }
 
-    GGML_ASSERT(n_tokens_all <= cparams.n_batch);
+    // Request prefill budgets full-window activations separately; it keeps the
+    // existing physical mixer chunk rather than enlarging every graph to N rows.
+    GGML_ASSERT(request_prefill || n_tokens_all <= cparams.n_batch);
 
     GGML_ASSERT((cparams.causal_attn || cparams.n_ubatch >= n_tokens_all) && "non-causal attention requires n_ubatch >= n_tokens");
 
@@ -1830,7 +1862,7 @@ int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
     llama_memory_context_ptr mctx;
 
     while (true) {
-        mctx = memory->init_batch(*balloc, cparams.n_ubatch, output_all);
+        mctx = memory->init_batch(*balloc, layer_first ? n_tokens_all : cparams.n_ubatch, output_all);
         if (!mctx) {
             return -2;
         }
@@ -1873,6 +1905,10 @@ int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
     }
 
     // reserve output buffer
+    // This is a token-index map, not a full-vocabulary output for every token.
+    if (request_prefill && output_ids.size() < n_tokens_all) {
+        output_ids.resize(n_tokens_all, -1);
+    }
     if (output_reserve(n_outputs_all) < n_outputs_all) {
         LLAMA_LOG_ERROR("%s: could not reserve space for batch with %d outputs\n", __func__, n_outputs_all);
         return -2;
@@ -1907,7 +1943,9 @@ int llama_context::decode(const llama_batch & batch_inp, bool mtp_cache_only) {
 
         ggml_status status;
 
-        const auto * res = process_ubatch(ubatch, mtp_cache_only ? LLM_GRAPH_TYPE_DECODER_MTP_KV :
+        const auto * res = layer_first
+            ? process_ubatch_layer_first(ubatch, mctx.get(), status)
+            : process_ubatch(ubatch, mtp_cache_only ? LLM_GRAPH_TYPE_DECODER_MTP_KV :
                 ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
 
         if (!res) {
@@ -4472,6 +4510,24 @@ int32_t llama_decode(
     }
 
     return ret;
+}
+
+bool llama_supports_prefill_request(const llama_context * ctx) {
+    return ctx && ctx->layer_first_supported();
+}
+
+int32_t llama_prefill_request(llama_context * ctx, llama_batch batch) {
+    if (!ctx) { return -1; }
+    LLAMA_LOG_INFO("request-prefill: BEGIN tokens=%d logical_batch=%u mixer_chunk=%u\n",
+                   batch.n_tokens, ctx->n_batch(), ctx->n_ubatch());
+    try {
+        const int ret = ctx->decode(batch, false, true);
+        LLAMA_LOG_INFO("request-prefill: END tokens=%d status=%d\n", batch.n_tokens, ret);
+        return ret;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("request-prefill: exception: %s\n", e.what());
+        return -3;
+    }
 }
 
 int32_t llama_decode_mtp_kv(llama_context * ctx, llama_batch batch) {

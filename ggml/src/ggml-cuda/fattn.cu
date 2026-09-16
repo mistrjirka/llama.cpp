@@ -123,7 +123,8 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(ggml_backend_cuda_context
     memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
 
     const int32_t n_kv_max = ggml_get_op_params_i32(dst, 4);
-    return GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc) &&
+    const bool volta_d256 = cc == GGML_CUDA_CC_VOLTA && Q->ne[0] == 256 && dst->src[2]->ne[0] == 256;
+    return GGML_CUDA_CC_IS_NVIDIA(cc) && (turing_mma_available(cc) || volta_d256) &&
         mask != nullptr && n_kv_max > 0 && max_bias == 0.0f && logit_softcap == 0.0f &&
         mask->ne[0] == K->ne[1] && mask->ne[1] >= Q->ne[1] && mask->ne[2] == 1 &&
         K->ne[1] >= std::max<int64_t>(4096, 2LL*n_kv_max);
@@ -195,6 +196,17 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols2(ggml_backend_cuda_con
 
     float max_bias = 0.0f;
     memcpy(&max_bias, (const float *) KQV->op_params + 1, sizeof(float));
+
+    if constexpr (DKQ == 256 && DV == 256) {
+        if (ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(ctx, dst)) {
+            if (cc == GGML_CUDA_CC_VOLTA) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 1, 32>(ctx, dst);
+            } else {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 1, 8>(ctx, dst);
+            }
+            return;
+        }
+    }
 
     // Edge cases like no mask, ALiBi, unpadded K/V, or misaligned addresses for large data transfers
     //     are put into the template specialization without GQA optimizations.

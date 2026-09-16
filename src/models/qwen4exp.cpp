@@ -1,3 +1,4 @@
+#include "llama-layer-first-inputs.h"
 #include "models.h"
 #include "llama-impl.h"
 #include "llama-memory-hybrid-idx.h"
@@ -335,6 +336,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_hc_combine(
 
 llama_model_qwen4exp::graph::graph(const llama_model & model, const llm_graph_params & params) :
     llm_build_delta_net_base(params), model(model) {
+    if (params.lf_stage != 0) { build_layer_first(params); return; }
     const int64_t hc = hparams.dsv4_hc_mult;
 
     GGML_ASSERT(hparams.n_embd_head_v() == hparams.n_embd_head_k());
@@ -477,9 +479,22 @@ public:
     virtual ~llm_graph_input_qsa() = default;
 
     void set_input(const llama_ubatch * ubatch) override {
-        mctx->get_idx()->set_input_k_idxs(k_idxs, ubatch);
-        mctx->set_input_qsa(cell_blk, blk_cells, blk_pos, bias, ubatch, ratio, blk_bias,
-                direct_tail, direct_mask);
+        if(lf_cache_active) {
+            bool ready=true;
+            for(size_t i=0;i<lf_host.size();++i)if(lf_host[i] && (!lf_cache[i] || !lf_cache[i]->ready))ready=false;
+            if(ready)return;
+            bool host_ready=true;
+            for(size_t i=0;i<lf_host.size();++i)if(lf_host[i] && (!lf_cache[i] || !lf_cache[i]->host_ready()))host_ready=false;
+            if(!host_ready) {
+            mctx->get_idx()->set_input_k_idxs(lf_host[0],ubatch);
+            mctx->set_input_qsa(lf_host[1],lf_host[2],lf_host[3],lf_host[4],ubatch,ratio,blk_bias,lf_host[5],lf_host[6]);
+            }
+            for(auto * item:lf_cache)if(item)item->upload();
+        } else {
+            mctx->get_idx()->set_input_k_idxs(k_idxs, ubatch);
+            mctx->set_input_qsa(cell_blk, blk_cells, blk_pos, bias, ubatch, ratio, blk_bias,
+                    direct_tail, direct_mask);
+        }
     }
 
     bool can_reuse(const llm_graph_params & params) override {
@@ -526,6 +541,9 @@ public:
         return res;
     }
 
+    bool lf_cache_active=false;
+    std::array<llama_lf_cached_input *,7> lf_cache={};
+    std::array<ggml_tensor *,7> lf_host={};
     // per stream: a cell index names a different token in each stream
     ggml_tensor * k_idxs    = nullptr;   // I32 [n_tokens]
     ggml_tensor * cell_blk  = nullptr;   // I32 [n_kv, n_stream]
@@ -646,6 +664,17 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
             }
         }
 
+        if(res->lf_input_cache) {
+            std::array<ggml_tensor **,7> fields={&qsa->k_idxs,&qsa->cell_blk,&qsa->blk_cells,&qsa->blk_pos,&qsa->bias,&qsa->direct_tail,&qsa->direct_mask};
+            for(size_t j=0;j<fields.size();++j) {
+                qsa->lf_host[j]=*fields[j];
+                if(!*fields[j])continue;
+                const std::string key="qsa:"+std::to_string(r)+":"+std::to_string(int(blk_bias))+":"+std::to_string(int(block_topk))+":"+std::to_string(int(gather))+":"+std::to_string(j);
+                auto * cached=res->lf_input_cache->bind(key,*fields[j]);
+                if(cached){qsa->lf_host[j]=cached->host;*fields[j]=cached->device;qsa->lf_cache[j]=cached;}
+            }
+            qsa->lf_cache_active=true;
+        }
         inp = qsa.get();
         res->add_input(std::move(qsa));
         qsa_inps.emplace(qsa_key, inp);
@@ -795,7 +824,10 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
             expanded = ggml_add(ctx0, expanded, inp->bias);
         }
         cb(expanded, "indexer_score_tokens", il);
-        top_k = ggml_cont(ctx0, ggml_top_k(ctx0, expanded, width));
+        auto * selected=ggml_top_k(ctx0,expanded,width);
+        const char * radix=std::getenv("QWEN4EXP_QSA_RADIX_TOPK");
+        if(radix && radix[0]=='1' && !gather && n_tps>1 && n_kv>=8192)selected->op_params[0]=0x5153544b;
+        top_k=ggml_cont(ctx0,selected);
     }
 
     // build_attn_qsa reads [n_top_k, n_batch, 1, n_stream], matching the KQ mask.
@@ -1046,10 +1078,10 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
     ggml_tensor * k = mctx_cur->get_k(ctx0, il);
     ggml_tensor * v = mctx_cur->get_v(ctx0, il);
 
-    // TODO: enable sparse attention when we are ready
-    // ref: https://github.com/ggml-org/llama.cpp/pull/27970
-    //ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, top_k->ne[0], kq_scale, il);
-    ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, 0, kq_scale, il);
+    const char * sparse_env = std::getenv("QWEN4EXP_QSA_SPARSE_ATTN");
+    const bool sparse = sparse_env && sparse_env[0] == '1' && top_k->ne[1] > 1 && kq_mask->ne[0] >= 32768;
+    const int32_t selected_bound = sparse ? int32_t(top_k->ne[0]) : 0;
+    ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, selected_bound, kq_scale, il);
     cb(cur, "kqv_out", il);
 
     // the rotation is its own inverse, so undo it on the value side of the output
@@ -1305,7 +1337,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn_linear(
     return cur;
 }
 
-ggml_tensor * llama_model_qwen4exp::graph::build_layer_ffn(ggml_tensor * cur, const int il) {
+ggml_tensor * llama_model_qwen4exp::graph::build_layer_ffn(ggml_tensor * cur, const int il, const bool defer_shared) {
     GGML_ASSERT(model.layers[il].ffn_gate_inp != nullptr);
 
     ggml_tensor * moe_out =
@@ -1325,34 +1357,35 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_ffn(ggml_tensor * cur, co
             model.layers[il].ffn_down_exps_s);
     cb(moe_out, "ffn_moe_out", il);
 
-    // shared experts, as in the Qwen3Next reference
-    if (model.layers[il].ffn_up_shexp != nullptr) {
-        ggml_tensor * ffn_shexp =
-            build_ffn(cur,
-                model.layers[il].ffn_up_shexp, NULL, model.layers[il].ffn_up_shexp_s,
-                model.layers[il].ffn_gate_shexp, NULL, model.layers[il].ffn_gate_shexp_s,
-                model.layers[il].ffn_down_shexp, NULL, model.layers[il].ffn_down_shexp_s,
-                NULL,
-                LLM_FFN_SILU, LLM_FFN_PAR, il);
-        cb(ffn_shexp, "ffn_shexp", il);
-
-        // shared expert has its own sigmoided gate (ffn_gate_inp_shexp, one value per token)
-        ggml_tensor * shared_gate = build_lora_mm(model.layers[il].ffn_gate_inp_shexp, cur);
-        cb(shared_gate, "shared_expert_gate", il);
-
-        shared_gate = ggml_sigmoid(ctx0, shared_gate);
-        cb(shared_gate, "shared_expert_gate_sigmoid", il);
-
-        ffn_shexp = ggml_mul(ctx0, ffn_shexp, shared_gate);
-        cb(ffn_shexp, "ffn_shexp_gated", il);
-
-        cur = ggml_add(ctx0, moe_out, ffn_shexp);
-        cb(cur, "ffn_out", il);
-    } else {
-        cur = moe_out;
-    }
-
+    if (defer_shared) { return moe_out; }
+    auto * shared = build_layer_shared_ffn(cur, il);
+    if (!shared) { return moe_out; }
+    cur = ggml_add(ctx0, moe_out, shared);
+    cb(cur, "ffn_out", il);
     return cur;
+}
+
+ggml_tensor * llama_model_qwen4exp::graph::build_layer_shared_ffn(ggml_tensor * cur, const int il) {
+    if (model.layers[il].ffn_up_shexp == nullptr) { return nullptr; }
+    ggml_tensor * ffn_shexp =
+        build_ffn(cur,
+            model.layers[il].ffn_up_shexp, NULL, model.layers[il].ffn_up_shexp_s,
+            model.layers[il].ffn_gate_shexp, NULL, model.layers[il].ffn_gate_shexp_s,
+            model.layers[il].ffn_down_shexp, NULL, model.layers[il].ffn_down_shexp_s,
+            NULL,
+            LLM_FFN_SILU, LLM_FFN_PAR, il);
+    cb(ffn_shexp, "ffn_shexp", il);
+
+    // shared expert has its own sigmoided gate (ffn_gate_inp_shexp, one value per token)
+    ggml_tensor * shared_gate = build_lora_mm(model.layers[il].ffn_gate_inp_shexp, cur);
+    cb(shared_gate, "shared_expert_gate", il);
+
+    shared_gate = ggml_sigmoid(ctx0, shared_gate);
+    cb(shared_gate, "shared_expert_gate_sigmoid", il);
+
+    ffn_shexp = ggml_mul(ctx0, ffn_shexp, shared_gate);
+    cb(ffn_shexp, "ffn_shexp_gated", il);
+    return ffn_shexp;
 }
 
 // PLE n-gram hash embedding: each token gathers ple_n_heads rows of a shared table.
@@ -1614,4 +1647,208 @@ ggml_tensor * llama_model_qwen4exp::graph::build_ple(
     cb(conv_out, "ple_conv_out", il);
 
     return ggml_add(ctx0, hidden, ggml_add(ctx0, gated, conv_out));
+}
+
+// Stage graphs use the original model helpers and bounded GPU working sets.
+void llama_model_qwen4exp::graph::build_layer_first(const llm_graph_params & params) {
+    const int il = params.lf_layer;
+    const int64_t hc = hparams.dsv4_hc_mult;
+    auto input = [&](int slot, ggml_type type, int64_t a, int64_t b, int64_t c = 1) {
+        auto * t = ggml_new_tensor_3d(ctx0,type,a,b,c);
+        ggml_set_input(t); ggml_format_name(t,"layer_first_input_%d",slot);
+        res->lf_in[slot]=t; return t;
+    };
+    const char * alias_env=std::getenv("LLAMA_MOE_LAYER_FIRST_OUTPUT_ALIAS");
+    const bool output_alias=alias_env && std::atoi(alias_env)!=0;
+    auto output = [&](int slot, ggml_tensor * t) {
+        if(output_alias && ggml_is_contiguous(t))ggml_set_output(t);
+        else t=ggml_cont(ctx0,t);
+        res->lf_out[slot]=t;
+        ggml_format_name(t,"lf%d_out%d-%d",params.lf_stage,slot,il);ggml_build_forward_expand(gf,t);
+    };
+    auto resident_view=[&](int slot,int64_t a,int64_t b,int64_t c) {
+        auto * base=params.lf_activations.at(slot);
+        GGML_ASSERT(base && a*b*c>0);
+        return ggml_view_3d(ctx0,base,a,b,c,a*sizeof(float),a*b*sizeof(float),
+            params.lf_token_offset*base->ne[0]*sizeof(float));
+    };
+    if (params.lf_stage==1) {
+        ggml_tensor * h;
+        if (il==0) {
+            auto * emb=build_inp_embd(model.tok_embd);
+            h=ggml_repeat_4d(ctx0,ggml_reshape_3d(ctx0,emb,n_embd,1,n_tokens),n_embd,hc,n_tokens,1);
+        } else { h=params.lf_activations[2] ? resident_view(2,n_embd,hc,n_tokens)
+                                            : input(0,GGML_TYPE_F32,n_embd,hc,n_tokens); }
+        auto * inp=build_inp_mem_hybrid();
+        if(res->lf_input_cache && !hparams.is_recr(il)) {
+            auto * attn=inp->get_attn();
+            auto * cached=res->lf_input_cache->bind("causal-mask",attn->self_kq_mask);
+            if(cached) {
+                attn->lf_cached_mask=cached;attn->self_kq_mask=cached->host;
+                attn->self_kq_mask_cnv=cached->device;
+            }
+        }
+        const auto * hyb=static_cast<const llama_memory_hybrid_idx_context *>(inp->mctx);
+        if (hparams.is_ple(il)) { h=build_ple(inp->get_recr(),build_inp_ple(hyb),h,il); }
+        ggml_tensor * inject=nullptr;
+        auto * cur=build_hc_mix(h,model.layers[il].hc_attn_norm,model.layers[il].hc_attn_down,
+            model.layers[il].hc_attn_up,model.layers[il].hc_attn_inject,&inject,il);
+        ggml_build_forward_expand(gf,cur);
+        if (hparams.is_recr(il)) { cur=build_layer_attn_linear(inp->get_recr(),cur,il); }
+        else {
+            int sections[4];std::copy(std::begin(hparams.rope_sections),std::begin(hparams.rope_sections)+4,sections);
+            cur=build_layer_attn(inp->get_attn(),hyb,cur,build_inp_pos(),sections,il);
+        }
+        if (il==n_layer-1) {
+            if (n_outputs==0) {
+                // Cache writes and chronological attention remain in this graph;
+                // no subsequent token-local output is needed for this slice.
+                ggml_build_forward_expand(gf,cur);
+                return;
+            }
+            auto * out_ids=build_inp_out_ids();
+            cur=ggml_get_rows(ctx0,cur,out_ids);
+            inject=ggml_get_rows(ctx0,inject,out_ids);
+            h=ggml_reshape_2d(ctx0,h,n_embd*hc,h->ne[2]);
+            h=ggml_get_rows(ctx0,h,out_ids);
+            h=ggml_reshape_3d(ctx0,h,n_embd,hc,h->ne[1]);
+        }
+        h=build_hc_combine(h,cur,inject,il);
+        cur=build_hc_mix(h,model.layers[il].hc_ffn_norm,model.layers[il].hc_ffn_down,
+            model.layers[il].hc_ffn_up,model.layers[il].hc_ffn_inject,&inject,il);
+        output(0,h);output(1,cur);output(2,inject);return;
+    }
+    if (params.lf_stage==2) {
+        auto * x=params.lf_activations[0]
+            ? ggml_view_2d(ctx0,params.lf_activations[0],n_embd,n_tokens,
+                params.lf_activations[0]->nb[1],params.lf_token_offset*n_embd*sizeof(float))
+            : input(0,GGML_TYPE_F32,n_embd,n_tokens);
+        res->lf_route_only=true;
+        auto * routed=build_layer_ffn(x,il,params.lf_defer_shared);
+        if (!params.lf_defer_shared) { output(0,routed); }
+        return;
+    }
+    if (params.lf_stage==3 || params.lf_stage==6) {
+        // Weight pointers belong to a group lease spanning ALL its token tiles.
+        ggml_tensor * x;
+        if(params.lf_stage==6 && params.lf_activations[0]) {
+            auto * base=params.lf_activations[0];
+            x=ggml_view_3d(ctx0,base,n_embd,1,n_tokens,n_embd*sizeof(float),n_embd*sizeof(float),params.lf_token_offset*n_embd*sizeof(float));
+        } else if (params.lf_activations[0]) {
+            auto * rows=input(0,GGML_TYPE_I32,n_tokens,1);
+            x=ggml_reshape_3d(ctx0,ggml_get_rows(ctx0,params.lf_activations[0],rows),n_embd,1,n_tokens);
+        } else { x=input(0,GGML_TYPE_F32,n_embd,1,n_tokens); }
+        auto * ids=input(1,GGML_TYPE_I32,params.lf_stage==6 ? n_expert_used : 1,n_tokens);
+        // Small expert groups must not change the K-reduction partition merely
+        // because their launch grid has fewer tiles than the resident reference.
+        auto expert_mm = [&](ggml_tensor * w, ggml_tensor * a) {
+            auto * t = ggml_mul_mat_id(ctx0,w,a,ids);
+            t->op_params[0] = 0x4c464d51; // "LFMQ": complete-K MMQ tiles
+            t->op_params[1] = params.lf_reference_tokens;
+            return t;
+        };
+        auto * up=expert_mm(params.lf_weights[0],x);
+        auto * gate=expert_mm(params.lf_weights[1],x);
+        ggml_tensor * act;
+        const float limit=hparams.swiglu_clamp_exp[il];
+        if (limit>1e-6f) {
+            act=ggml_mul(ctx0,ggml_clamp(ctx0,ggml_silu(ctx0,gate),-INFINITY,limit),ggml_clamp(ctx0,up,-limit,limit));
+        } else { act=ggml_swiglu_split(ctx0,gate,up); }
+        auto * down=expert_mm(params.lf_weights[2],act);
+        if(params.lf_accumulate && params.lf_stage==6) {
+            auto * weights=params.lf_activations[6] ? resident_view(6,1,n_expert_used,n_tokens)
+                : input(3,GGML_TYPE_F32,1,n_expert_used,n_tokens);
+            auto * weighted=ggml_mul(ctx0,down,weights);ggml_build_forward_expand(gf,weighted);
+            auto * sum=ggml_view_2d(ctx0,weighted,n_embd,n_tokens,weighted->nb[2],0);
+            for(int64_t j=1;j<n_expert_used;++j) {
+                auto * row=ggml_view_2d(ctx0,weighted,n_embd,n_tokens,weighted->nb[2],j*weighted->nb[1]);
+                sum=ggml_add(ctx0,sum,row);ggml_build_forward_expand(gf,sum);
+            }
+            output(0,sum);return;
+        }
+        if(params.lf_accumulate && params.lf_activations[1] && params.lf_stage==3) {
+            auto * tokens=input(2,GGML_TYPE_I32,n_tokens,1);
+            auto * weights=input(3,GGML_TYPE_F32,1,n_tokens);
+            auto * mapping=input(4,GGML_TYPE_I32,n_tokens*n_expert_used,1);
+            auto * flat=ggml_reshape_2d(ctx0,down,n_embd,n_tokens);
+            if(params.lf_accum_audit) {ggml_set_output(flat);res->lf_out[1]=flat;}
+            auto * weighted=ggml_pad(ctx0,ggml_mul(ctx0,flat,weights),0,1,0,0);
+            ggml_set_output(weighted); // Keep fused inputs alive through the final sum.
+            ggml_build_forward_expand(gf,weighted);
+            auto * sum=ggml_get_rows(ctx0,params.lf_activations[1],tokens);
+            ggml_set_name(sum,"lf3_accum_gather");
+            for(int64_t j=0;j<n_expert_used;++j) {
+                auto * rows=ggml_view_1d(ctx0,mapping,n_tokens,j*n_tokens*sizeof(int32_t));
+                auto * contribution=ggml_get_rows(ctx0,weighted,rows);
+                sum=ggml_add(ctx0,sum,contribution);ggml_build_forward_expand(gf,sum);
+            }
+            auto * scatter=ggml_set_rows(ctx0,params.lf_activations[1],sum,tokens);
+            res->lf_out[0]=scatter;ggml_set_name(scatter,"lf3_accumulate");ggml_build_forward_expand(gf,scatter);
+            return;
+        }
+        if (params.lf_activations[1] && params.lf_stage==3) {
+            GGML_ASSERT(params.lf_stage==3 && params.lf_valid_rows>0 && params.lf_valid_rows<=size_t(n_tokens));
+            auto * rows=input(2,GGML_TYPE_I64,params.lf_valid_rows,1);
+            auto * flat=ggml_reshape_2d(ctx0,down,n_embd,n_tokens);
+            auto * real=ggml_view_2d(ctx0,flat,n_embd,params.lf_valid_rows,flat->nb[1],0);
+            auto * scatter=ggml_set_rows(ctx0,params.lf_activations[1],real,rows);
+            res->lf_out[0]=scatter;ggml_format_name(scatter,"lf3_device_scatter-%d",il);
+            ggml_build_forward_expand(gf,scatter);
+        } else { output(0,params.lf_stage==6 ? down : ggml_reshape_2d(ctx0,down,n_embd,n_tokens)); }
+        return;
+    }
+    if (params.lf_stage==4) {
+        auto * h=params.lf_activations[3] ? resident_view(3,n_embd,hc,n_tokens)
+                                           : input(0,GGML_TYPE_F32,n_embd,hc,n_tokens);
+        if(params.lf_accumulate) {
+            auto * sum=params.lf_activations[1]
+                ? ggml_view_2d(ctx0,params.lf_activations[1],n_embd,n_tokens,n_embd*sizeof(float),params.lf_token_offset*n_embd*sizeof(float))
+                : input(1,GGML_TYPE_F32,n_embd,n_tokens);
+            if(params.lf_defer_shared) {
+                // Shared work is token-local: compute it just before consumption.
+                // Keep the expert reduction unchanged and avoid a window-sized
+                // shared-result buffer without adding shared values first.
+                auto * x=resident_view(0,n_embd,n_tokens,1);
+                auto * shared=build_layer_shared_ffn(x,il);
+                if(shared) { sum=ggml_add(ctx0,sum,shared); }
+            } else {
+                auto * shared=params.lf_activations[4] ? resident_view(4,n_embd,n_tokens,1) : input(3,GGML_TYPE_F32,n_embd,n_tokens);
+                sum=ggml_add(ctx0,sum,shared);
+            }
+            auto * inject=params.lf_activations[5] ? resident_view(5,hc,n_tokens,1) : input(4,GGML_TYPE_F32,hc,n_tokens);
+            output(0,build_hc_combine(h,sum,inject,il));return;
+        }
+        auto * slots=params.lf_activations[1]
+            ? ggml_view_3d(ctx0,params.lf_activations[1],n_embd,n_expert_used,n_tokens,
+                n_embd*sizeof(float),n_embd*n_expert_used*sizeof(float),
+                params.lf_token_offset*n_embd*n_expert_used*sizeof(float))
+            : input(1,GGML_TYPE_F32,n_embd,n_expert_used,n_tokens);
+        auto * weights=params.lf_activations[6] ? resident_view(6,1,n_expert_used,n_tokens) : input(2,GGML_TYPE_F32,1,n_expert_used,n_tokens);
+        auto * shared=params.lf_activations[4] ? resident_view(4,n_embd,n_tokens,1) : input(3,GGML_TYPE_F32,n_embd,n_tokens);
+        auto * inject=params.lf_activations[5] ? resident_view(5,hc,n_tokens,1) : input(4,GGML_TYPE_F32,hc,n_tokens);
+        auto * weighted=ggml_mul(ctx0,slots,weights);ggml_build_forward_expand(gf,weighted);
+        std::vector<ggml_tensor *> rows;
+        for (int64_t j=0;j<n_expert_used;++j) {
+            auto * r=ggml_view_2d(ctx0,weighted,n_embd,n_tokens,weighted->nb[2],j*weighted->nb[1]);
+            rows.push_back(r);ggml_build_forward_expand(gf,r);
+        }
+        auto * sum=rows[0];
+        for (size_t j=1;j<rows.size();++j) { sum=ggml_add(ctx0,sum,rows[j]);ggml_build_forward_expand(gf,sum); }
+        output(0,build_hc_combine(h,ggml_add(ctx0,sum,shared),inject,il));return;
+    }
+    if(params.lf_stage==7) {
+        GGML_ASSERT(params.lf_activations[1]);
+        auto * values=input(0,GGML_TYPE_F32,n_embd,n_tokens);
+        auto * rows=input(1,GGML_TYPE_I64,n_tokens,1);
+        auto * out=ggml_set_rows(ctx0,params.lf_activations[1],values,rows);
+        res->lf_out[0]=out;ggml_build_forward_expand(gf,out);return;
+    }
+    if (params.lf_stage==5) {
+        auto * h=params.lf_activations[2] ? resident_view(2,n_embd,hc,n_tokens)
+                                           : input(0,GGML_TYPE_F32,n_embd,hc,n_tokens);
+        auto * cur=build_hc_mix(h,model.hc_head_norm,model.hc_head_down,model.hc_head_up,nullptr,nullptr,-1);
+        res->t_embd=cur;res->t_logits=build_lora_mm(model.output,cur,model.output_s);
+        ggml_build_forward_expand(gf,res->t_logits);return;
+    }
+    GGML_ABORT("unknown layer-first graph stage");
 }

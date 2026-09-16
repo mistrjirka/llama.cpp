@@ -11,6 +11,22 @@
 #include <memory>
 #include "moe-stream.cuh"
 
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+#include <nvtx3/nvToolsExt.h>
+struct moe_nvtx_range {
+    bool active;
+    explicit moe_nvtx_range(const char * name) {
+        static const bool enabled = std::getenv("GGML_CUDA_MOE_NVTX") != nullptr;
+        active = enabled;
+        if (active) { nvtxRangePushA(name); }
+    }
+    ~moe_nvtx_range() { if (active) { nvtxRangePop(); } }
+};
+#else
+struct moe_nvtx_range { explicit moe_nvtx_range(const char *) {} };
+#endif
+
+
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     switch (args.type_x) {
         case GGML_TYPE_Q1_0:
@@ -95,6 +111,8 @@ struct moe_stream_options {
     bool trace = false;
     int group = 16;
     int min_tokens = 64;
+    int trim_rows = 0;
+    bool copy_all = false;
     size_t bytes = 64u * 1024u * 1024u;
 };
 
@@ -115,6 +133,8 @@ static const moe_stream_options & moe_stream_config() {
             }
             return parsed;
         };
+        c.copy_all = integer("GGML_CUDA_MOE_STREAM_COPY_ALL", 0, 0, 1) != 0;
+        c.trim_rows = integer("GGML_CUDA_MOE_STREAM_TRIM_ROWS", 0, 0, 2);
         c.group = integer("GGML_CUDA_MOE_STREAM_GROUP", 16, 1, 512);
         c.min_tokens = integer("GGML_CUDA_MOE_STREAM_MIN_TOKENS", 64, 2, 16384);
         c.bytes = size_t(integer("GGML_CUDA_MOE_STREAM_MIB", 64, 2, 2048)) * 1024 * 1024;
@@ -235,11 +255,15 @@ static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml
     const int group = std::min<int>(moe_stream_config().group,
         (state.slot_bytes - moe_stream_padding) / expert_bytes);
     GGML_ASSERT(group > 0 && original.ids_dst != nullptr);
-    CUDA_CHECK(cudaMemcpyAsync(state.bounds, original.expert_bounds, (n_experts + 1) * sizeof(int32_t),
-        cudaMemcpyDeviceToHost, compute));
-    CUDA_CHECK(cudaEventRecord(state.metadata, compute));
-    // Exactly one host metadata wait per projection, not one per expert.
-    CUDA_CHECK(cudaEventSynchronize(state.metadata));
+    const bool copy_all = moe_stream_config().copy_all;
+    // Dense scheduling can enqueue DMA before GPU routing has completed.
+    if (!copy_all) {
+        moe_nvtx_range range("moe_metadata_wait");
+        CUDA_CHECK(cudaMemcpyAsync(state.bounds, original.expert_bounds, (n_experts + 1) * sizeof(int32_t),
+            cudaMemcpyDeviceToHost, compute));
+        CUDA_CHECK(cudaEventRecord(state.metadata, compute));
+        CUDA_CHECK(cudaEventSynchronize(state.metadata));
+    }
 
     cudaPointerAttributes attributes{};
     const cudaError_t pointer_result = cudaPointerGetAttributes(&attributes, src0->data);
@@ -256,7 +280,7 @@ static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml
     int wave = 0;
     for (int first = 0; first < n_experts; first += group) {
         const int count = std::min(group, n_experts - first);
-        if (state.bounds[first] == state.bounds[first + count]) { continue; }
+        if (!copy_all && state.bounds[first] == state.bounds[first + count]) { continue; }
         const int s = wave++ % 2;
         if (state.used[s]) {
             // GPU readers protect the device slot; DMA completion separately
@@ -270,11 +294,15 @@ static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml
 
         // Consecutive live experts are coalesced. Empty experts keep zero rows
         // in the original bounds map, so no token routing has to be repeated.
+        char range_name[256];
+        std::snprintf(range_name, sizeof(range_name), "moe_copy:%s:%d-%d", src0->name, first, first + count);
+        {
+        moe_nvtx_range range(range_name);
         int e = first;
         while (e < first + count) {
-            if (state.bounds[e] == state.bounds[e + 1]) { ++e; continue; }
+            if (!copy_all && state.bounds[e] == state.bounds[e + 1]) { ++e; continue; }
             const int begin = e++;
-            while (e < first + count && state.bounds[e] != state.bounds[e + 1]) { ++e; }
+            while (e < first + count && (copy_all || state.bounds[e] != state.bounds[e + 1])) { ++e; }
             const size_t bytes = size_t(e - begin) * expert_bytes;
             const size_t dst_offset = size_t(begin - first) * expert_bytes;
             const char * source = static_cast<const char *>(src0->data) + size_t(begin) * expert_bytes;
@@ -284,16 +312,32 @@ static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml
                 state.staged_bytes += bytes;
             }
             CUDA_CHECK(cudaMemcpyAsync(state.weights[s] + dst_offset, source, bytes, cudaMemcpyHostToDevice, state.copy));
+            // MMQ can read past a live run into an unused expert slot.
+            CUDA_CHECK(cudaMemsetAsync(state.weights[s] + dst_offset + bytes, 0, moe_stream_padding, state.copy));
             state.h2d_bytes += bytes;
         }
         CUDA_CHECK(cudaMemsetAsync(state.weights[s] + size_t(count) * expert_bytes, 0, moe_stream_padding, state.copy));
         CUDA_CHECK(cudaEventRecord(state.ready[s], state.copy));
         CUDA_CHECK(cudaStreamWaitEvent(compute, state.ready[s], 0));
-
+        }
+        std::snprintf(range_name, sizeof(range_name), "moe_compute:%s:%d-%d", src0->name, first, first + count);
+        moe_nvtx_range range(range_name);
         mmq_args args = original;
         args.x = state.weights[s];
         args.expert_bounds = original.expert_bounds + first;
         args.nchannels_x = args.nchannels_y = count;
+        if (!copy_all && moe_stream_config().trim_rows != 0) {
+            int64_t max_rows = 0;
+            for (int expert = first; expert < first + count; ++expert) {
+                max_rows = std::max<int64_t>(max_rows, state.bounds[expert + 1] - state.bounds[expert]);
+            }
+            GGML_ASSERT(max_rows > 0 && max_rows <= original.ncols_max);
+            // Each channel visits only its routed rows; keep global output IDs.
+            args.ncols_max = max_rows;
+            if (moe_stream_config().trim_rows == 2) {
+                args.ncols_opt = std::min(original.ncols_opt, max_rows);
+            }
+        }
         // Keep original logical model geometry/tile selection. Only physical
         // channels and their weight base change; output IDs stay global.
         ggml_cuda_mul_mat_q_switch_type(ctx, args, compute);
@@ -320,6 +364,7 @@ static void ggml_cuda_moe_stream_mmq(ggml_backend_cuda_context & ctx, const ggml
 
 void ggml_cuda_mul_mat_q(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst) {
+    moe_nvtx_range op_range(src0->name);
     GGML_ASSERT(        src1->type == GGML_TYPE_F32);
     GGML_ASSERT(        dst->type  == GGML_TYPE_F32);
     GGML_ASSERT(!ids || ids->type  == GGML_TYPE_I32); // Optional, used for batched GGML_MUL_MAT_ID.
@@ -525,7 +570,7 @@ void ggml_cuda_mul_mat_q(
         ne00, ne01, ne_get_rows, s01, ne_get_rows, s1,
         ne02, ne02, s02, s12, s2,
         ne03, ne13, s03, s13, s3,
-        ne12, ncols_opt};
+        ne12, ncols_opt, dst->op_params[0] == 0x4c464d51}; // "LFMQ": stable layer-first reduction
 
     if (ggml_cuda_moe_stream_supported(dst, cc)) {
         ggml_cuda_moe_stream_mmq(ctx, src0, args, stream);

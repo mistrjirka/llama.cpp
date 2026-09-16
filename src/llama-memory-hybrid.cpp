@@ -296,3 +296,8 @@ const llama_kv_cache_context * llama_memory_hybrid_context::get_attn() const {
 const llama_memory_recurrent_context * llama_memory_hybrid_context::get_recr() const {
     return static_cast<const llama_memory_recurrent_context *>(ctx_recr.get());
 }
+
+void llama_memory_hybrid_context::set_layer_view(uint32_t n_kv, bool continuation) {
+    static_cast<llama_kv_cache_context *>(ctx_attn.get())->set_layer_view_n_kv(n_kv);
+    static_cast<llama_memory_recurrent_context *>(ctx_recr.get())->set_layer_continuation(continuation);
+}

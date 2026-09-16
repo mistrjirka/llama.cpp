@@ -1044,6 +1044,21 @@ extern "C" {
             struct llama_context * ctx,
               struct llama_batch   batch);
 
+    // Experimental layer-first prefill of one complete uncached text suffix.
+    // The caller assembles the full suffix before submitting it. n_batch remains
+    // the ordinary decode limit; n_ubatch still bounds chronological mixer work.
+    // Each required nonresident expert projection is retained across all of its
+    // assigned token tiles in this request. The current adapter supports one
+    // Qwen4Exp sequence, without LoRA, backend samplers or recurrent rollback rows.
+    // Check support before admission. Capacity errors fail the complete request;
+    // callers should preserve its boundary rather than retry smaller suffixes.
+    // Return codes follow llama_decode. After a partial compute failure the
+    // affected sequence may be invalidated; restore a saved prefix before reuse.
+    LLAMA_API bool llama_supports_prefill_request(const struct llama_context * ctx);
+    LLAMA_API int32_t llama_prefill_request(
+            struct llama_context * ctx,
+              struct llama_batch   uncached_suffix);
+
     // Refresh an MTP draft cache without requesting logits or hidden outputs.
     // Requires nonempty token + target-hidden inputs and explicit zero logits flags.
     // Invalid requests return -1 before changing state. Single-layer Qwen35/MoE

@@ -401,3 +401,25 @@ if (GGML_CUDA AND TARGET ggml-cuda AND TARGET ggml-cpu)
     target_link_libraries(test-moe-stream PRIVATE ggml ggml-cuda ggml-cpu)
     target_compile_features(test-moe-stream PRIVATE cxx_std_17)
 endif()
+
+# Header-only server request admission/dispatch contract.
+add_executable(test-request-prefill test-request-prefill.cpp)
+add_test(NAME test-request-prefill COMMAND test-request-prefill)
+
+# Full-request expert workspace: real rows scatter once; padded rows stay private.
+llama_build(test-layer-first-workspace.cpp)
+llama_test(test-layer-first-workspace)
+
+# Quantized small-tail arithmetic, independent of expert assignment tile shape.
+llama_build(test-layer-first-tail.cpp)
+llama_test(test-layer-first-tail)
+set_tests_properties(test-layer-first-tail PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "GGML_CUDA_DISABLE_GRAPHS=1")
+
+# Verify both router numerics and that CUDA's optimized path ran with aliased inputs.
+llama_build(test-moe-router-fusion.cpp)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if (Python3_Interpreter_FOUND)
+    add_test(NAME test-moe-router-fusion COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test-moe-router-fusion.py $<TARGET_FILE:test-moe-router-fusion>)
+    set_tests_properties(test-moe-router-fusion PROPERTIES SKIP_RETURN_CODE 77)
+endif()

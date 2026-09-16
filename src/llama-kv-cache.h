@@ -12,6 +12,7 @@ struct llama_cparams;
 struct llama_hparams;
 struct llama_model;
 struct llama_context;
+struct llama_lf_kv_rotation;
 
 //
 // llama_kv_cache
@@ -116,7 +117,13 @@ public:
         // a model can hold more than one cache, so the tensor names have to stay unique
                  const char *   name_tag = "");
 
-    ~llama_kv_cache() = default;
+    ~llama_kv_cache();
+    bool layer_rotation_enabled() const;
+    size_t layer_rotation_saved_bytes(ggml_backend_dev_t device) const;
+    void layer_rotation_begin(const slot_info & slots,uint32_t n_kv);
+    void layer_rotation_enter(int32_t il,ggml_backend_t compute);
+    void layer_rotation_leave(int32_t il,ggml_backend_t compute);
+    void layer_rotation_end();
 
     //
     // llama_memory_i
@@ -188,6 +195,7 @@ public:
     //
 
     uint32_t get_n_kv(const slot_info & sinfo) const;
+    uint32_t get_n_kv_visible(const slot_info & sinfo, llama_pos max_position) const;
 
     // get views of the current state of the cache
     ggml_tensor * get_k(ggml_context * ctx, int32_t il, uint32_t n_kv, const slot_info & sinfo) const;
@@ -248,6 +256,9 @@ public:
     void get_prev_tokens(const llama_ubatch & ubatch, uint32_t n, std::vector<llama_token> & res) const;
 
 private:
+    std::unique_ptr<llama_lf_kv_rotation> layer_rotation;
+    ggml_tensor * layer_rotation_tensor(int32_t il,bool value) const;
+    void layer_rotation_prefetch(int32_t il);
     const llama_model & model;
     const llama_hparams & hparams;
 
@@ -356,6 +367,10 @@ private:
 
 class llama_kv_cache_context : public llama_memory_context_i {
 public:
+    llama_kv_cache::slot_info layer_slice_slots(uint32_t offset, uint32_t count) const;
+    uint32_t layer_slice_n_kv(const llama_ubatch & ubatch) const;
+    void set_layer_view_n_kv(uint32_t value) { n_kv = value; }
+
     // some shorthands
     using slot_info_vec_t  = llama_kv_cache::slot_info_vec_t;
     using stream_copy_info = llama_kv_cache::stream_copy_info;
@@ -397,6 +412,12 @@ public:
     //
 
     uint32_t get_n_kv() const;
+    bool layer_rotation_enabled() const {return kv->layer_rotation_enabled();}
+    size_t layer_rotation_saved_bytes(ggml_backend_dev_t device) const {return kv->layer_rotation_saved_bytes(device);}
+    void layer_rotation_begin() const {kv->layer_rotation_begin(sinfos[i_cur],n_kv);}
+    void layer_rotation_enter(int32_t il,ggml_backend_t compute) const {kv->layer_rotation_enter(il,compute);}
+    void layer_rotation_leave(int32_t il,ggml_backend_t compute) const {kv->layer_rotation_leave(il,compute);}
+    void layer_rotation_end() const {kv->layer_rotation_end();}
 
     ggml_type type_k() const;
     ggml_type type_v() const;
@@ -468,4 +489,5 @@ private:
     // a heuristic, to avoid attending the full cache if it is not yet utilized
     // as the cache gets filled, the benefit from this heuristic disappears
     int32_t n_kv;
+    mutable std::unordered_map<llama_pos,uint32_t> layer_visible_extents;
 };

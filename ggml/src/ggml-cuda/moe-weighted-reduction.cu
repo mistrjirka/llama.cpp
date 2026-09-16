@@ -63,3 +63,39 @@ void ggml_cuda_op_moe_weighted_reduction(ggml_backend_cuda_context & ctx,
                                   (float *) dst->data, n_embd, n_tokens, (int) n_expert_used, stream);
     CUDA_CHECK(cudaGetLastError());
 }
+
+static __global__ void lf_accum_f32(const float * state, const int32_t * tokens,
+                                   const float * weighted, const int32_t * mapping,
+                                   float * dst, int64_t width, int rows, int ranks) {
+    const int owner = blockIdx.x;
+    const int64_t col = int64_t(blockIdx.y)*blockDim.x + threadIdx.x;
+    if (col >= width) {
+        return;
+    }
+    float sum = state[int64_t(tokens[owner])*width+col];
+    for (int rank=0; rank<ranks; ++rank) {
+        const int row = mapping[rank*rows+owner];
+        sum = __fadd_rn(sum, weighted[int64_t(row)*width+col]);
+    }
+    dst[int64_t(owner)*width+col] = sum;
+}
+
+void ggml_cuda_op_lf_accum(ggml_backend_cuda_context & ctx,
+                          const ggml_tensor * state, const ggml_tensor * tokens,
+                          const ggml_tensor * weighted, const ggml_tensor * mapping,
+                          int ranks, ggml_tensor * dst) {
+    const int rows = int(dst->ne[1]);
+    const int64_t width = dst->ne[0];
+    GGML_ASSERT(state->type == GGML_TYPE_F32 && weighted->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(tokens->type == GGML_TYPE_I32 && mapping->type == GGML_TYPE_I32);
+    GGML_ASSERT(ggml_is_contiguous(state) && ggml_is_contiguous(weighted) && ggml_is_contiguous(dst));
+    GGML_ASSERT(ggml_is_contiguous(tokens) && ggml_is_contiguous(mapping));
+    GGML_ASSERT(tokens->ne[0] == rows && weighted->ne[0] == width && weighted->ne[1] == rows+1);
+    GGML_ASSERT(mapping->ne[0] == int64_t(rows)*ranks && ranks > 0 && ranks <= 10);
+    const dim3 blocks(rows,(width+255)/256,1);
+    lf_accum_f32<<<blocks,256,0,ctx.stream()>>>(
+        (const float *)state->data,(const int32_t *)tokens->data,
+        (const float *)weighted->data,(const int32_t *)mapping->data,
+        (float *)dst->data,width,rows,ranks);
+    CUDA_CHECK(cudaGetLastError());
+}

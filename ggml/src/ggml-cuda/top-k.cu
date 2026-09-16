@@ -48,10 +48,12 @@ static int next_power_of_2(int x) {
 
 #endif                            // CUB_TOP_K_AVAILABLE
 
-#if !defined(GGML_CUDA_USE_CUB) && defined(GGML_USE_HIP)
+#if defined(GGML_CUDA_USE_CUB) || defined(GGML_USE_HIP)
 
+template<bool CANONICAL_ZERO=false>
 static __device__ __forceinline__ uint32_t top_k_float_to_ordered(float value) {
-    const uint32_t bits = __float_as_uint(value);
+    uint32_t bits = __float_as_uint(value);
+    if(CANONICAL_ZERO && (bits&0x7fffffffU)==0)bits=0;
     const uint32_t mask = (uint32_t) (-(int32_t) (bits >> 31)) | 0x80000000U;
     return bits ^ mask;
 }
@@ -71,7 +73,7 @@ static __global__ void top_k_radix_init(top_k_radix_state * states, int nrows, i
     }
 }
 
-template<int BLOCK_SIZE, int RADIX_BITS>
+template<int BLOCK_SIZE, int RADIX_BITS, bool CANONICAL_ZERO=false>
 static __global__ void top_k_radix_histogram(
         const float * __restrict__ src,
         const top_k_radix_state * __restrict__ states,
@@ -94,7 +96,7 @@ static __global__ void top_k_radix_histogram(
     for (int col = row_block * BLOCK_SIZE + tid;
          col < ncols;
          col += blocks_per_row * BLOCK_SIZE) {
-        const uint32_t key = top_k_float_to_ordered(row_src[col]);
+        const uint32_t key = top_k_float_to_ordered<CANONICAL_ZERO>(row_src[col]);
         if ((key & state.prefix_mask) == state.prefix) {
             atomicAdd(&histogram[(key >> shift) & (NBINS - 1)], 1);
         }
@@ -177,9 +179,38 @@ static __global__ void top_k_radix_gather(
     }
 }
 
+#ifdef GGML_CUDA_USE_CUB
+// QSA consumes a set of cells. Keep cutoff ties in physical-cell order.
+static __global__ void qsa_top_k_radix_gather(
+        const float * src, int * dst, const top_k_radix_state * states, int ncols, int k) {
+    const int row=blockIdx.x,tid=threadIdx.x,lane=tid&31,warp=tid>>5;
+    const auto state=states[row];
+    __shared__ int counts_g[8],counts_e[8],offset_g[8],offset_e[8],base_g,base_e;
+    if(tid==0) {base_g=0;base_e=0;}
+    __syncthreads();
+    for(int start=0;start<ncols;start+=256) {
+        const int col=start+tid;
+        const uint32_t key=col<ncols ? top_k_float_to_ordered<true>(src[size_t(row)*ncols+col]) : 0;
+        const bool greater=col<ncols && key>state.prefix;
+        const bool equal=col<ncols && key==state.prefix;
+        const unsigned bg=__ballot_sync(0xffffffffu,greater),be=__ballot_sync(0xffffffffu,equal);
+        if(lane==0) {counts_g[warp]=__popc(bg);counts_e[warp]=__popc(be);}
+        __syncthreads();
+        if(tid==0) {
+            for(int w=0;w<8;++w) {offset_g[w]=base_g;offset_e[w]=base_e;base_g+=counts_g[w];base_e+=counts_e[w];}
+        }
+        __syncthreads();
+        const unsigned lower=(1u<<lane)-1u;
+        if(greater)dst[size_t(row)*k+offset_g[warp]+__popc(bg&lower)]=col;
+        const int eq=offset_e[warp]+__popc(be&lower);
+        if(equal && eq<state.rank)dst[size_t(row)*k+k-state.rank+eq]=col;
+    }
+}
+#endif
+
 static void top_k_radix_cuda(
         ggml_cuda_pool & pool,
-        const float * src, int * dst, int ncols, int nrows, int k, cudaStream_t stream) {
+        const float * src, int * dst, int ncols, int nrows, int k, cudaStream_t stream, bool ordered_ties=false) {
     constexpr int BLOCK_SIZE = 256;
     constexpr int RADIX_BITS = 8;
     constexpr int NBINS = 1 << RADIX_BITS;
@@ -194,12 +225,20 @@ static void top_k_radix_cuda(
 
     const dim3 row_grid(blocks_per_row * nrows);
     for (int shift = 32 - RADIX_BITS; shift >= 0; shift -= RADIX_BITS) {
+        if(ordered_ties) {
+            top_k_radix_histogram<BLOCK_SIZE, RADIX_BITS, true><<<row_grid, BLOCK_SIZE, 0, stream>>>(src,states,histograms,ncols,blocks_per_row,shift);
+        } else {
         top_k_radix_histogram<BLOCK_SIZE, RADIX_BITS>
             <<<row_grid, BLOCK_SIZE, 0, stream>>>(
                 src, states, histograms, ncols, blocks_per_row, shift);
+        }
         top_k_radix_select<BLOCK_SIZE, RADIX_BITS>
             <<<nrows, BLOCK_SIZE, 0, stream>>>(histograms, states, blocks_per_row, shift);
     }
+
+#ifdef GGML_CUDA_USE_CUB
+    if(ordered_ties) {qsa_top_k_radix_gather<<<nrows,256,0,stream>>>(src,dst,states,ncols,k);return;}
+#endif
 
     top_k_radix_reset_counters
         <<<(nrows + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE, 0, stream>>>(states, nrows);
@@ -208,7 +247,7 @@ static void top_k_radix_cuda(
             src, dst, states, ncols, k, blocks_per_row);
 }
 
-#endif // !defined(GGML_CUDA_USE_CUB) && defined(GGML_USE_HIP)
+#endif // defined(GGML_CUDA_USE_CUB) || defined(GGML_USE_HIP)
 
 void ggml_cuda_op_top_k(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0   = dst->src[0];
@@ -225,6 +264,12 @@ void ggml_cuda_op_top_k(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int64_t    nrows = ggml_nrows(src0);
     const int64_t    k     = dst->ne[0];
     ggml_cuda_pool & pool  = ctx.pool();
+#ifdef GGML_CUDA_USE_CUB
+    // QSA mask construction needs the selected set, not score order.
+    if(dst->op_params[0]==0x5153544b && ncols>=8192 && nrows>1) {
+        top_k_radix_cuda(pool,src0_d,dst_d,ncols,nrows,k,stream,true);return;
+    }
+#endif
 #ifdef CUB_TOP_K_AVAILABLE
     // TODO: Switch to `DeviceSegmentedTopK` for multi-row TopK once implemented
     // https://github.com/NVIDIA/cccl/issues/6391

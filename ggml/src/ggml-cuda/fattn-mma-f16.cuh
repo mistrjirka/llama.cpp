@@ -2071,7 +2071,8 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
 static constexpr __host__ __device__ bool ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse(
         const int DKQ, const int DV, const int ncols1, const int ncols2) {
-    return (DKQ == 512 && DV == 512 && ncols1 == 1 && ncols2 == 8) ||
+    return (DKQ == 256 && DV == 256 && ncols1 == 1 && (ncols2 == 8 || ncols2 == 32)) ||
+           (DKQ == 512 && DV == 512 && ncols1 == 1 && ncols2 == 8) ||
            (DKQ == 576 && DV == 512 && ncols1 == 1 && ncols2 == 16);
 }
 
@@ -2704,6 +2705,8 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
     extern DECL_FATTN_MMA_F16_CASE(DKQ, DV, (ncols)/ 4,  4); \
     extern DECL_FATTN_MMA_F16_CASE(DKQ, DV, (ncols)/ 8,  8); \
     extern DECL_FATTN_MMA_F16_CASE(DKQ, DV, (ncols)/16, 16); \
+
+extern DECL_FATTN_MMA_F16_CASE(256, 256, 1, 32);
 
 DECL_FATTN_MMA_F16_CASE_ALL_NCOLS2( 64,  64,   8)
 DECL_FATTN_MMA_F16_CASE_ALL_NCOLS2( 80,  80,   8)

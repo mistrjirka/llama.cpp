@@ -1289,6 +1289,7 @@ uint32_t llama_memory_recurrent_context::get_head() const {
 }
 
 int32_t llama_memory_recurrent_context::get_rs_z() const {
+    if (layer_continuation) { return -1; }
     return is_full ? 0 : mem->rs_z;
 }
 
@@ -1309,6 +1310,7 @@ ggml_tensor * llama_memory_recurrent_context::get_p_l(int32_t il) const {
 }
 
 int32_t llama_memory_recurrent_context::s_copy(int i) const {
+    if (layer_continuation) { return int32_t(mem->head) + i; }
     const uint32_t cell_idx = i + mem->head;
     const int32_t  src0     = mem->cells[cell_idx].src0;
 

@@ -176,6 +176,7 @@ public:
     ggml_tensor * get_p_l(int32_t il) const;
 
     int32_t s_copy(int i) const;
+    void set_layer_continuation(bool value) { layer_continuation = value; }
 
 private:
     const llama_memory_status status;
@@ -191,5 +192,6 @@ private:
     // TODO: extract all the state like `head` and `n` here
     //
 
+    bool layer_continuation = false;
     const bool is_full = false;
 };

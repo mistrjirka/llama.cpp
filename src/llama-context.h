@@ -15,6 +15,7 @@
 #include <vector>
 
 struct llama_model;
+struct llama_lf_residency;
 class llama_batch_allocr;
 
 class llama_io_read_i;
@@ -143,7 +144,8 @@ struct llama_context {
                        ggml_status & ret);
 
     int encode(const llama_batch & batch_inp);
-    int decode(const llama_batch & batch_inp, bool mtp_cache_only = false);
+    int decode(const llama_batch & batch_inp, bool mtp_cache_only = false, bool request_prefill = false);
+    bool layer_first_supported() const;
 
     //
     // state save/load
@@ -268,6 +270,9 @@ public:
     bool set_sampler(llama_seq_id seq_id, llama_sampler * sampler);
 
 private:
+    std::shared_ptr<llama_lf_residency> layer_first_residency;
+    llm_graph_result * process_ubatch_layer_first(
+        const llama_ubatch & ubatch, llama_memory_context_i * mctx, ggml_status & status);
     llm_graph_params graph_params(
                         llm_graph_result * res,
                       const llama_ubatch & ubatch,

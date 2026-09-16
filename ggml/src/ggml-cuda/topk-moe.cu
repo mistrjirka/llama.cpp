@@ -1,6 +1,7 @@
 #include "ggml-cuda/common.cuh"
 #include "ggml.h"
 #include "topk-moe.cuh"
+#include "topk-moe-audit.cuh"
 
 #include <cmath>
 #include <initializer_list>
@@ -362,6 +363,31 @@ void ggml_cuda_op_topk_moe(ggml_backend_cuda_context &     ctx,
     const int n_experts = logits->ne[0];
     const int n_rows    = logits->ne[1];
 
+    // The generic graph allocator may reuse an input after its first unfused
+    // consumer. In a fused multi-block router, compact output writes can then
+    // overwrite logits that another block has not read yet. Preserve that input
+    // on the same CUDA stream before launching; never fall back to a different
+    // routing arithmetic merely because allocation addresses changed.
+    auto overlaps = [](const ggml_tensor * a, const ggml_tensor * b) {
+        const uintptr_t ab = reinterpret_cast<uintptr_t>(a->data);
+        const uintptr_t bb = reinterpret_cast<uintptr_t>(b->data);
+        return ab < bb + ggml_nbytes(b) && bb < ab + ggml_nbytes(a);
+    };
+    ggml_cuda_pool_alloc<char> protected_logits(ctx.pool());
+    ggml_tensor logits_view = *logits;
+    const bool stage_logits = n_rows > TOPK_MOE_ROWS_PER_BLOCK &&
+        (overlaps(logits, weights) || overlaps(logits, ids));
+    if (stage_logits) {
+        protected_logits.alloc(ggml_nbytes(logits));
+        CUDA_CHECK(cudaMemcpyAsync(protected_logits.get(), logits->data, ggml_nbytes(logits),
+                                   cudaMemcpyDeviceToDevice, ctx.stream()));
+        logits_view.data = protected_logits.get();
+        logits = &logits_view;
+    }
+    if (std::getenv("GGML_CUDA_DIAG_ROUTER_MATCH")) {
+        std::fprintf(stderr, "ROUTER_FUSED name=%s rows=%d staged_logit_bytes=%zu\n",
+                     logits->name, n_rows, stage_logits ? ggml_nbytes(logits) : size_t(0));
+    }
     const float * logits_d  = (const float *) logits->data;
     float *       weights_d = (float *) weights->data;
     int32_t *     ids_d     = (int32_t *) ids->data;
@@ -386,6 +412,9 @@ void ggml_cuda_op_topk_moe(ggml_backend_cuda_context &     ctx,
     config.with_norm         = with_norm;
     config.delayed_softmax   = args.delayed_softmax;
 
+    ggml_cuda_topk_audit audit(ctx, logits, weights, ids,
+        args.softmax && !args.sigmoid && !args.sqrt_softplus && !args.delayed_softmax && !bias && with_norm,
+        clamp_val, scale_val);
     if (bias) {
         launch_topk_moe_cuda<true>(ctx, logits_d, weights_d, ids_d, bias_d, n_rows, n_experts, n_expert_used, clamp_val,
                              scale_val, config);
@@ -393,6 +422,7 @@ void ggml_cuda_op_topk_moe(ggml_backend_cuda_context &     ctx,
         launch_topk_moe_cuda<false>(ctx, logits_d, weights_d, ids_d, bias_d, n_rows, n_experts, n_expert_used, clamp_val,
                              scale_val, config);
     }
+    audit.finish();
 }
 
 bool ggml_cuda_should_use_topk_moe(const ggml_tensor * gating_op,

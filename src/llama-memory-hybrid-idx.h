@@ -135,6 +135,8 @@ public:
     // llama_memory_hybrid_idx_context specific API
     //
 
+    std::unique_ptr<llama_memory_hybrid_idx_context> layer_slice(
+        const llama_ubatch & ubatch, uint32_t offset, bool continuation) const;
     // nullptr with no indexer
     const llama_kv_cache_context * get_idx() const;
 
@@ -147,6 +149,7 @@ public:
                        ggml_tensor * direct_mask = nullptr) const;
 
 private:
+    bool is_layer_view = false;
     const llama_memory_hybrid_idx * mem = nullptr;
 
     // streams per ubatch, read from the slot infos before ctx_idx takes them

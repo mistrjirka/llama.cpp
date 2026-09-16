@@ -130,6 +130,7 @@ public:
 
     const llama_kv_cache_context * get_attn() const;
     const llama_memory_recurrent_context * get_recr() const;
+    void set_layer_view(uint32_t n_kv, bool continuation);
 
 private:
     // the index of the next ubatch to process
