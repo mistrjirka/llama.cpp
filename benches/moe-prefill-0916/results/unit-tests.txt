@@ -1,0 +1,17 @@
+Internal ctest changing into directory: /workspace/llama-v100-moe-integration-0916/build-merge
+Test project /workspace/llama-v100-moe-integration-0916/build-merge
+    Start 63: test-request-prefill
+1/4 Test #63: test-request-prefill .............   Passed    0.00 sec
+    Start 64: test-layer-first-workspace
+2/4 Test #64: test-layer-first-workspace .......   Passed    0.77 sec
+    Start 65: test-layer-first-tail
+3/4 Test #65: test-layer-first-tail ............   Passed    3.47 sec
+    Start 66: test-moe-router-fusion
+4/4 Test #66: test-moe-router-fusion ...........   Passed    0.71 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Label Time Summary:
+main    =   4.24 sec*proc (2 tests)
+
+Total Test time (real) =   4.96 sec

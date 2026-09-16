@@ -1,0 +1,22 @@
+[
+  "c++",
+  "-std=c++17",
+  "-O2",
+  "/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/bench-prefill.cpp",
+  "-I/workspace/llama-v100-moe-integration-0916/include",
+  "-I/workspace/llama-v100-moe-integration-0916/ggml/include",
+  "-I/workspace/llama-v100-moe-integration-0916/src",
+  "-I/usr/local/cuda-12.9/include",
+  "-L/workspace/llama-v100-moe-integration-0916/build-merge/bin",
+  "-Wl,-rpath,/workspace/llama-v100-moe-integration-0916/build-merge/bin",
+  "-lllama",
+  "-lggml",
+  "-lggml-base",
+  "-lggml-cuda",
+  "-lggml-cpu",
+  "-L/usr/local/cuda-12.9/lib64",
+  "-lcudart",
+  "-ldl",
+  "-o",
+  "/workspace/moe-layer-first-0914/merge-readme-0916/merged-rtx-cached/bench-prefill"
+]

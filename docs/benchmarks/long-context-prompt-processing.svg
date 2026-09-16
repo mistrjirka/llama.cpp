@@ -1,116 +1,104 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="820" viewBox="0 0 2200 820" role="img" aria-labelledby="title desc">
-<title id="title">Long-context prompt processing: current upstream versus v100-optimized</title>
-<desc id="desc">Grouped bars comparing prompt-processing throughput for current upstream llama.cpp and v100-optimized across Qwen, Ornith, Gemma, and Muse Glimmer workloads.</desc>
-<rect width="2200" height="820" rx="12" fill="#FFFFFF"/>
-<text x="90.0" y="42.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="30" font-weight="700" fill="#24292F">Long-context prompt processing</text>
-<text x="90.0" y="72.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#57606A">Current upstream vs v100-optimized · prompt processing throughput (tok/s)</text>
-<rect x="1840" y="37" width="20" height="20" rx="4" fill="#8C959F"/>
-<text x="1870.0" y="53.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">Upstream</text>
-<rect x="1975" y="37" width="20" height="20" rx="4" fill="#0969DA"/>
-<text x="2005.0" y="53.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">v100-optimized</text>
-<line x1="90" y1="650.0" x2="2155" y2="650.0" stroke="#D8DEE4" stroke-width="1"/>
-<text x="76.0" y="656.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">0</text>
-<line x1="90" y1="545.6" x2="2155" y2="545.6" stroke="#D8DEE4" stroke-width="1"/>
-<text x="76.0" y="551.6" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">400</text>
-<line x1="90" y1="441.2" x2="2155" y2="441.2" stroke="#D8DEE4" stroke-width="1"/>
-<text x="76.0" y="447.2" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">800</text>
-<line x1="90" y1="336.8" x2="2155" y2="336.8" stroke="#D8DEE4" stroke-width="1"/>
-<text x="76.0" y="342.8" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">1200</text>
-<line x1="90" y1="232.4" x2="2155" y2="232.4" stroke="#D8DEE4" stroke-width="1"/>
-<text x="76.0" y="238.4" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">1600</text>
-<line x1="90" y1="128.0" x2="2155" y2="128.0" stroke="#D8DEE4" stroke-width="1"/>
-<text x="76.0" y="134.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">2000</text>
-<text transform="rotate(-90 24 389.0)" x="24.0" y="389.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">tok/s</text>
-<rect x="146.7" y="572.1" width="52" height="77.9" rx="5" fill="#8C959F"/>
-<rect x="210.7" y="535.1" width="52" height="114.9" rx="5" fill="#0969DA"/>
-<text x="172.7" y="563.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">298.5</text>
-<text x="236.7" y="526.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">440.1</text>
-<rect x="109.7" y="456.1" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="204.7" y="477.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+47.4% PP</text>
-<text x="204.7" y="497.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">31.6% lower TTFT</text>
-<text x="204.7" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Qwen3.8 27B</text>
-<text x="204.7" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB</text>
-<text x="204.7" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k cached + 1k</text>
-<rect x="376.2" y="549.8" width="52" height="100.2" rx="5" fill="#8C959F"/>
-<rect x="440.2" y="521.2" width="52" height="128.8" rx="5" fill="#0969DA"/>
-<text x="402.2" y="540.8" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">383.7</text>
-<text x="466.2" y="512.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">493.5</text>
-<rect x="339.2" y="442.2" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="434.2" y="463.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+28.6% PP</text>
-<text x="434.2" y="483.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">21.7% lower TTFT</text>
-<text x="434.2" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Qwen3.8 27B</text>
-<text x="434.2" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">RTX 2080 Ti 22 GB</text>
-<text x="434.2" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">65k cached + 1k</text>
-<rect x="605.6" y="544.1" width="52" height="105.9" rx="5" fill="#8C959F"/>
-<rect x="669.6" y="468.4" width="52" height="181.6" rx="5" fill="#0969DA"/>
-<text x="631.6" y="535.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">405.9</text>
-<text x="695.6" y="459.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">695.9</text>
-<rect x="568.6" y="389.4" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="663.6" y="410.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+71.4% PP</text>
-<text x="663.6" y="430.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">40.7% lower TTFT</text>
-<text x="663.6" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Qwen3.8 27B</text>
-<text x="663.6" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB + RTX 2080 Ti</text>
-<text x="663.6" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k cached + 1k</text>
-<rect x="835.1" y="468.2" width="52" height="181.8" rx="5" fill="#8C959F"/>
-<rect x="899.1" y="395.2" width="52" height="254.8" rx="5" fill="#0969DA"/>
-<text x="861.1" y="459.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">696.7</text>
-<text x="925.1" y="386.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">976.4</text>
-<rect x="798.1" y="316.2" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="893.1" y="337.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+40.1% PP</text>
-<text x="893.1" y="357.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">27.7% lower TTFT</text>
-<text x="893.1" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Ornith 1.5 35B-A3B</text>
-<text x="893.1" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB</text>
-<text x="893.1" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k cached + 1k</text>
-<rect x="1064.5" y="306.1" width="52" height="343.9" rx="5" fill="#8C959F"/>
-<rect x="1128.5" y="242.7" width="52" height="407.3" rx="5" fill="#0969DA"/>
-<text x="1090.5" y="297.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">1317.8</text>
-<text x="1154.5" y="233.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">1560.5</text>
-<rect x="1027.5" y="163.7" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="1122.5" y="184.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+18.4% PP</text>
-<text x="1122.5" y="204.7" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">14.9% lower TTFT</text>
-<text x="1122.5" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Ornith 1.5 35B-A3B</text>
-<text x="1122.5" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">RTX 2080 Ti 22 GB</text>
-<text x="1122.5" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">65k cached + 1k</text>
-<rect x="1293.9" y="334.5" width="52" height="315.5" rx="5" fill="#8C959F"/>
-<rect x="1357.9" y="265.1" width="52" height="384.9" rx="5" fill="#0969DA"/>
-<text x="1319.9" y="325.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">1208.7</text>
-<text x="1383.9" y="256.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">1474.7</text>
-<rect x="1256.9" y="186.1" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="1351.9" y="207.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+22.0% PP</text>
-<text x="1351.9" y="227.1" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">17.2% lower TTFT</text>
-<text x="1351.9" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Ornith 1.5 35B-A3B</text>
-<text x="1351.9" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB + RTX 2080 Ti</text>
-<text x="1351.9" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k cached + 1k</text>
-<rect x="1523.4" y="597.4" width="52" height="52.6" rx="5" fill="#8C959F"/>
-<rect x="1587.4" y="576.3" width="52" height="73.7" rx="5" fill="#0969DA"/>
-<text x="1549.4" y="588.4" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">201.7</text>
-<text x="1613.4" y="567.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">282.6</text>
-<rect x="1486.4" y="497.3" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="1581.4" y="518.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+40.1% PP</text>
-<text x="1581.4" y="538.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">depth-mode llama-bench</text>
-<text x="1581.4" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Gemma 4 31B</text>
-<text x="1581.4" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB</text>
-<text x="1581.4" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k depth + 1k</text>
-<rect x="1752.8" y="469.5" width="52" height="180.5" rx="5" fill="#8C959F"/>
-<rect x="1816.8" y="401.5" width="52" height="248.5" rx="5" fill="#0969DA"/>
-<text x="1778.8" y="460.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">691.7</text>
-<text x="1842.8" y="392.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">952.2</text>
-<rect x="1715.8" y="322.5" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="1810.8" y="343.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+37.7% PP</text>
-<text x="1810.8" y="363.5" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">depth-mode llama-bench</text>
-<text x="1810.8" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Gemma 4 26B-A4B</text>
-<text x="1810.8" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB</text>
-<text x="1810.8" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k depth + 1k</text>
-<rect x="1982.3" y="506.3" width="52" height="143.7" rx="5" fill="#8C959F"/>
-<rect x="2046.3" y="493.2" width="52" height="156.8" rx="5" fill="#0969DA"/>
-<text x="2008.3" y="497.3" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#57606A">550.5</text>
-<text x="2072.3" y="484.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="700" fill="#0969DA">600.9</text>
-<rect x="1945.3" y="414.2" width="190" height="52" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="2040.3" y="435.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#24292F">+9.1% PP</text>
-<text x="2040.3" y="455.2" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#57606A">depth-mode llama-bench</text>
-<text x="2040.3" y="680.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="650" fill="#24292F">Muse Glimmer 30B</text>
-<text x="2040.3" y="702.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#24292F">V100 32 GB</text>
-<text x="2040.3" y="724.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="500" fill="#57606A">100k depth + 1k</text>
-<line x1="90" y1="650" x2="2155" y2="650" stroke="#8C959F" stroke-width="1.2"/>
-<text x="2155.0" y="800.0" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" fill="#57606A">Q8 K/V · FlashAttention · current upstream 3057bb66 · 2026-09-12</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="910" viewBox="0 0 1200 910" role="img" aria-labelledby="title desc">
+<title id="title">Reading new input after a long conversation</title>
+<desc id="desc">Published comparison with upstream llama.cpp, 12 September 2026 Q8 history cache | Matched model and hardware per row | Exact settings: benches/upstream-sync-0912/REPORT.md</desc>
+<rect width="1200" height="910" fill="#FFFFFF"/>
+<text x="26.0" y="38.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="29" font-weight="700" fill="#24292F">Reading new input after a long conversation</text>
+<text x="26.0" y="66.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#57606A">Published comparison with upstream llama.cpp, 12 September 2026</text>
+<rect x="370" y="88" width="18" height="18" rx="3" fill="#8C959F"/>
+<text x="397.0" y="103.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#57606A">Upstream 3057bb66</text>
+<rect x="730" y="88" width="18" height="18" rx="3" fill="#0969DA"/>
+<text x="757.0" y="103.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#57606A">v100-optimized, 12 Sep</text>
+<line x1="370.0" y1="137" x2="370.0" y2="840" stroke="#D8DEE4"/>
+<text x="370.0" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">0</text>
+<line x1="496.0" y1="137" x2="496.0" y2="840" stroke="#D8DEE4"/>
+<text x="496.0" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">400</text>
+<line x1="622.0" y1="137" x2="622.0" y2="840" stroke="#D8DEE4"/>
+<text x="622.0" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">800</text>
+<line x1="748.0" y1="137" x2="748.0" y2="840" stroke="#D8DEE4"/>
+<text x="748.0" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">1200</text>
+<line x1="874.0" y1="137" x2="874.0" y2="840" stroke="#D8DEE4"/>
+<text x="874.0" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">1600</text>
+<line x1="1000.0" y1="137" x2="1000.0" y2="840" stroke="#D8DEE4"/>
+<text x="1000.0" y="133.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">2000</text>
+<text x="1120.0" y="132.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="400" fill="#57606A">Speed gain</text>
+<text x="26.0" y="168.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Qwen3.8 27B</text>
+<text x="26.0" y="190.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 32 GB</text>
+<text x="26.0" y="210.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k cached + 1k input</text>
+<rect x="370" y="153" width="94.02" height="21" rx="3" fill="#8C959F"/>
+<text x="472.0" y="170.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">298.5</text>
+<rect x="370" y="181" width="138.62" height="21" rx="3" fill="#0969DA"/>
+<text x="516.6" y="198.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">440.1</text>
+<text x="1120.0" y="184.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+47.4%</text>
+<text x="1120.0" y="206.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">First token -31.6%</text>
+<text x="26.0" y="246.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Qwen3.8 27B</text>
+<text x="26.0" y="268.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">RTX 2080 Ti 22 GB</text>
+<text x="26.0" y="288.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">65k cached + 1k input</text>
+<rect x="370" y="231" width="120.88" height="21" rx="3" fill="#8C959F"/>
+<text x="498.9" y="248.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">383.7</text>
+<rect x="370" y="259" width="155.46" height="21" rx="3" fill="#0969DA"/>
+<text x="533.5" y="276.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">493.5</text>
+<text x="1120.0" y="262.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+28.6%</text>
+<text x="1120.0" y="284.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">First token -21.7%</text>
+<text x="26.0" y="324.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Qwen3.8 27B</text>
+<text x="26.0" y="346.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 + RTX 2080 Ti</text>
+<text x="26.0" y="366.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k cached + 1k input</text>
+<rect x="370" y="309" width="127.87" height="21" rx="3" fill="#8C959F"/>
+<text x="505.9" y="326.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">405.9</text>
+<rect x="370" y="337" width="219.21" height="21" rx="3" fill="#0969DA"/>
+<text x="597.2" y="354.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">695.9</text>
+<text x="1120.0" y="340.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+71.4%</text>
+<text x="1120.0" y="362.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">First token -40.7%</text>
+<text x="26.0" y="402.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Ornith 1.5 35B-A3B</text>
+<text x="26.0" y="424.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 32 GB</text>
+<text x="26.0" y="444.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k cached + 1k input</text>
+<rect x="370" y="387" width="219.46" height="21" rx="3" fill="#8C959F"/>
+<text x="597.5" y="404.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">696.7</text>
+<rect x="370" y="415" width="307.56" height="21" rx="3" fill="#0969DA"/>
+<text x="685.6" y="432.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">976.4</text>
+<text x="1120.0" y="418.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+40.1%</text>
+<text x="1120.0" y="440.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">First token -27.7%</text>
+<text x="26.0" y="480.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Ornith 1.5 35B-A3B</text>
+<text x="26.0" y="502.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">RTX 2080 Ti 22 GB</text>
+<text x="26.0" y="522.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">65k cached + 1k input</text>
+<rect x="370" y="465" width="415.10" height="21" rx="3" fill="#8C959F"/>
+<text x="793.1" y="482.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">1317.8</text>
+<rect x="370" y="493" width="491.55" height="21" rx="3" fill="#0969DA"/>
+<text x="869.6" y="510.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">1560.5</text>
+<text x="1120.0" y="496.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+18.4%</text>
+<text x="1120.0" y="518.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">First token -14.9%</text>
+<text x="26.0" y="558.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Ornith 1.5 35B-A3B</text>
+<text x="26.0" y="580.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 + RTX 2080 Ti</text>
+<text x="26.0" y="600.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k cached + 1k input</text>
+<rect x="370" y="543" width="380.75" height="21" rx="3" fill="#8C959F"/>
+<text x="758.7" y="560.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">1208.7</text>
+<rect x="370" y="571" width="464.53" height="21" rx="3" fill="#0969DA"/>
+<text x="842.5" y="588.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">1474.7</text>
+<text x="1120.0" y="574.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+22.0%</text>
+<text x="1120.0" y="596.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#57606A">First token -17.2%</text>
+<text x="26.0" y="636.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Gemma 4 31B</text>
+<text x="26.0" y="658.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 32 GB</text>
+<text x="26.0" y="678.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k depth + 1k input</text>
+<rect x="370" y="621" width="63.53" height="21" rx="3" fill="#8C959F"/>
+<text x="441.5" y="638.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">201.7</text>
+<rect x="370" y="649" width="89.01" height="21" rx="3" fill="#0969DA"/>
+<text x="467.0" y="666.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">282.6</text>
+<text x="1120.0" y="652.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+40.1%</text>
+<text x="26.0" y="714.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Gemma 4 26B-A4B</text>
+<text x="26.0" y="736.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 32 GB</text>
+<text x="26.0" y="756.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k depth + 1k input</text>
+<rect x="370" y="699" width="217.88" height="21" rx="3" fill="#8C959F"/>
+<text x="595.9" y="716.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">691.7</text>
+<rect x="370" y="727" width="299.94" height="21" rx="3" fill="#0969DA"/>
+<text x="677.9" y="744.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">952.2</text>
+<text x="1120.0" y="730.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+37.7%</text>
+<text x="26.0" y="792.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">Muse Glimmer 30B</text>
+<text x="26.0" y="814.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">V100 32 GB</text>
+<text x="26.0" y="834.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k depth + 1k input</text>
+<rect x="370" y="777" width="173.42" height="21" rx="3" fill="#8C959F"/>
+<text x="551.4" y="794.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">550.5</text>
+<rect x="370" y="805" width="189.27" height="21" rx="3" fill="#0969DA"/>
+<text x="567.3" y="822.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">600.9</text>
+<text x="1120.0" y="808.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+9.1%</text>
+<text x="26.0" y="876.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#24292F">Tokens per second - higher is faster</text>
+<text x="26.0" y="900.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">Q8 history cache | Matched model and hardware per row | Exact settings: benches/upstream-sync-0912/REPORT.md</text>
 </svg>

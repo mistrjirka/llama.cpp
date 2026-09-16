@@ -1,0 +1,73 @@
+{
+  "command": [
+    "/workspace/moe-layer-first-0914/merge-readme-0916/merged-rtx-cached/bench-prefill",
+    "/models/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+    "1000",
+    "1024",
+    "100000",
+    "6",
+    "/workspace/moe-layer-first-0914/merge-readme-0916/merged-rtx-cached/run"
+  ],
+  "preset": "rtx2080ti",
+  "devices": [
+    {
+      "uuid": "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+      "name": "NVIDIA GeForce RTX 2080 Ti",
+      "memory_mib": 22528
+    }
+  ],
+  "layers": [
+    48
+  ],
+  "base": [
+    6
+  ],
+  "environment": {
+    "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+    "CUDA_VISIBLE_DEVICES": "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+    "LD_LIBRARY_PATH": "/workspace/llama-v100-moe-integration-0916/build-merge/bin:/usr/local/cuda-12.9/lib64",
+    "BENCH_GPU_LAYERS": "48",
+    "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+    "GGML_CUDA_MOE_STREAM": "0",
+    "GGML_CUDA_PREFETCH_WEIGHTS": "0",
+    "GGML_OP_OFFLOAD_MIN_BATCH": "1",
+    "GGML_CUDA_LF_ACCUM_FUSE": "1",
+    "QWEN4EXP_QSA_PP_BLOCK_TOPK": "0",
+    "QWEN4EXP_QSA_PP_GATHER": "0",
+    "LLAMA_MOE_LAYER_FIRST_AUTO": "0",
+    "BENCH_MODES": "stagger",
+    "BENCH_SAMPLES": "8",
+    "BENCH_QUALITY": "0",
+    "DIAG_ALL_OUTPUTS": "0",
+    "BENCH_CONTINUATION": "8",
+    "BENCH_EXPERT_ROWS": "1024",
+    "BENCH_DEVICE_MIB": "3072",
+    "BENCH_CONTEXT": "131072",
+    "BENCH_SEQUENCE": "1000,1000,1000,1000,1000,1000,1000",
+    "BENCH_SPARSE_SEQUENCE": "0,0,1,1,0,1,0",
+    "BENCH_PREPARATION_SEQUENCE": "3,3,3,3,3,3,3",
+    "BENCH_ATTENTION_SEQUENCE": "3,3,3,3,3,3,3",
+    "BENCH_SUFFIX_SEQUENCE": "/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt,/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt,/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt,/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt,/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt,/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt,/workspace/llama-v100-moe-integration-0916/benches/moe-prefill-0916/fixtures/cpp.txt",
+    "BENCH_RECORD_NUMERIC_DIFFERENCE": "1",
+    "LLAMA_MOE_LAYER_FIRST_RESIDENT_GROUP": "16",
+    "LLAMA_MOE_LAYER_FIRST_PLAN_SHARED_SCRATCH": "0",
+    "LLAMA_MOE_LAYER_FIRST_KV_RING": "0",
+    "LLAMA_MOE_LAYER_FIRST_ASYNC_INPUTS": "0",
+    "LLAMA_MOE_LAYER_FIRST_OUTPUT_ALIAS": "0",
+    "LLAMA_MOE_LAYER_FIRST_ADAPTIVE_MAX_LAYERS": "2",
+    "LLAMA_MOE_PROFILE": "0",
+    "LLAMA_MOE_LAYER_FIRST_BASE_LAYERS_0": "6",
+    "BENCH_PREFIX_STATE": "/workspace/llama-moe-profile-100k-0914/benches/moe-profile-100k-0914/next-100k-q8.state",
+    "BENCH_TOKENS": "/workspace/llama-moe-profile-100k-0914/benches/moe-profile-100k-0914/tokens.i32"
+  },
+  "runtime_sha256": {
+    "libllama.so.0": "f71ba6cc424b5348ffc494feb254d709575f405443be1273c1be6d6b9765ad67",
+    "libggml-cuda.so.0": "e48a41782d85ccad048cad10861f3fd579fd720a1baefa0d32d37b0d7f3e1fbb"
+  },
+  "git_commit": "0450469399521484c50ebb9143a654f9946971ec",
+  "git_dirty": true,
+  "suffix_sha256": "2f1bc707a242f1295d6d4082005f527ba4c0f3deebd26fb40bb8bd698fb4813b",
+  "prefix_length": 100000,
+  "tokens": 1000,
+  "scope": "Prompt-processing time; eight sampled prompt score rows and eight fixed input continuation rows. Not an upstream comparison or broad quality test."
+}

@@ -1,0 +1,123 @@
+{
+  "commit": "d67e66b0b9e9d2746e9faf8b08a8b48bf3eaa829",
+  "files": {
+    "src/llama-layer-first.cpp": {
+      "sha256": "7c4850dcabf8528a0bc531d01bf6bbb981fc3b594bbd8f1909812d8dfd65bbf2",
+      "sections": [
+        {
+          "start": 132,
+          "end": 145,
+          "text": "132: \n133: bool llama_context::layer_first_supported() const {\n134:     if (model.arch!=LLM_ARCH_QWEN4EXP || cparams.ctx_type!=LLAMA_CONTEXT_TYPE_DEFAULT ||\n135:         !cparams.causal_attn || cparams.n_seq_max!=1 || cparams.n_rs_seq!=0 ||\n136:         cparams.embeddings || cparams.embeddings_nextn || !sampling.samplers.empty() || !loras->empty()) { return false; }\n137:     for (bool requested:cparams.embeddings_layer_inp) { if (requested) { return false; } }\n138:     for (int il=0;il<model.hparams.n_layer();++il) {\n139:         const auto & l=model.layers[il];\n140:         if (!l.ffn_up_exps || !l.ffn_gate_exps || !l.ffn_down_exps || l.ffn_gate_up_exps ||\n141:             l.ffn_up_exps_s || l.ffn_gate_exps_s || l.ffn_down_exps_s) { return false; }\n142:     }\n143:     return true;\n144: }\n145: "
+        },
+        {
+          "start": 194,
+          "end": 199,
+          "text": "194:         const bool adaptive_residency=lf_env(\"LLAMA_MOE_LAYER_FIRST_ADAPTIVE_RESIDENCY\",0,0,1)!=0;\n195:         const size_t adaptive_max_layers=lf_env(\"LLAMA_MOE_LAYER_FIRST_ADAPTIVE_MAX_LAYERS\",2,0,48);\n196:         const bool stagger_residency=adaptive_residency && lf_env(\"LLAMA_MOE_LAYER_FIRST_STAGGER_RESIDENCY\",0,0,1)!=0;\n197:         const std::array<size_t,2> base_resident_layers={\n198:             lf_env(\"LLAMA_MOE_LAYER_FIRST_BASE_LAYERS_0\",0,0,48),\n199:             lf_env(\"LLAMA_MOE_LAYER_FIRST_BASE_LAYERS_1\",0,0,48)};"
+        },
+        {
+          "start": 269,
+          "end": 310,
+          "text": "269:             gf_res_prev->reset();\n270:             if(!layer_first_residency)layer_first_residency=std::make_shared<llama_lf_residency>();\n271:             const size_t spare=adaptive_residency && full_device_bytes+8192<device_limit\n272:                 ? device_limit-full_device_bytes-8192 : 0;\n273:             std::map<ggml_backend_dev_t,size_t> ordinal,remaining,counts;\n274:             std::map<int,size_t> layer_bytes;\n275:             std::map<ggml_backend_dev_t,std::vector<int>> host_layers;\n276:             for(int il=0;il<int(model.hparams.n_layer());++il) {\n277:                 auto * dev=model.dev_layer(il);\n278:                 if(!ordinal.count(dev)) {const size_t next=ordinal.size();ordinal[dev]=next;}\n279:                 const auto & l=model.layers[il];\n280:                 const std::array<ggml_tensor *,3> source={l.ffn_up_exps,l.ffn_gate_exps,l.ffn_down_exps};\n281:                 const size_t di=ordinal.at(dev);\n282:                 const size_t base=adaptive_residency && di<base_resident_layers.size() ? base_resident_layers[di] : 0;\n283:                 const bool host=std::all_of(source.begin(),source.end(),[](auto * w){return ggml_backend_buffer_is_host(w->buffer);});\n284:                 lf_require(!base || host,\"base residency budget requires all expert layers on that device to have host sources\");\n285:                 if(!host)continue;\n286:                 size_t bytes=8192;for(auto * w:source)bytes+=ggml_nbytes(w);\n287:                 layer_bytes[il]=bytes;\n288:                 host_layers[dev].push_back(il);\n289:             }\n290:             for(const auto & device:host_layers) {\n291:                 const size_t di=ordinal.at(device.first);\n292:                 const size_t base=adaptive_residency && di<base_resident_layers.size() ? base_resident_layers[di] : 0;\n293:                 lf_require(base<=device.second.size(),\"base residency exceeds device layer count\");\n294:                 const size_t kv_savings=adaptive_residency ? mctx->get_attn()->layer_rotation_saved_bytes(device.first) : 0;\n295:                 remaining[device.first]=spare+kv_savings;\n296:                 if(kv_savings)LLAMA_LOG_INFO(\"layer-first: KV_RESIDENCY_BUDGET device=%zu reclaimed_bytes=%zu\\n\",di,kv_savings);\n297:                 for(size_t i=0;i<base;++i)remaining[device.first]+=layer_bytes.at(device.second[device.second.size()-1-i]);\n298:             }\n299:             for(int il=int(model.hparams.n_layer())-1;il>=0;--il) {\n300:                 auto * dev=model.dev_layer(il);\n301:                 const auto & l=model.layers[il];\n302:                 const std::array<ggml_tensor *,3> source={l.ffn_up_exps,l.ffn_gate_exps,l.ffn_down_exps};\n303:                 if(!std::all_of(source.begin(),source.end(),[](auto * w){return ggml_backend_buffer_is_host(w->buffer);}))continue;\n304:                 const size_t di=ordinal.at(dev);\n305:                 const size_t base=adaptive_residency && di<base_resident_layers.size() ? base_resident_layers[di] : 0;\n306:                 size_t bytes=8192;for(auto * w:source)bytes+=ggml_nbytes(w);\n307:                 if(!adaptive_residency || counts[dev]>=base+adaptive_max_layers || bytes>remaining[dev])continue;\n308:                 promotion_targets[il]=bytes;remaining[dev]-=bytes;++counts[dev];\n309:             }\n310:             if(stagger_residency)for(const auto & device:host_layers) {"
+        },
+        {
+          "start": 369,
+          "end": 385,
+          "text": "369:         auto * result=gf_res_prev.get();\n370:         auto choose_backend=[&](ggml_backend_dev_t device)->ggml_backend_t {\n371:             for (auto & b:backends) { if (ggml_backend_get_device(b.get())==device) { return b.get(); } }\n372:             throw std::runtime_error(\"no backend for layer-first stage\");\n373:         };\n374:         // Only pure expert graphs can reuse their allocation. Their weight\n375:         // descriptors remain owned by the current lease (or by the model).\n376:         ggml_cgraph * expert_graph=nullptr;\n377:         std::array<ggml_tensor *,3> graph_weights={};\n378:         ggml_backend_t graph_backend=nullptr;\n379:         uint32_t graph_rows=0,graph_reference_tokens=0;\n380:         size_t graph_token_offset=0;\n381:         int graph_kind=-1,graph_layer=-1;\n382:         size_t graph_real_rows=0,device_activation_peak=0,device_copy_bytes=0;\n383:         std::array<ggml_tensor *,7> device_activations={};\n384:         std::map<ggml_backend_t,std::unique_ptr<lf_activation_store>> stores;\n385:         std::map<ggml_backend_t,std::unique_ptr<lf_weight_pool>> weight_pools;"
+        },
+        {
+          "start": 619,
+          "end": 658,
+          "text": "619:             auto * backend=choose_backend(model.dev_layer(il));\n620:             lf_require(std::strncmp(ggml_backend_name(backend),\"CUDA\",4)==0,\"layer-first currently requires CUDA layer backends\");\n621:             lf_profile_scope layer_scope(\"LF.layer id=%d\",il);\n622:             const auto prev_stage=stage_wall_ms;\n623:             const double prev_weight=weight_ms,prev_bank=bank_ms,prev_build=build_ms,prev_in=input_ms,prev_read=read_ms,prev_compute=compute_ms;\n624:             const auto layer_begin=std::chrono::steady_clock::now();\n625:             const size_t bytes_before=upload_bytes,count_before=upload_count;\n626:             ggml_context_ptr activation_context;\n627:             ggml_backend_buffer_ptr activation_buffer;\n628:             lf_graph_cleanup activation_cleanup{sched.get(),result,use_device || resident_fast};\n629:             bool finished_resident=false;\n630:             device_activations={};\n631:             if (use_device && resident_data) {\n632:                 auto & store=stores[backend];\n633:                 if (!store) {\n634:                     store=std::make_unique<lf_activation_store>();\n635:                     ggml_init_params init={ggml_tensor_overhead()*16,nullptr,true};\n636:                     store->context.reset(ggml_init(init));lf_require(bool(store->context),\"resident descriptors failed\");\n637:                     const std::array<size_t,7> widths={d,width_slots,width_h,width_h,shared_width,hc,k};\n638:                     for(size_t j=0;j<widths.size();++j) {\n639:                         if(!widths[j]) {continue;}\n640:                         // The input slice is dead when its attention stage finishes.\n641:                         // Reuse it for the residual consumed by the final layer stage.\n642:                         store->tensor[j]=j==3 ? ggml_view_tensor(store->context.get(),store->tensor[2])\n643:                             : ggml_new_tensor_2d(store->context.get(),GGML_TYPE_F32,\n644:                                 j==1 ? d : widths[j],j==1 ? request_tokens*output_k+extra_rows : request_tokens);\n645:                         ggml_format_name(store->tensor[j],\"lf_request_store_%zu\",j);\n646:                     }\n647:                     store->buffer.reset(ggml_backend_alloc_ctx_tensors(store->context.get(),backend));\n648:                     lf_require(bool(store->buffer),\"resident activation allocation failed\");\n649:                     lf_require(ggml_backend_buffer_get_size(store->buffer.get())<=device_limit,\"resident budget exceeded\");\n650:                     device_activation_peak=std::max(device_activation_peak,ggml_backend_buffer_get_size(store->buffer.get()));\n651:                 }\n652:                 device_activations=store->tensor;\n653:                 if(previous_hidden && previous_hidden!=device_activations[2]) {\n654:                     lf_profile_scope scope(\"LF.device_boundary bytes=%zu\",ggml_nbytes(previous_hidden));\n655:                     ggml_backend_tensor_copy(previous_hidden,device_activations[2]);\n656:                     resident_boundary_bytes+=ggml_nbytes(previous_hidden);\n657:                 }\n658:                 previous_hidden=device_activations[2];"
+        },
+        {
+          "start": 984,
+          "end": 1010,
+          "text": "984:             if(reuse_banks && per_expert) {\n985:                 auto & entry=weight_pools[backend];\n986:                 if(!entry) {\n987:                     entry=std::make_unique<lf_weight_pool>();entry->compute=backend;\n988:                     const int banks=pipeline ? 2 : 1;\n989:                     for(int j=0;j<banks;++j) {\n990:                         entry->buffer[j].reset(ggml_backend_alloc_buffer(backend,bank_capacity));\n991:                         lf_require(bool(entry->buffer[j]),\"persistent weight bank allocation\");\n992:                         ggml_backend_buffer_set_usage(entry->buffer[j].get(),GGML_BACKEND_BUFFER_USAGE_WEIGHTS);\n993:                         ggml_backend_buffer_clear(entry->buffer[j].get(),0);\n994:                     }\n995:                     if(pipeline) {\n996:                         auto * dev=ggml_backend_get_device(backend);\n997:                         entry->transfer.reset(ggml_backend_dev_init(dev,nullptr));\n998:                         lf_require(bool(entry->transfer),\"copy backend creation\");\n999:                         for(int j=0;j<2;++j) {\n1000:                             entry->ready[j]=ggml_backend_event_new(dev);entry->consumed[j]=ggml_backend_event_new(dev);\n1001:                             lf_require(entry->ready[j] && entry->consumed[j],\"copy completion events\");\n1002:                         }\n1003:                     }\n1004:                 }\n1005:                 pool=entry.get();\n1006:             }\n1007:             std::array<std::unique_ptr<lf_weights>,2> banks;\n1008:             lf_graph_cleanup banks_cleanup{sched.get(),result,true};\n1009:             auto prepare_group=[&](size_t index) {\n1010:                 auto & item=groups.at(index);const size_t first=item.first,count=item.count;"
+        },
+        {
+          "start": 1247,
+          "end": 1257,
+          "text": "1247:                     ++selected_rows;\n1248:                 }\n1249:             }\n1250:             if (!selected_rows) { continue; }\n1251:             llama_ubatch u=full;u.n_tokens=u.n_seq_tokens=selected_rows;\n1252:             if(use_device && resident_data) {\n1253:                 device_activations=stores.at(choose_backend(model.dev_output()))->tensor;\n1254:                 stage_token_offset=row;\n1255:             }\n1256:             stage(5,-1,u,mctx,{selected.data(),nullptr,nullptr,nullptr,nullptr},choose_backend(model.dev_output()));\n1257:             lf_require(result->t_logits && logits.data &&"
+        }
+      ]
+    },
+    "ggml/src/ggml-cuda/fattn.cu": {
+      "sha256": "2416b27a78112c49a0fbd7d6baad6776f7d6caa749d241d9a2ec0539f3abfd35",
+      "sections": [
+        {
+          "start": 110,
+          "end": 131,
+          "text": "110: bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {\n111: #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)\n112:     GGML_UNUSED_VARS(ctx, dst);\n113:     return false;\n114: #else\n115:     const ggml_tensor * Q    = dst->src[0];\n116:     const ggml_tensor * K    = dst->src[1];\n117:     const ggml_tensor * mask = dst->src[3];\n118:     const int cc = ggml_cuda_info().devices[ctx.device].cc;\n119: \n120:     float max_bias = 0.0f;\n121:     float logit_softcap = 0.0f;\n122:     memcpy(&max_bias,      (const float *) dst->op_params + 1, sizeof(float));\n123:     memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));\n124: \n125:     const int32_t n_kv_max = ggml_get_op_params_i32(dst, 4);\n126:     const bool volta_d256 = cc == GGML_CUDA_CC_VOLTA && Q->ne[0] == 256 && dst->src[2]->ne[0] == 256;\n127:     return GGML_CUDA_CC_IS_NVIDIA(cc) && (turing_mma_available(cc) || volta_d256) &&\n128:         mask != nullptr && n_kv_max > 0 && max_bias == 0.0f && logit_softcap == 0.0f &&\n129:         mask->ne[0] == K->ne[1] && mask->ne[1] >= Q->ne[1] && mask->ne[2] == 1 &&\n130:         K->ne[1] >= std::max<int64_t>(4096, 2LL*n_kv_max);\n131: #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)"
+        },
+        {
+          "start": 200,
+          "end": 208,
+          "text": "200:     if constexpr (DKQ == 256 && DV == 256) {\n201:         if (ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(ctx, dst)) {\n202:             if (cc == GGML_CUDA_CC_VOLTA) {\n203:                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 1, 32>(ctx, dst);\n204:             } else {\n205:                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 1, 8>(ctx, dst);\n206:             }\n207:             return;\n208:         }"
+        }
+      ]
+    },
+    "src/models/qwen4exp.cpp": {
+      "sha256": "d545166f25ae1d791387d8bd72abc3e273be738f021e088c028526d940839ecf",
+      "sections": [
+        {
+          "start": 1081,
+          "end": 1084,
+          "text": "1081:     const char * sparse_env = std::getenv(\"QWEN4EXP_QSA_SPARSE_ATTN\");\n1082:     const bool sparse = sparse_env && sparse_env[0] == '1' && top_k->ne[1] > 1 && kq_mask->ne[0] >= 32768;\n1083:     const int32_t selected_bound = sparse ? int32_t(top_k->ne[0]) : 0;\n1084:     ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, selected_bound, kq_scale, il);"
+        }
+      ]
+    },
+    "ggml/src/ggml-cuda/ggml-cuda.cu": {
+      "sha256": "f31490c3eae07d54575e1757cf502229777d3b52fc60405acf56efe2bee86bb6",
+      "sections": [
+        {
+          "start": 226,
+          "end": 263,
+          "text": "226:     cudaError_t err = cudaGetDeviceCount(&info.physical_device_count);\n227:     if (err != cudaSuccess) {\n228:         GGML_LOG_ERROR(\"%s: failed to initialize \" GGML_CUDA_NAME \": %s\\n\", __func__, cudaGetErrorString(err));\n229:         return info;\n230:     }\n231: \n232:     GGML_ASSERT(info.physical_device_count <= GGML_CUDA_MAX_DEVICES);\n233: \n234:     // by default expose exactly the physical devices; GGML_CUDA_DEVICES can request a different\n235:     // number of (virtual) devices to emulate multi-GPU systems on a machine with fewer GPUs\n236:     info.device_count = info.physical_device_count;\n237: \n238:     const char * devices_env = getenv(\"GGML_CUDA_DEVICES\");\n239:     if (devices_env != nullptr && info.physical_device_count > 0) {\n240:         const int requested = atoi(devices_env);\n241:         if (requested > 0) {\n242:             info.device_count = requested;\n243:         } else {\n244:             GGML_LOG_WARN(\"%s: ignoring invalid GGML_CUDA_DEVICES=\\\"%s\\\"\\n\", __func__, devices_env);\n245:         }\n246:     }\n247: \n248:     if (info.device_count > GGML_CUDA_MAX_DEVICES) {\n249:         GGML_LOG_WARN(\"%s: requested %d devices, clamping to GGML_CUDA_MAX_DEVICES=%d\\n\",\n250:                       __func__, info.device_count, GGML_CUDA_MAX_DEVICES);\n251:         info.device_count = GGML_CUDA_MAX_DEVICES;\n252:     }\n253: \n254:     // map each (virtual) device to a backing physical device (round-robin), assign each its index\n255:     // among the (virtual) devices sharing that physical GPU, and store the per-physical share count\n256:     int physical_share_count[GGML_CUDA_MAX_DEVICES] = {};\n257:     GGML_ASSERT(info.device_count == 0 || info.physical_device_count > 0);\n258:     for (int id = 0; id < info.device_count; ++id) {\n259:         info.devices[id].physical_device = id % info.physical_device_count;\n260:         info.devices[id].virtual_index  = physical_share_count[info.devices[id].physical_device]++;\n261:     }\n262: \n263:     int64_t total_vram = 0;"
+        },
+        {
+          "start": 828,
+          "end": 847,
+          "text": "828: static bool ggml_backend_cuda_buffer_cpy_tensor(ggml_backend_buffer_t buffer, const ggml_tensor * src, ggml_tensor * dst) {\n829:     if (ggml_backend_buffer_is_cuda(src->buffer)) {\n830:         ggml_backend_cuda_buffer_context * src_ctx = (ggml_backend_cuda_buffer_context *)src->buffer->context;\n831:         ggml_backend_cuda_buffer_context * dst_ctx = (ggml_backend_cuda_buffer_context *)dst->buffer->context;\n832:         // compare the backing physical devices: distinct virtual devices may share one physical GPU,\n833:         // in which case a same-device copy (not a peer copy) is required\n834:         const int src_physical = ggml_cuda_get_physical_device(src_ctx->device);\n835:         const int dst_physical = ggml_cuda_get_physical_device(dst_ctx->device);\n836:         if (src_physical == dst_physical) {\n837:             CUDA_CHECK(cudaMemcpyAsync(dst->data, src->data, ggml_nbytes(src), cudaMemcpyDeviceToDevice, cudaStreamPerThread));\n838:         } else {\n839: #ifdef GGML_CUDA_NO_PEER_COPY\n840:             return false;\n841: #else\n842:             CUDA_CHECK(cudaMemcpyPeerAsync(dst->data, dst_physical, src->data, src_physical, ggml_nbytes(src), cudaStreamPerThread));\n843: #endif\n844:         }\n845:         CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));\n846:         return true;\n847:     }"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "area": "Original benchmark harness",
+      "finding": "Fixed 36/12 layer assignment, 36/13 split including output, two GPU-specific offload counters, physical UUID manifest. Removed in the new campaign-local harness only."
+    },
+    {
+      "area": "Frozen runtime resident-weight budgets",
+      "finding": "Only BASE_LAYERS_0 and BASE_LAYERS_1 are read. Third and later first-seen layer devices receive zero base allowance plus common spare workspace. Safe bounds check, but extra VRAM cannot be budgeted normally."
+    },
+    {
+      "area": "Residency allocation",
+      "finding": "Configured layer-byte ceilings and a common workspace allowance; not an automatic fit-to-free-VRAM planner. Standalone memory allowances must be retuned."
+    },
+    {
+      "area": "Main state and copy banks",
+      "finding": "Dynamic maps keyed by backend. Two banks per backend are a double buffer, not a two-device limit. Each backend transition copies the current resident state."
+    },
+    {
+      "area": "Sparse attention dispatch",
+      "finding": "Architecture-based Volta/Turing specialization, not a GPU0/GPU1 role. The new D256 path uses 1x32 on Volta and 1x8 on Turing."
+    },
+    {
+      "area": "Sparse model gate",
+      "finding": "Model-derived selection bound; multiple query rows and at least 32768 history entries. Gate is independent of number of GPUs."
+    },
+    {
+      "area": "Model and context restrictions",
+      "finding": "QWEN4EXP adapter, one causal text sequence, CUDA layer backends, supported separate expert projections. No tensor/expert parallelism qualification."
+    },
+    {
+      "area": "Output placement",
+      "finding": "Final output reads the resident store keyed by the output backend. Tests keep output with the final layer. Separate output-only or arbitrary placement is not qualified."
+    },
+    {
+      "area": "Numerical replay tools",
+      "finding": "24 query heads, two KV heads, D256, 2051 selected bound and 100000 prefix are fixture assumptions; not two-device runtime restrictions."
+    }
+  ]
+}

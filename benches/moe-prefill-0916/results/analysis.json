@@ -1,0 +1,1306 @@
+[
+  {
+    "name": "mixed-cached-01",
+    "returncode": 0,
+    "kind": "cached",
+    "physical_devices": [
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79",
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      36,
+      12
+    ],
+    "base_allowances": [
+      16,
+      10
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 7,
+    "stores": 2,
+    "boundary_bytes": 40960000,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "444391c82c344db9100793e65d67d3a9fa714cfd6738c9a09f76d2091eff7d2a"
+              },
+              {
+                "round": 1,
+                "sha256": "444391c82c344db9100793e65d67d3a9fa714cfd6738c9a09f76d2091eff7d2a"
+              },
+              {
+                "round": 4,
+                "sha256": "444391c82c344db9100793e65d67d3a9fa714cfd6738c9a09f76d2091eff7d2a"
+              },
+              {
+                "round": 6,
+                "sha256": "444391c82c344db9100793e65d67d3a9fa714cfd6738c9a09f76d2091eff7d2a"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "152d32b2d8d2b2033cbd68dd48890456e71a031e6ed49850192963a193d307b7"
+              },
+              {
+                "round": 1,
+                "sha256": "152d32b2d8d2b2033cbd68dd48890456e71a031e6ed49850192963a193d307b7"
+              },
+              {
+                "round": 4,
+                "sha256": "152d32b2d8d2b2033cbd68dd48890456e71a031e6ed49850192963a193d307b7"
+              },
+              {
+                "round": 6,
+                "sha256": "152d32b2d8d2b2033cbd68dd48890456e71a031e6ed49850192963a193d307b7"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          4134.332212,
+          4007.115306,
+          3975.171984
+        ],
+        "first_observation_ms": 7222.648192,
+        "median_ms": 4007.115306,
+        "input_tokens_per_second": 249.55608302627664,
+        "min_ms": 3975.171984,
+        "max_ms": 4134.332212,
+        "warm_software_counted_expert_h2d_bytes": [
+          16014873600,
+          16014873600,
+          16014873600
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "5fb91e2b3ddf6866f03b5eecc2dfb90afd584f5036c7a8aef3a75239ac78ac4e"
+              },
+              {
+                "round": 3,
+                "sha256": "5fb91e2b3ddf6866f03b5eecc2dfb90afd584f5036c7a8aef3a75239ac78ac4e"
+              },
+              {
+                "round": 5,
+                "sha256": "5fb91e2b3ddf6866f03b5eecc2dfb90afd584f5036c7a8aef3a75239ac78ac4e"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "0f9142ec9c9e98ef64c273fc012f0726366fe0cf0aff8dda380694f9e4ba0619"
+              },
+              {
+                "round": 3,
+                "sha256": "0f9142ec9c9e98ef64c273fc012f0726366fe0cf0aff8dda380694f9e4ba0619"
+              },
+              {
+                "round": 5,
+                "sha256": "0f9142ec9c9e98ef64c273fc012f0726366fe0cf0aff8dda380694f9e4ba0619"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          3175.866723,
+          3030.76865
+        ],
+        "first_observation_ms": 3199.162059,
+        "median_ms": 3103.3176865,
+        "input_tokens_per_second": 322.23578151543524,
+        "min_ms": 3030.76865,
+        "max_ms": 3175.866723,
+        "warm_software_counted_expert_h2d_bytes": [
+          15978291200,
+          15978291200
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 22.55481937708932,
+    "sparse_throughput_increase_percent": 29.123593225137245,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 19118,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 29541
+    }
+  },
+  {
+    "name": "reversed-mixed-cached-01",
+    "returncode": 0,
+    "kind": "cached",
+    "physical_devices": [
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29",
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      12,
+      36
+    ],
+    "base_allowances": [
+      10,
+      16
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 7,
+    "stores": 2,
+    "boundary_bytes": 40960000,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "4d0e8d6dba5c749f90323f7f179b1b190ef70e739addacaa2604d83cb08fa4d6"
+              },
+              {
+                "round": 1,
+                "sha256": "4d0e8d6dba5c749f90323f7f179b1b190ef70e739addacaa2604d83cb08fa4d6"
+              },
+              {
+                "round": 4,
+                "sha256": "4d0e8d6dba5c749f90323f7f179b1b190ef70e739addacaa2604d83cb08fa4d6"
+              },
+              {
+                "round": 6,
+                "sha256": "4d0e8d6dba5c749f90323f7f179b1b190ef70e739addacaa2604d83cb08fa4d6"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "d590063f662e8330d972d4b55dd77cf17e63ae84e0b0871c874f13a1bbf08516"
+              },
+              {
+                "round": 1,
+                "sha256": "d590063f662e8330d972d4b55dd77cf17e63ae84e0b0871c874f13a1bbf08516"
+              },
+              {
+                "round": 4,
+                "sha256": "d590063f662e8330d972d4b55dd77cf17e63ae84e0b0871c874f13a1bbf08516"
+              },
+              {
+                "round": 6,
+                "sha256": "d590063f662e8330d972d4b55dd77cf17e63ae84e0b0871c874f13a1bbf08516"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          4026.183808,
+          3810.765447,
+          3804.430069
+        ],
+        "first_observation_ms": 7137.113365,
+        "median_ms": 3810.765447,
+        "input_tokens_per_second": 262.4144712940135,
+        "min_ms": 3804.430069,
+        "max_ms": 4026.183808,
+        "warm_software_counted_expert_h2d_bytes": [
+          15250406400,
+          15250406400,
+          15250406400
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "651760243e8ad584d2b69604b841612a481b4935a07202db0583836f2c6a4bcb"
+              },
+              {
+                "round": 3,
+                "sha256": "651760243e8ad584d2b69604b841612a481b4935a07202db0583836f2c6a4bcb"
+              },
+              {
+                "round": 5,
+                "sha256": "651760243e8ad584d2b69604b841612a481b4935a07202db0583836f2c6a4bcb"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "0d25723573274ca2084cacffc68cd528fb8a6104ee2f7e1dea264e162a94b52f"
+              },
+              {
+                "round": 3,
+                "sha256": "0d25723573274ca2084cacffc68cd528fb8a6104ee2f7e1dea264e162a94b52f"
+              },
+              {
+                "round": 5,
+                "sha256": "0d25723573274ca2084cacffc68cd528fb8a6104ee2f7e1dea264e162a94b52f"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          2940.075174,
+          2919.732331
+        ],
+        "first_observation_ms": 3067.421489,
+        "median_ms": 2929.9037525000003,
+        "input_tokens_per_second": 341.30813995058014,
+        "min_ms": 2919.732331,
+        "max_ms": 2940.075174,
+        "warm_software_counted_expert_h2d_bytes": [
+          15277235200,
+          15277235200
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 23.115085584536633,
+    "sparse_throughput_increase_percent": 30.06452665035111,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 19170,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 30479
+    }
+  },
+  {
+    "name": "single-rtx-cached-01",
+    "returncode": 0,
+    "kind": "cached",
+    "physical_devices": [
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      48
+    ],
+    "base_allowances": [
+      6
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 7,
+    "stores": 1,
+    "boundary_bytes": 0,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "e13a61040b4bf344983a93621979547a492b2ee9a7546c5858d3d41c965a225f"
+              },
+              {
+                "round": 1,
+                "sha256": "e13a61040b4bf344983a93621979547a492b2ee9a7546c5858d3d41c965a225f"
+              },
+              {
+                "round": 4,
+                "sha256": "e13a61040b4bf344983a93621979547a492b2ee9a7546c5858d3d41c965a225f"
+              },
+              {
+                "round": 6,
+                "sha256": "e13a61040b4bf344983a93621979547a492b2ee9a7546c5858d3d41c965a225f"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "47a24408a614d0a1c12684ee81fb82874b892d8a3f4f38df57c3d0717af74c6e"
+              },
+              {
+                "round": 1,
+                "sha256": "47a24408a614d0a1c12684ee81fb82874b892d8a3f4f38df57c3d0717af74c6e"
+              },
+              {
+                "round": 4,
+                "sha256": "47a24408a614d0a1c12684ee81fb82874b892d8a3f4f38df57c3d0717af74c6e"
+              },
+              {
+                "round": 6,
+                "sha256": "47a24408a614d0a1c12684ee81fb82874b892d8a3f4f38df57c3d0717af74c6e"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          5106.597209,
+          4900.670367,
+          4911.498281
+        ],
+        "first_observation_ms": 5889.19213,
+        "median_ms": 4911.498281,
+        "input_tokens_per_second": 203.6038582907528,
+        "min_ms": 4900.670367,
+        "max_ms": 5106.597209,
+        "warm_software_counted_expert_h2d_bytes": [
+          34579891200,
+          34579891200,
+          34579891200
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "eb23ca66b9e86eecee4652699bcba890762f9847225e2eca6395b44de5a8a1a1"
+              },
+              {
+                "round": 3,
+                "sha256": "eb23ca66b9e86eecee4652699bcba890762f9847225e2eca6395b44de5a8a1a1"
+              },
+              {
+                "round": 5,
+                "sha256": "eb23ca66b9e86eecee4652699bcba890762f9847225e2eca6395b44de5a8a1a1"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "7bc594550d669acf296a721cb9d4e558033a9a0fd3f36e55581c7c2ec7292407"
+              },
+              {
+                "round": 3,
+                "sha256": "7bc594550d669acf296a721cb9d4e558033a9a0fd3f36e55581c7c2ec7292407"
+              },
+              {
+                "round": 5,
+                "sha256": "7bc594550d669acf296a721cb9d4e558033a9a0fd3f36e55581c7c2ec7292407"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          4074.562679,
+          4043.105574
+        ],
+        "first_observation_ms": 4300.273162,
+        "median_ms": 4058.8341265,
+        "input_tokens_per_second": 246.37616833637807,
+        "min_ms": 4043.105574,
+        "max_ms": 4074.562679,
+        "warm_software_counted_expert_h2d_bytes": [
+          34671001600,
+          34671001600
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 17.360571168242256,
+    "sparse_throughput_increase_percent": 21.007612726348746,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 20250,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 0
+    }
+  },
+  {
+    "name": "single-rtx-cold4k-01",
+    "returncode": 0,
+    "kind": "cold4k",
+    "physical_devices": [
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      48
+    ],
+    "base_allowances": [
+      6
+    ],
+    "tokens": 4096,
+    "prefix": 0,
+    "fixture": "python",
+    "completed_requests": 4,
+    "stores": 1,
+    "boundary_bytes": 0,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "38e2c28770b47ecd8ce4a61cb4850728c70dbc3d9f734431b80035d17fa96210"
+              },
+              {
+                "round": 1,
+                "sha256": "38e2c28770b47ecd8ce4a61cb4850728c70dbc3d9f734431b80035d17fa96210"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "bdf0f7cb9eebb892a5bd7fb85d2db6efefbac1c90e15c3fdfc3c9f64950e155f"
+              },
+              {
+                "round": 1,
+                "sha256": "bdf0f7cb9eebb892a5bd7fb85d2db6efefbac1c90e15c3fdfc3c9f64950e155f"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          6597.856538
+        ],
+        "first_observation_ms": 7695.553044,
+        "median_ms": 6597.856538,
+        "input_tokens_per_second": 620.8076784345504,
+        "min_ms": 6597.856538,
+        "max_ms": 6597.856538,
+        "warm_software_counted_expert_h2d_bytes": [
+          43994393600
+        ],
+        "warm_promotion_bytes": [
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "38e2c28770b47ecd8ce4a61cb4850728c70dbc3d9f734431b80035d17fa96210"
+              },
+              {
+                "round": 3,
+                "sha256": "38e2c28770b47ecd8ce4a61cb4850728c70dbc3d9f734431b80035d17fa96210"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "bdf0f7cb9eebb892a5bd7fb85d2db6efefbac1c90e15c3fdfc3c9f64950e155f"
+              },
+              {
+                "round": 3,
+                "sha256": "bdf0f7cb9eebb892a5bd7fb85d2db6efefbac1c90e15c3fdfc3c9f64950e155f"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          6481.197696,
+          6443.657404
+        ],
+        "first_observation_ms": 6481.197696,
+        "median_ms": 6462.42755,
+        "input_tokens_per_second": 633.8175504961754,
+        "min_ms": 6443.657404,
+        "max_ms": 6481.197696,
+        "warm_software_counted_expert_h2d_bytes": [
+          43994393600,
+          43994393600
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 2.0526209871342904,
+    "sparse_throughput_increase_percent": 2.0956364609457045,
+    "short_history_toggle_byte_exact": true,
+    "cold_prompt_warm_model_median_ms": 6481.197696,
+    "cold_prompt_warm_model_tokens_per_second": 631.9819564411571,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 18596,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 0
+    }
+  },
+  {
+    "name": "single-rtx-profile-01",
+    "returncode": 0,
+    "kind": "profile",
+    "physical_devices": [
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      48
+    ],
+    "base_allowances": [
+      6
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 2,
+    "stores": 1,
+    "boundary_bytes": 0,
+    "strict_token_residency": true,
+    "variants": {
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "eb23ca66b9e86eecee4652699bcba890762f9847225e2eca6395b44de5a8a1a1"
+              },
+              {
+                "round": 1,
+                "sha256": "eb23ca66b9e86eecee4652699bcba890762f9847225e2eca6395b44de5a8a1a1"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "7bc594550d669acf296a721cb9d4e558033a9a0fd3f36e55581c7c2ec7292407"
+              },
+              {
+                "round": 1,
+                "sha256": "7bc594550d669acf296a721cb9d4e558033a9a0fd3f36e55581c7c2ec7292407"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [],
+        "first_observation_ms": 5235.15975,
+        "warm_software_counted_expert_h2d_bytes": [],
+        "warm_promotion_bytes": []
+      }
+    },
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 20242,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 0
+    }
+  },
+  {
+    "name": "single-v100-cached-01",
+    "returncode": 0,
+    "kind": "cached",
+    "physical_devices": [
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      48
+    ],
+    "base_allowances": [
+      14
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 7,
+    "stores": 1,
+    "boundary_bytes": 0,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 1,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 4,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 6,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 1,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 4,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 6,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          4494.259751,
+          4514.320985,
+          4471.63634
+        ],
+        "first_observation_ms": 8069.278665,
+        "median_ms": 4494.259751,
+        "input_tokens_per_second": 222.50605336674056,
+        "min_ms": 4471.63634,
+        "max_ms": 4514.320985,
+        "warm_software_counted_expert_h2d_bytes": [
+          27836262400,
+          27836262400,
+          27836262400
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 3,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 5,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 3,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 5,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          3717.947737,
+          3626.791308
+        ],
+        "first_observation_ms": 3675.62105,
+        "median_ms": 3672.3695225,
+        "input_tokens_per_second": 272.30375207973094,
+        "min_ms": 3626.791308,
+        "max_ms": 3717.947737,
+        "warm_software_counted_expert_h2d_bytes": [
+          27817753600,
+          27817753600
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 18.28755510442235,
+    "sparse_throughput_increase_percent": 22.38037930182173
+  },
+  {
+    "name": "single-v100-cold4k-01",
+    "returncode": 0,
+    "kind": "cold4k",
+    "physical_devices": [
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      48
+    ],
+    "base_allowances": [
+      14
+    ],
+    "tokens": 4096,
+    "prefix": 0,
+    "fixture": "python",
+    "completed_requests": 4,
+    "stores": 1,
+    "boundary_bytes": 0,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "ea02144fafd543b54719707f2c1c494800b36710f719841ed4444fa5fd631a78"
+              },
+              {
+                "round": 1,
+                "sha256": "ea02144fafd543b54719707f2c1c494800b36710f719841ed4444fa5fd631a78"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "bb807603db73cd4630f9cbbeed08d668be80d91793afc7cd9fc3f4763e79b7df"
+              },
+              {
+                "round": 1,
+                "sha256": "bb807603db73cd4630f9cbbeed08d668be80d91793afc7cd9fc3f4763e79b7df"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          7047.4577
+        ],
+        "first_observation_ms": 14243.592954,
+        "median_ms": 7047.4577,
+        "input_tokens_per_second": 581.2024951919896,
+        "min_ms": 7047.4577,
+        "max_ms": 7047.4577,
+        "warm_software_counted_expert_h2d_bytes": [
+          35509555200
+        ],
+        "warm_promotion_bytes": [
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "ea02144fafd543b54719707f2c1c494800b36710f719841ed4444fa5fd631a78"
+              },
+              {
+                "round": 3,
+                "sha256": "ea02144fafd543b54719707f2c1c494800b36710f719841ed4444fa5fd631a78"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "bb807603db73cd4630f9cbbeed08d668be80d91793afc7cd9fc3f4763e79b7df"
+              },
+              {
+                "round": 3,
+                "sha256": "bb807603db73cd4630f9cbbeed08d668be80d91793afc7cd9fc3f4763e79b7df"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          7062.120365,
+          6951.342483
+        ],
+        "first_observation_ms": 7062.120365,
+        "median_ms": 7006.731424,
+        "input_tokens_per_second": 584.580705629741,
+        "min_ms": 6951.342483,
+        "max_ms": 7062.120365,
+        "warm_software_counted_expert_h2d_bytes": [
+          35509555200,
+          35509555200
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 0.5778860652118634,
+    "sparse_throughput_increase_percent": 0.5812449990661994,
+    "short_history_toggle_byte_exact": true,
+    "cold_prompt_warm_model_median_ms": 7047.4577,
+    "cold_prompt_warm_model_tokens_per_second": 581.2024951919896,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 2,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 28037
+    }
+  },
+  {
+    "name": "single-v100-profile-01",
+    "returncode": 0,
+    "kind": "profile",
+    "physical_devices": [
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    ],
+    "virtual_devices": null,
+    "layers": [
+      48
+    ],
+    "base_allowances": [
+      14
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 2,
+    "stores": 1,
+    "boundary_bytes": 0,
+    "strict_token_residency": true,
+    "variants": {
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 1,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 1,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [],
+        "first_observation_ms": 6181.561258,
+        "warm_software_counted_expert_h2d_bytes": [],
+        "warm_promotion_bytes": []
+      }
+    },
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 2,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 29657
+    }
+  },
+  {
+    "name": "virtual-v100-three-01",
+    "returncode": 0,
+    "kind": "cached",
+    "physical_devices": [
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    ],
+    "virtual_devices": 3,
+    "layers": [
+      16,
+      16,
+      16
+    ],
+    "base_allowances": [
+      2,
+      2,
+      0
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 7,
+    "stores": 3,
+    "boundary_bytes": 81920000,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 1,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 4,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 6,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 1,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 4,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 6,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          7076.707412,
+          6917.958113,
+          5248.262755
+        ],
+        "first_observation_ms": 8477.248365,
+        "median_ms": 6917.958113,
+        "input_tokens_per_second": 144.55132333351844,
+        "min_ms": 5248.262755,
+        "max_ms": 7076.707412,
+        "warm_software_counted_expert_h2d_bytes": [
+          33025792000,
+          33025792000,
+          33025792000
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 3,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 5,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 3,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 5,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          5899.895727,
+          6021.061942
+        ],
+        "first_observation_ms": 6129.111413,
+        "median_ms": 5960.4788345,
+        "input_tokens_per_second": 167.77175588844884,
+        "min_ms": 5899.895727,
+        "max_ms": 6021.061942,
+        "warm_software_counted_expert_h2d_bytes": [
+          32947532800,
+          32947532800
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 13.84048967715974,
+    "sparse_throughput_increase_percent": 16.063797978075,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 2,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 27639
+    }
+  },
+  {
+    "name": "virtual-v100-two-01",
+    "returncode": 0,
+    "kind": "cached",
+    "physical_devices": [
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+    ],
+    "virtual_devices": 2,
+    "layers": [
+      24,
+      24
+    ],
+    "base_allowances": [
+      4,
+      4
+    ],
+    "tokens": 1000,
+    "prefix": 100000,
+    "fixture": "cpp",
+    "completed_requests": 7,
+    "stores": 2,
+    "boundary_bytes": 40960000,
+    "strict_token_residency": true,
+    "variants": {
+      "0": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 1,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 4,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              },
+              {
+                "round": 6,
+                "sha256": "4c9d7703d4adec3ce1d8165e7e398fb9d416ccf1bbd5543924b34160dc6cf738"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 0,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 1,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 4,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              },
+              {
+                "round": 6,
+                "sha256": "34eb04b1e43b87b9be4ce40c9e7c7360745a1946ebe4401c7f50595378f1140c"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          5249.443689,
+          5167.180941,
+          5079.477468
+        ],
+        "first_observation_ms": 7048.634333,
+        "median_ms": 5167.180941,
+        "input_tokens_per_second": 193.52912379462194,
+        "min_ms": 5079.477468,
+        "max_ms": 5249.443689,
+        "warm_software_counted_expert_h2d_bytes": [
+          31193932800,
+          31193932800,
+          31193932800
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "1": {
+        "repeatability": {
+          ".f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 3,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              },
+              {
+                "round": 5,
+                "sha256": "b7e0cd62568353dade6b537a822655e85466609d259ac3b9c961572226cddaf5"
+              }
+            ]
+          },
+          "-next.f32": {
+            "byte_identical": true,
+            "hashes": [
+              {
+                "round": 2,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 3,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              },
+              {
+                "round": 5,
+                "sha256": "3e03a7d9c85793892a2244a2779ac6c7d57a68e11962ab33a42034f6b0463993"
+              }
+            ]
+          }
+        },
+        "all_checked_outputs_repeat_exactly": true,
+        "warm_samples_ms": [
+          4089.406968,
+          4069.806645
+        ],
+        "first_observation_ms": 4166.392522,
+        "median_ms": 4079.6068065,
+        "input_tokens_per_second": 245.1216618245438,
+        "min_ms": 4069.806645,
+        "max_ms": 4089.406968,
+        "warm_software_counted_expert_h2d_bytes": [
+          31058688000,
+          31058688000
+        ],
+        "warm_promotion_bytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "sparse_latency_reduction_percent": 21.047726931147924,
+    "sparse_throughput_increase_percent": 26.65879792060297,
+    "sampled_peak_gpu_mib": {
+      "GPU-30acbf2b-a41a-8b88-e298-fe66c4138b29": 2,
+      "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79": 27483
+    }
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "prefix": 100000,
+  "tokens": 1000,
+  "settings": {
+    "0": {
+      "median_ms": 5029.219749,
+      "input_tokens_per_second": 198.83800070554443,
+      "warm_samples_ms": [
+        5170.01135,
+        5029.219749,
+        5028.970095
+      ],
+      "repeats_bitwise": true
+    },
+    "1": {
+      "median_ms": 4158.9606375,
+      "input_tokens_per_second": 240.44468971005017,
+      "warm_samples_ms": [
+        4163.037403,
+        4154.883872
+      ],
+      "repeats_bitwise": true
+    }
+  }
+}

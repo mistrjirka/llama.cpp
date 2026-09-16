@@ -1,0 +1,111 @@
+{
+  "command": [
+    "/workspace/moe-layer-first-0914/hardware-portability-0916/bench-portable",
+    "/models/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+    "1000",
+    "1024",
+    "100000",
+    "6",
+    "single-v100-cached-01"
+  ],
+  "env": {
+    "CUDA_VERSION": "12.9.1",
+    "LD_LIBRARY_PATH": "/workspace/moe-layer-first-0914/selected-attention-0915/runtime:/usr/local/cuda/lib64",
+    "QWEN4EXP_QSA_PP_BLOCK_TOPK": "0",
+    "DIAG_ALL_OUTPUTS": "0",
+    "GGML_CUDA_VOLTA_FORCE_MMQ": "moe",
+    "BENCH_MODES": "stagger",
+    "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+    "BENCH_TOKENS": "/workspace/llama-moe-profile-100k-0914/benches/moe-profile-100k-0914/tokens.i32",
+    "CUDA_VISIBLE_DEVICES": "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79",
+    "GGML_CUDA_MOE_STREAM": "0",
+    "GGML_OP_OFFLOAD_MIN_BATCH": "1",
+    "BENCH_PREFIX_STATE": "/workspace/llama-moe-profile-100k-0914/benches/moe-profile-100k-0914/next-100k-q8.state",
+    "BENCH_EXPERT_ROWS": "1024",
+    "GGML_CUDA_PREFETCH_WEIGHTS": "0",
+    "BENCH_CONTEXT": "131072",
+    "QWEN4EXP_QSA_PP_GATHER": "0",
+    "LLAMA_MOE_LAYER_FIRST_AUTO": "0",
+    "BENCH_QUALITY": "0",
+    "BENCH_DEVICE_MIB": "3072",
+    "LLAMA_MOE_LAYER_FIRST_ACCUM_AUDIT": "0",
+    "GGML_CUDA_LF_ACCUM_FUSE": "1",
+    "LLAMA_MOE_LAYER_FIRST_ASYNC_INPUTS": "0",
+    "LLAMA_MOE_PROFILE": "0",
+    "BENCH_RECORD_NUMERIC_DIFFERENCE": "1",
+    "LLAMA_MOE_LAYER_FIRST_RESIDENT_GROUP": "16",
+    "LLAMA_MOE_LAYER_FIRST_OUTPUT_ALIAS": "0",
+    "BENCH_GPU_LAYERS": "48",
+    "BENCH_SAMPLES": "8",
+    "BENCH_CONTINUATION": "8",
+    "LLAMA_MOE_LAYER_FIRST_PLAN_SHARED_SCRATCH": "0",
+    "LLAMA_MOE_LAYER_FIRST_KV_RING": "0",
+    "LLAMA_MOE_LAYER_FIRST_ADAPTIVE_MAX_LAYERS": "2",
+    "BENCH_SEQUENCE": "1000,1000,1000,1000,1000,1000,1000",
+    "BENCH_SPARSE_SEQUENCE": "0,0,1,1,0,1,0",
+    "BENCH_PREPARATION_SEQUENCE": "3,3,3,3,3,3,3",
+    "BENCH_ATTENTION_SEQUENCE": "3,3,3,3,3,3,3",
+    "LLAMA_MOE_LAYER_FIRST_BASE_LAYERS_0": "14",
+    "BENCH_SUFFIX_SEQUENCE": "/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt,/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt,/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt,/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt,/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt,/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt,/workspace/moe-layer-first-0914/selected-attention-quality-0915/fixtures/cpp.txt"
+  },
+  "runtime_sha256": {
+    "libllama.so.0": "c0c184bf041e198e180e7b8b63cc19527a59644458e6b3cec8c7d5250a1c6e6b",
+    "libggml-cuda.so.0": "daa9dcafeb9645f37a6d8d43873baca391f7985f716f906ea02017de058509fc"
+  },
+  "devices": [
+    "GPU-1d64d3a4-4aea-87ec-9048-33a5217efd79"
+  ],
+  "layers": [
+    48
+  ],
+  "base": [
+    14
+  ],
+  "kind": "cached",
+  "fixture": "cpp",
+  "rounds": [
+    {
+      "round": 0,
+      "sparse": 0,
+      "warmup": true,
+      "profiled": false
+    },
+    {
+      "round": 1,
+      "sparse": 0,
+      "warmup": false,
+      "profiled": false
+    },
+    {
+      "round": 2,
+      "sparse": 1,
+      "warmup": true,
+      "profiled": false
+    },
+    {
+      "round": 3,
+      "sparse": 1,
+      "warmup": false,
+      "profiled": false
+    },
+    {
+      "round": 4,
+      "sparse": 0,
+      "warmup": false,
+      "profiled": false
+    },
+    {
+      "round": 5,
+      "sparse": 1,
+      "warmup": false,
+      "profiled": false
+    },
+    {
+      "round": 6,
+      "sparse": 0,
+      "warmup": false,
+      "profiled": false
+    }
+  ],
+  "scope": "Hardware portability; full model request API. Sampled prompt outputs and 8 fixed input continuation rows. Saved mixed-device prefix reused, not recomputed. No claim of quality equivalence across hardware."
+}

@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-16",
+  "comparison": "Same merged request-wide executor, previous versus selected-entry attention; not upstream",
+  "caption": "UD-IQ4_XS | Q8 history | Warm requests, 16 Sep 2026 | Experimental; quality not certified",
+  "rows": [
+    {
+      "label": "V100 32 GB",
+      "placement": "All 48 layers on V100",
+      "control_ms": 4796.123139,
+      "sparse_ms": 3824.853053,
+      "source": "merged-v100-cached/summary.json",
+      "runtime_sha256": {
+        "libllama.so.0": "f71ba6cc424b5348ffc494feb254d709575f405443be1273c1be6d6b9765ad67",
+        "libggml-cuda.so.0": "e48a41782d85ccad048cad10861f3fd579fd720a1baefa0d32d37b0d7f3e1fbb"
+      }
+    },
+    {
+      "label": "RTX 2080 Ti 22 GB",
+      "placement": "All 48 layers on RTX",
+      "control_ms": 5029.219749,
+      "sparse_ms": 4158.9606375,
+      "source": "merged-rtx-cached/summary.json",
+      "runtime_sha256": {
+        "libllama.so.0": "f71ba6cc424b5348ffc494feb254d709575f405443be1273c1be6d6b9765ad67",
+        "libggml-cuda.so.0": "e48a41782d85ccad048cad10861f3fd579fd720a1baefa0d32d37b0d7f3e1fbb"
+      }
+    },
+    {
+      "label": "V100 + RTX 2080 Ti",
+      "placement": "36 V100 layers / 12 RTX layers",
+      "control_ms": 3970.630089,
+      "sparse_ms": 3131.6806834999998,
+      "source": "merged-mixed-cached/summary.json",
+      "runtime_sha256": {
+        "libllama.so.0": "f71ba6cc424b5348ffc494feb254d709575f405443be1273c1be6d6b9765ad67",
+        "libggml-cuda.so.0": "e48a41782d85ccad048cad10861f3fd579fd720a1baefa0d32d37b0d7f3e1fbb"
+      }
+    }
+  ]
+}
