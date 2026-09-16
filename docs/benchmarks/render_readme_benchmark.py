@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -11,6 +12,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 FINAL = ROOT / "benches/upstream-sync-0912/headline-final-summary.json"
 EXPERIMENT = ROOT / "benches/moe-prefill-0916/results/graph.json"
+UPSTREAM_RUNTIME = ROOT / "benches/moe-prefill-0916/results/upstream-runtime-0916"
 ORDER = [
     ("qwen-v100", "Qwen3.8 27B", "V100 32 GB", "100k cached + 1k input"),
     ("qwen-rtx", "Qwen3.8 27B", "RTX 2080 Ti 22 GB", "65k cached + 1k input"),
@@ -82,10 +84,27 @@ def main():
                  "a": data[key]["upstream"][metric], "b": data[key]["current"][metric],
                  "first_token_reduction": data[key].get("ttft_reduction_pct") if metric == "pp" else None}
                 for key, model, hardware, workload in ORDER]
-        paired_chart(HERE / filename, title=title, subtitle=subtitle,
-                     legends=("Upstream 3057bb66", "v100-optimized, 12 Sep"), rows=rows,
+        if metric == "pp":
+            upstream_rows = [json.loads(line) for line in (UPSTREAM_RUNTIME / "upstream-1000.jsonl").read_text().splitlines()]
+            optimized_rows = [json.loads(line) for line in (UPSTREAM_RUNTIME / "request-ordered.jsonl").read_text().splitlines()]
+            upstream_ms = statistics.median(row["ms"] for row in upstream_rows[1:])
+            optimized_ms = statistics.median(row["ms"] for row in optimized_rows if row["sparse"] == 1 and row["round"] > 6)
+            flash_next = {
+                "model": "Qwen3.8 Flash-Next",
+                "hardware": "V100 + RTX 2080 Ti",
+                "workload": "100k cached + 1k input · 16 Sep",
+                "a": 1_000_000 / upstream_ms,
+                "b": 1_000_000 / optimized_ms,
+            }
+            rows.insert(3, flash_next)
+        paired_chart(HERE / filename, title=title,
+                     subtitle="Matched comparisons with upstream llama.cpp, 12–16 September 2026" if metric == "pp" else subtitle,
+                     legends=(("Matched upstream", "v100-optimized") if metric == "pp" else
+                              ("Upstream 3057bb66", "v100-optimized, 12 Sep")), rows=rows,
                      step=400 if metric == "pp" else 20,
-                     footer="Q8 history cache | Matched model and hardware per row | Exact settings: benches/upstream-sync-0912/REPORT.md")
+                     footer=("Q8 history | 12 Sep rows: upstream 3057bb66 · Flash-Next 16 Sep: upstream 83078fec0"
+                             if metric == "pp" else
+                             "Q8 history cache | Upstream 3057bb66 vs v100-optimized, 12 Sep | Exact settings: benches/upstream-sync-0912/REPORT.md"))
     if EXPERIMENT.exists():
         experiment = json.loads(EXPERIMENT.read_text())
         rows = [{"model": row["label"], "hardware": row["placement"], "workload": "100k cached + 1k input",

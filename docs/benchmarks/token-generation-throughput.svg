@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="910" viewBox="0 0 1200 910" role="img" aria-labelledby="title desc">
 <title id="title">Writing the answer: generation speed</title>
-<desc id="desc">128 output tokens after the long-context input, 12 September 2026 Q8 history cache | Matched model and hardware per row | Exact settings: benches/upstream-sync-0912/REPORT.md</desc>
+<desc id="desc">128 output tokens after the long-context input, 12 September 2026 Q8 history cache | Upstream 3057bb66 vs v100-optimized, 12 Sep | Exact settings: benches/upstream-sync-0912/REPORT.md</desc>
 <rect width="1200" height="910" fill="#FFFFFF"/>
 <text x="26.0" y="38.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="29" font-weight="700" fill="#24292F">Writing the answer: generation speed</text>
 <text x="26.0" y="66.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#57606A">128 output tokens after the long-context input, 12 September 2026</text>
@@ -92,5 +92,5 @@
 <text x="609.6" y="822.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">29.4</text>
 <text x="1120.0" y="808.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">-0.0%</text>
 <text x="26.0" y="876.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#24292F">Tokens per second - higher is faster</text>
-<text x="26.0" y="900.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">Q8 history cache | Matched model and hardware per row | Exact settings: benches/upstream-sync-0912/REPORT.md</text>
+<text x="26.0" y="900.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">Q8 history cache | Upstream 3057bb66 vs v100-optimized, 12 Sep | Exact settings: benches/upstream-sync-0912/REPORT.md</text>
 </svg>

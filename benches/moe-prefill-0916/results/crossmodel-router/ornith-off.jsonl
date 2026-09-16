@@ -1,0 +1,7 @@
+{"round":0,"fusion":false,"tokens":4096,"ubatch":512,"ms":1707.707473,"tps":2398.53725814,"top1":6297,"hash":"738d735a3ec708dd"}
+{"round":1,"fusion":false,"tokens":4096,"ubatch":512,"ms":1597.430415,"tps":2564.11794939,"top1":6297,"hash":"738d735a3ec708dd"}
+{"round":2,"fusion":false,"tokens":4096,"ubatch":512,"ms":1601.074485,"tps":2558.28197774,"top1":6297,"hash":"738d735a3ec708dd"}
+{"round":3,"fusion":false,"tokens":4096,"ubatch":512,"ms":1595.581239,"tps":2567.08959712,"top1":6297,"hash":"738d735a3ec708dd"}
+{"round":4,"fusion":false,"tokens":4096,"ubatch":512,"ms":1600.072685,"tps":2559.88370928,"top1":6297,"hash":"738d735a3ec708dd"}
+{"round":5,"fusion":false,"tokens":4096,"ubatch":512,"ms":1599.25216,"tps":2561.19710353,"top1":6297,"hash":"738d735a3ec708dd"}
+{"round":6,"fusion":false,"tokens":4096,"ubatch":512,"ms":1610.772918,"tps":2542.87861078,"top1":6297,"hash":"738d735a3ec708dd"}

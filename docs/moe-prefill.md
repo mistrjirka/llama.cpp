@@ -12,6 +12,20 @@ The optional selected-entry attention kernel skips masked history entries during
 
 Both the request-wide executor and the selected-entry candidate remain opt-in. Merging this code does not change ordinary server launches into expert-streaming runs.
 
+
+## Runtime switches
+
+The main optimization choices are context/runtime options, not environment variables:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--moe-layer-first` | off | Enable request-wide MoE scheduling in supported single-sequence contexts. |
+| `--moe-router-fusion` | on | Fuse compatible MoE routing graphs; use the `--no-*` form for controlled comparisons. |
+| `--exact-set-top-k` | off | Enable exact-set radix top-k on compatible sparse-history selectors. |
+| `--selected-attn` | **on** | Use direct selected-entry attention whenever the model and CUDA shape are eligible. |
+
+Each has a matching `--no-*` form. `--no-selected-attn` is the comparison/escape hatch for the previous masked attention implementation. The C API also exposes `llama_context_params.selected_attn` and `llama_set_selected_attn()` for applications that need to change the attention implementation at runtime. Changing it invalidates the reusable graph reservation before the next decode.
+
 ## Start with a short benchmark
 
 Build the CUDA server as described in the [README](../README.md#build). The benchmark wrapper needs Python 3.10 or later, a C++ compiler and CUDA headers. It compiles the included harness against your build; it does not download models, install packages or modify server defaults.

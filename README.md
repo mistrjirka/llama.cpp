@@ -12,9 +12,9 @@ The tested machines run Linux with CUDA 12.9, a V100 32 GB and an RTX 2080 Ti wi
 
 A model first reads your input, then writes an answer. **Prompt processing** measures the first part; **generation** measures the second. A token is a piece of text, often part of a word. In these graphs, higher tokens per second means faster processing.
 
-![Prompt-processing speed by model and GPU, comparing upstream llama.cpp with this fork on September 12, 2026](docs/benchmarks/long-context-prompt-processing.svg)
+![Prompt-processing speed by model and GPU, comparing matched upstream llama.cpp with this fork, including Qwen3.8 Flash-Next](docs/benchmarks/long-context-prompt-processing.svg)
 
-The main workload adds 1,000 input tokens to a cached 100,000-token history. RTX-only rows use a 65,536-token history. These are published comparisons with upstream revision `3057bb66` from September 12, 2026, not promises for every model or the time to read a fresh 100k-token prompt. [Settings and results](docs/benchmarks/upstream-table.md). The newer [Flash-Next graph](#qwen38-flash-next-experimental) uses a separate comparison.
+The main workload adds 1,000 input tokens to a cached 100,000-token history. RTX-only rows use a 65,536-token history. Most rows compare against upstream `3057bb66` from September 12, 2026; the **Qwen3.8 Flash-Next** row is the fresh September 16 comparison against upstream `83078fec0` and uses the full request-wide + selected-attention stack. These are matched benchmark comparisons, not promises for every model or the time to read a fresh 100k-token prompt. [September 12 settings](docs/benchmarks/upstream-table.md) · [Flash-Next September 16 methodology](benches/moe-prefill-0916/UPSTREAM-RUNTIME-0916.md).
 
 ## Build
 
@@ -157,11 +157,25 @@ Multi-token prediction (MTP) uses a draft to propose tokens that the main model 
 
 A mixture-of-experts (MoE) model selects parts of the model, called experts, for each token. When its weights exceed GPU memory, copying the same experts from RAM for every input chunk can be expensive. This fork's **request-wide prefill** processes one layer across the complete new prompt, so an uploaded expert can serve all the tokens that need it before its GPU buffer is reused. The repeatedly used token state stays in GPU memory.
 
-The optional **selected-entry attention** kernel computes the model's existing sparse attention directly. For identical inputs it uses the same selected history entries, rather than imposing another lossy attention-selection rule. Arithmetic differs from the previous kernel, and model outputs can change; the [numerical audit](benches/moe-prefill-0916/NUMERICS.md) describes the remaining precision issue.
+The **selected-entry attention** kernel computes the model's existing sparse attention directly and is enabled by default when the model and shape are eligible. For identical inputs it uses the same selected history entries, rather than imposing another lossy attention-selection rule. Arithmetic differs from the previous kernel, and model outputs can change; the [numerical audit](benches/moe-prefill-0916/NUMERICS.md) describes the remaining precision issue.
 
 ![Experimental Flash-Next input-processing speed on individual and mixed GPUs, with selected-entry attention disabled and enabled](docs/benchmarks/flash-next-prefill.svg)
 
 These September 16 checks on the merged source use `UD-IQ4_XS`, Q8 history, a restored 100k-token prefix and 1,000 new C++ input tokens. Both bars use the new request-wide executor. They are **not upstream comparisons** or generated-token speeds. Loading, prefix restoration and first expert-cache population are outside the warm-request timings. See [raw results and methodology](benches/moe-prefill-0916/MERGE.md).
+
+### Fresh comparison with current upstream
+
+A later matched rerun uses current upstream `83078fec0`, the same `UD-IQ4_XS` model, Q8 history, restored 100k prefix, 1,000 new C++ tokens, and V100 + 22 GB RTX with 36/12 layer placement. Canonical expert tensors are host-backed in every row. Model loading, prefix restore and the first warmup observation are excluded.
+
+| Configuration | Input time | Input speed | Throughput vs upstream |
+|---|---:|---:|---:|
+| Current upstream | 8.325 s | 120.1 tok/s | baseline |
+| This fork, four new runtime features off | 6.197 s | 161.4 tok/s | **+34.3%** |
+| Request-wide executor; router fusion, exact-set top-k and selected attention off | 4.117 s | 242.9 tok/s | **+102.2%** |
+| Request-wide + router fusion + exact-set top-k; selected attention off | 3.746 s | 267.0 tok/s | **+122.3%** |
+| Full stack, including selected-entry attention | **2.860 s** | **349.7 tok/s** | **+191.1% (2.91x)** |
+
+The full stack is **2.17x faster than the same fork with all four new runtime features disabled**. In this preset, request-wide execution contributes the largest MoE-side gain, router fusion plus exact-set top-k add about 9.9% over that request-wide baseline, and selected-entry attention adds about 31.0% over the otherwise matched selected-attention-off configuration. [Exact methodology and raw-result references](benches/moe-prefill-0916/UPSTREAM-RUNTIME-0916.md).
 
 ### Flash-Next settings
 
@@ -177,20 +191,34 @@ python3 benches/moe-prefill-0916/run.py \
 
 The starting test processes 4,096 new tokens without a saved prefix. Use `--preset rtx2080ti` for the 22 GB RTX or `--preset v100-rtx2080ti` for the mixed system. The runner selects matching cards, prints the chosen devices, compiles its test executable against your build, and saves commands and results. [Long-context reproduction and the full option list](docs/moe-prefill.md).
 
-| Setting | What it controls |
-|---|---|
-| `LLAMA_MOE_LAYER_FIRST=1` | Enables request-wide expert scheduling. It is disabled in ordinary launches. |
-| `LLAMA_MOE_LAYER_FIRST_DEVICE_MIB=3072` | The per-device budget used to plan new-token working state and optional extra expert caching. It is not a limit on the whole model or the history cache. |
-| `LLAMA_MOE_LAYER_FIRST_BASE_LAYERS_0` / `_1` | Base expert-cache allowances on the first and second layer devices. More cached weights can reduce RAM transfers, but leave less memory for other work. The tested bases are 14 on one V100, 6 on one RTX, or 16/10 on the mixed pair. |
-| `QWEN4EXP_QSA_SPARSE_ATTN=1` | Enables the selected-entry attention candidate at long history. It is off by default; the benchmark runner compares both settings. |
+| Runtime option | Default | What it controls |
+|---|---|---|
+| `--moe-layer-first` / `--no-moe-layer-first` | off | Request-wide expert scheduling. Enable it for the experimental full-request MoE path. |
+| `--moe-router-fusion` / `--no-moe-router-fusion` | on | Fuses compatible MoE softmax/top-k/normalization routing graphs on supported backends. |
+| `--exact-set-top-k` / `--no-exact-set-top-k` | off | Uses the exact selected-set radix top-k on compatible history-selection graphs. |
+| `--selected-attn` / `--no-selected-attn` | **on** | Computes model-defined sparse attention directly over the selected entries when the shape and history length are supported. The old masked path remains available with `--no-selected-attn`. |
 
-Those four settings explain the main choices; they are **not a complete server-launch preset**. The runner supplies the additional validated scheduling options. The experiment needs substantial system RAM, one text sequence and CUDA layer placement. The third device's base-cache allowance is not yet configurable; two/three logical-device checks are not physical multi-V100 benchmarks. See [support limits](docs/moe-prefill.md#support-and-memory-limits).
+The main optimization switches are ordinary runtime/context settings rather than environment variables. The selected-entry path is enabled by default but still keeps its eligibility checks, including the long-history crossover. The numerical audit remains relevant because the two attention implementations are not bit-identical.
+
+The benchmark also has internal memory-tuning controls such as `LLAMA_MOE_LAYER_FIRST_DEVICE_MIB` and per-device resident-expert budgets. Those are experimental tuning knobs, not the user-facing feature switches above. The runner supplies the validated values for its hardware presets. The experiment needs substantial system RAM, one text sequence and CUDA layer placement. The third device's base-cache allowance is not yet configurable; two/three logical-device checks are not physical multi-V100 benchmarks. See [support limits](docs/moe-prefill.md#support-and-memory-limits).
 
 ## What else this fork changes
 
 The attention work covers long conversations on Volta and Turing. The fork also accelerates conversion of several quantized weight formats on V100, selects different matrix routines for routed experts, and includes mixed-GPU and shared-prefix serving work. The measured benefits depend on the model and shape of the request.
 
 For Ornith, use the [Ornith and multi-slot guide](docs/gpu-tuning.md). It includes the separate RTX FORCE_MMQ build and the four-slot MTP example. Those settings are not interchangeable with dense Qwen or Flash-Next.
+
+### Router fusion on other MoE models
+
+`--moe-router-fusion` is **on by default**. A standalone V100 4,096-token check shows that its effect depends on the model:
+
+| Model | Fusion off | Fusion on | Change |
+|---|---:|---:|---:|
+| Gemma 4 26B-A4B UD-Q4_K_XL | 2595.1 tok/s | **2625.4 tok/s** | **+1.17%** |
+| Ornith 1.5 35B-A3B AD-Q6_K-Q5_K | **2560.5 tok/s** | 2558.0 tok/s | -0.10% (neutral) |
+| Gemma 4 E2B Q4_K_M | 7145.6 tok/s | 7203.0 tok/s | not attributable: **0 eligible fused-router calls** |
+
+The first round is discarded and each number is the median of six measured rounds. Gemma 26B and Ornith demonstrably exercised the fused CUDA router; E2B did not. This is why the fusion keeps a runtime opt-out even though it defaults on. [Cross-model details](benches/moe-prefill-0916/ROUTER-CROSSMODEL-0916.md).
 
 ## Benchmarks and validation
 
@@ -205,7 +233,7 @@ These runs generate 128 tokens. Most single-GPU generation rates were close to u
 
 </details>
 
-[Quantization-kernel checks](benches/volta-kquant-0912/ADDITIONAL_FORMATS.md), [saved-state correctness](benches/correctness-0912/nondeterminism/REPORT.md) and the [merge validation record](benches/moe-prefill-0916/MERGE.md) cover different test scopes. Sparse-attention quality and the inherited FP32-request/FP16-value-accumulator mismatch remain open; merging the code does not enable the experiment by default.
+[Quantization-kernel checks](benches/volta-kquant-0912/ADDITIONAL_FORMATS.md), [saved-state correctness](benches/correctness-0912/nondeterminism/REPORT.md) and the [merge validation record](benches/moe-prefill-0916/MERGE.md) cover different test scopes. Sparse-attention quality and the inherited FP32-request/FP16-value-accumulator mismatch remain open. Selected-entry attention and MoE router fusion default on when eligible; request-wide MoE scheduling and exact-set top-k remain opt-in.
 
 ## Help and upstream
 

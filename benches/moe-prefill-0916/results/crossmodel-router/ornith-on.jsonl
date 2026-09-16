@@ -1,0 +1,7 @@
+{"round":0,"fusion":true,"tokens":4096,"ubatch":512,"ms":1691.742156,"tps":2421.17274519,"top1":6297,"hash":"56e0822fc8af18f3"}
+{"round":1,"fusion":true,"tokens":4096,"ubatch":512,"ms":1596.490008,"tps":2565.62833433,"top1":6297,"hash":"56e0822fc8af18f3"}
+{"round":2,"fusion":true,"tokens":4096,"ubatch":512,"ms":1617.385421,"tps":2532.48233032,"top1":6297,"hash":"56e0822fc8af18f3"}
+{"round":3,"fusion":true,"tokens":4096,"ubatch":512,"ms":1587.44913,"tps":2580.24016177,"top1":6297,"hash":"56e0822fc8af18f3"}
+{"round":4,"fusion":true,"tokens":4096,"ubatch":512,"ms":1590.003327,"tps":2576.09523857,"top1":6297,"hash":"56e0822fc8af18f3"}
+{"round":5,"fusion":true,"tokens":4096,"ubatch":512,"ms":1606.001896,"tps":2550.43285453,"top1":6297,"hash":"56e0822fc8af18f3"}
+{"round":6,"fusion":true,"tokens":4096,"ubatch":512,"ms":1611.615414,"tps":2541.54928305,"top1":6297,"hash":"56e0822fc8af18f3"}

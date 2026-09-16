@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-16",
+  "hardware": "Tesla V100-SXM2-32GB",
+  "tokens": 4096,
+  "measured_rounds": 6,
+  "first_round_excluded": true,
+  "models": {
+    "ornith": {
+      "label": "Ornith 1.5 35B-A3B AD-Q6_K-Q5_K",
+      "eligible": true,
+      "fusion_on": {
+        "median_ms": 1601.245952,
+        "tokens_per_second": 2558.008027988445,
+        "top1": 6297,
+        "hash": "56e0822fc8af18f3",
+        "eligible_router_calls": 2240,
+        "fused_router_calls": 2240
+      },
+      "fusion_off": {
+        "median_ms": 1599.6624225,
+        "tokens_per_second": 2560.5402379826173,
+        "top1": 6297,
+        "hash": "738d735a3ec708dd",
+        "eligible_router_calls": 2240,
+        "fused_router_calls": 0
+      },
+      "throughput_gain_pct": -0.09889358333877718
+    },
+    "gemma26": {
+      "label": "Gemma 4 26B-A4B UD-Q4_K_XL",
+      "eligible": true,
+      "fusion_on": {
+        "median_ms": 1560.1615499999998,
+        "tokens_per_second": 2625.3691484705546,
+        "top1": 236764,
+        "hash": "f5f7e71a746b829c",
+        "eligible_router_calls": 840,
+        "fused_router_calls": 840
+      },
+      "fusion_off": {
+        "median_ms": 1578.3506455000002,
+        "tokens_per_second": 2595.114090571707,
+        "top1": 236764,
+        "hash": "d6a447f54d33e343",
+        "eligible_router_calls": 840,
+        "fused_router_calls": 0
+      },
+      "throughput_gain_pct": 1.1658469278390093
+    },
+    "gemma-e2b": {
+      "label": "Gemma 4 E2B Q4_K_M",
+      "eligible": false,
+      "fusion_on": {
+        "median_ms": 568.6543955,
+        "tokens_per_second": 7202.969030773983,
+        "top1": 236764,
+        "hash": "8249b6b981be9f61",
+        "eligible_router_calls": 0,
+        "fused_router_calls": 0
+      },
+      "fusion_off": {
+        "median_ms": 573.220424,
+        "tokens_per_second": 7145.5932630900115,
+        "top1": 236764,
+        "hash": "8249b6b981be9f61",
+        "eligible_router_calls": 0,
+        "fused_router_calls": 0
+      },
+      "throughput_gain_pct": null
+    }
+  }
+}
