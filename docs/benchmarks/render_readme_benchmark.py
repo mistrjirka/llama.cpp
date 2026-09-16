@@ -1,163 +1,166 @@
 #!/usr/bin/env python3
-"""Render the README long-context benchmark as a standalone SVG.
+"""Render the README's user-facing upstream-vs-v100-optimized benchmark charts.
 
-The values below are retained headline measurements documented in the
-README and benchmark notes.
+Both charts are backed by the fresh September 12, 2026 benchmark summaries:
+- benches/upstream-sync-0912/headline-final-summary.json
+
+The prompt-processing chart compares the complete current fork against current
+upstream; quant-isolation and component microbenchmarks deliberately do not
+appear in the README hero chart.
 """
+from __future__ import annotations
+
+import json
+import math
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-OUT = Path(__file__).with_name("long-context-prompt-processing.svg")
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+PP_OUT = HERE / "long-context-prompt-processing.svg"
+TG_OUT = HERE / "token-generation-throughput.svg"
+FINAL = ROOT / "benches/upstream-sync-0912/headline-final-summary.json"
 
-rows = [
-    {
-        "lines": ("Qwen3.8 27B", "V100 32 GB", "100k cached + 1k"),
-        "upstream": 297.69,
-        "fork": 429.66,
-        "gain": 44.33,
-        "ttft": 30.23,
-    },
-    {
-        "lines": ("Qwen3.8 27B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
-        "upstream": 382.30,
-        "fork": 494.92,
-        "gain": 29.46,
-        "ttft": 22.53,
-    },
-    {
-        "lines": ("Qwen3.8 27B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
-        "upstream": 408.08,
-        "fork": 690.96,
-        "gain": 69.32,
-        "ttft": 39.93,
-    },
-    {
-        "lines": ("Ornith 1.5 35B-A3B", "V100 32 GB", "100k cached + 1k"),
-        "upstream": 539.11,
-        "fork": 803.18,
-        "gain": 48.98,
-        "ttft": 32.06,
-    },
-    {
-        "lines": ("Ornith 1.5 35B-A3B", "RTX 2080 Ti 22 GB", "65k cached + 1k"),
-        "upstream": 1332.91,
-        "fork": 1505.73,
-        "gain": 12.97,
-        "ttft": 11.13,
-    },
-    {
-        "lines": ("Ornith 1.5 35B-A3B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k"),
-        "upstream": 1247.39,
-        "fork": 1458.85,
-        "gain": 16.95,
-        "ttft": 14.44,
-    },
-    {
-        "lines": ("Gemma 4 31B", "V100 32 GB", "100k depth + 1k"),
-        "upstream": 199.84,
-        "fork": 273.19,
-        "gain": 36.70,
-        "ttft": None,
-    },
-    {
-        "lines": ("Gemma 4 26B-A4B", "V100 32 GB", "100k depth + 1k"),
-        "upstream": 689.52,
-        "fork": 905.84,
-        "gain": 31.37,
-        "ttft": None,
-    },
+ORDER = [
+    ("qwen-v100",  ("Qwen3.8 27B", "V100 32 GB", "100k cached + 1k")),
+    ("qwen-rtx",   ("Qwen3.8 27B", "RTX 2080 Ti 22 GB", "65k cached + 1k")),
+    ("qwen-dual",  ("Qwen3.8 27B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k")),
+    ("ornith-v100",("Ornith 1.5 35B-A3B", "V100 32 GB", "100k cached + 1k")),
+    ("ornith-rtx", ("Ornith 1.5 35B-A3B", "RTX 2080 Ti 22 GB", "65k cached + 1k")),
+    ("ornith-dual",("Ornith 1.5 35B-A3B", "V100 32 GB + RTX 2080 Ti", "100k cached + 1k")),
+    ("gemma31",    ("Gemma 4 31B", "V100 32 GB", "100k depth + 1k")),
+    ("gemma26",    ("Gemma 4 26B-A4B", "V100 32 GB", "100k depth + 1k")),
+    ("muse-v100",  ("Muse Glimmer 30B", "V100 32 GB", "100k depth + 1k")),
 ]
 
-W, H = 1900, 790
-left, right, top, bottom = 90, 45, 128, 170
-plot_w = W - left - right
-plot_h = H - top - bottom
-ymax = 1600.0
-baseline_y = top + plot_h
-
-upstream_color = "#8C959F"
-fork_color = "#0969DA"
-text_color = "#24292F"
-muted = "#57606A"
-grid = "#D8DEE4"
-pill_fill = "#F6F8FA"
-pill_stroke = "#D0D7DE"
+UPSTREAM_COLOR = "#8C959F"
+FORK_COLOR = "#0969DA"
+TEXT_COLOR = "#24292F"
+MUTED = "#57606A"
+GRID = "#D8DEE4"
+PILL_FILL = "#F6F8FA"
+PILL_STROKE = "#D0D7DE"
+FONT = "-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif"
 
 
-def y(v: float) -> float:
-    return baseline_y - (v / ymax) * plot_h
-
-
-def svg_text(x, y0, text, *, size=18, weight=400, anchor="middle", fill=text_color):
+def text(x, y, value, *, size=18, weight=400, anchor="middle", fill=TEXT_COLOR):
     return (
-        f'<text x="{x:.1f}" y="{y0:.1f}" text-anchor="{anchor}" '
-        f'font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" '
-        f'font-size="{size}" font-weight="{weight}" fill="{fill}">{escape(str(text))}</text>'
+        f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" '
+        f'font-family="{FONT}" font-size="{size}" font-weight="{weight}" fill="{fill}">'
+        f'{escape(str(value))}</text>'
     )
 
-parts = [
-    f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="title desc">',
-    '<title id="title">Long-context prompt processing: upstream versus v100-optimized</title>',
-    '<desc id="desc">Grouped vertical bars comparing upstream llama.cpp with v100-optimized across single-V100, single-RTX-2080-Ti, Gemma, Ornith, and mixed-GPU long-context workloads.</desc>',
-    f'<rect width="{W}" height="{H}" rx="12" fill="#FFFFFF"/>',
-    svg_text(left, 42, "Long-context prompt processing", size=30, weight=700, anchor="start"),
-    svg_text(left, 72, "Prompt processing throughput (tok/s) · grouped by model family and hardware", size=17, anchor="start", fill=muted),
-]
 
-# Legend
-legend_y = 51
-legend_x = 1540
-parts += [
-    f'<rect x="{legend_x}" y="{legend_y-14}" width="20" height="20" rx="4" fill="{upstream_color}"/>',
-    svg_text(legend_x + 30, legend_y + 2, "Upstream", size=16, anchor="start", fill=muted),
-    f'<rect x="{legend_x+135}" y="{legend_y-14}" width="20" height="20" rx="4" fill="{fork_color}"/>',
-    svg_text(legend_x + 165, legend_y + 2, "v100-optimized", size=16, anchor="start", fill=muted),
-]
+def load_rows():
+    final = json.loads(FINAL.read_text())
+    rows = []
+    for key, lines in ORDER:
+        src = final[key]
+        upstream, current = src["upstream"], src["current"]
+        rows.append({
+            "key": key,
+            "lines": lines,
+            "upstream_pp": upstream["pp"],
+            "current_pp": current["pp"],
+            "pp_gain": src["pp_gain_pct"],
+            "upstream_tg": upstream["tg"],
+            "current_tg": current["tg"],
+            "tg_gain": src["tg_gain_pct"],
+            "ttft_reduction": src.get("ttft_reduction_pct"),
+        })
+    return rows
 
-# Grid / y axis
-for tick in range(0, 1601, 400):
-    yy = y(tick)
-    parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{W-right}" y2="{yy:.1f}" stroke="{grid}" stroke-width="1"/>')
-    parts.append(svg_text(left - 14, yy + 6, tick, size=14, anchor="end", fill=muted))
-parts.append(svg_text(24, top + plot_h / 2, "tok/s", size=14, anchor="middle", fill=muted).replace('<text ', '<text transform="rotate(-90 24 %.1f)" ' % (top + plot_h / 2), 1))
 
-# Bars
-n = len(rows)
-group_w = plot_w / n
-bar_w = 54
-bar_gap = 12
+def nice_ymax(values, step):
+    return max(step, math.ceil(max(values) * 1.10 / step) * step)
 
-for i, row in enumerate(rows):
-    cx = left + group_w * (i + 0.5)
-    xu = cx - bar_gap / 2 - bar_w
-    xf = cx + bar_gap / 2
-    yu, yf = y(row["upstream"]), y(row["fork"])
-    hu, hf = baseline_y - yu, baseline_y - yf
 
-    parts.append(f'<rect x="{xu:.1f}" y="{yu:.1f}" width="{bar_w}" height="{hu:.1f}" rx="5" fill="{upstream_color}"/>')
-    parts.append(f'<rect x="{xf:.1f}" y="{yf:.1f}" width="{bar_w}" height="{hf:.1f}" rx="5" fill="{fork_color}"/>')
-    parts.append(svg_text(xu + bar_w/2, yu - 9, f'{row["upstream"]:.1f}', size=15, weight=600, fill=muted))
-    parts.append(svg_text(xf + bar_w/2, yf - 9, f'{row["fork"]:.1f}', size=15, weight=700, fill=fork_color))
+def render_pp(rows):
+    W, H = 2200, 820
+    left, right, top, bottom = 90, 45, 128, 170
+    plot_w, plot_h = W - left - right, H - top - bottom
+    ymax = nice_ymax([r[k] for r in rows for k in ("upstream_pp", "current_pp")], 400)
+    baseline_y = top + plot_h
+    y = lambda v: baseline_y - (v / ymax) * plot_h
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="title desc">',
+        '<title id="title">Long-context prompt processing: current upstream versus v100-optimized</title>',
+        '<desc id="desc">Grouped bars comparing prompt-processing throughput for current upstream llama.cpp and v100-optimized across Qwen, Ornith, Gemma, and Muse Glimmer workloads.</desc>',
+        f'<rect width="{W}" height="{H}" rx="12" fill="#FFFFFF"/>',
+        text(left, 42, "Long-context prompt processing", size=30, weight=700, anchor="start"),
+        text(left, 72, "Current upstream vs v100-optimized · prompt processing throughput (tok/s)", size=17, anchor="start", fill=MUTED),
+    ]
+    lx = W - 360
+    parts += [
+        f'<rect x="{lx}" y="37" width="20" height="20" rx="4" fill="{UPSTREAM_COLOR}"/>',
+        text(lx + 30, 53, "Upstream", size=16, anchor="start", fill=MUTED),
+        f'<rect x="{lx+135}" y="37" width="20" height="20" rx="4" fill="{FORK_COLOR}"/>',
+        text(lx + 165, 53, "v100-optimized", size=16, anchor="start", fill=MUTED),
+    ]
+    for tick in range(0, int(ymax) + 1, 400):
+        yy = y(tick)
+        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{W-right}" y2="{yy:.1f}" stroke="{GRID}" stroke-width="1"/>')
+        parts.append(text(left - 14, yy + 6, tick, size=14, anchor="end", fill=MUTED))
+    parts.append(text(24, top + plot_h/2, "tok/s", size=14, fill=MUTED).replace('<text ', f'<text transform="rotate(-90 24 {top + plot_h/2:.1f})" ', 1))
+    group_w = plot_w / len(rows); bar_w = 52; gap = 12
+    for i, r in enumerate(rows):
+        cx = left + group_w * (i + .5); xu = cx - gap/2 - bar_w; xf = cx + gap/2
+        yu, yf = y(r["upstream_pp"]), y(r["current_pp"])
+        parts += [
+            f'<rect x="{xu:.1f}" y="{yu:.1f}" width="{bar_w}" height="{baseline_y-yu:.1f}" rx="5" fill="{UPSTREAM_COLOR}"/>',
+            f'<rect x="{xf:.1f}" y="{yf:.1f}" width="{bar_w}" height="{baseline_y-yf:.1f}" rx="5" fill="{FORK_COLOR}"/>',
+            text(xu+bar_w/2, yu-9, f'{r["upstream_pp"]:.1f}', size=14, weight=600, fill=MUTED),
+            text(xf+bar_w/2, yf-9, f'{r["current_pp"]:.1f}', size=14, weight=700, fill=FORK_COLOR),
+        ]
+        pw, ph = 190, 52; py = max(92, min(yu, yf) - 79); px = cx - pw/2
+        parts += [f'<rect x="{px:.1f}" y="{py:.1f}" width="{pw}" height="{ph}" rx="10" fill="{PILL_FILL}" stroke="{PILL_STROKE}"/>',
+                  text(cx,py+21,f'{r["pp_gain"]:+.1f}% PP',size=16,weight=700)]
+        if r["ttft_reduction"] is None:
+            parts.append(text(cx,py+41,'depth-mode llama-bench',size=13,weight=600,fill=MUTED))
+        else:
+            parts.append(text(cx,py+41,f'{r["ttft_reduction"]:.1f}% lower TTFT',size=13,weight=600,fill=MUTED))
+        ly=baseline_y+30
+        for j,line in enumerate(r["lines"]):
+            parts.append(text(cx,ly+22*j,line,size=15 if j else 16,weight=650 if j==0 else 500,fill=TEXT_COLOR if j<2 else MUTED))
+    parts.append(f'<line x1="{left}" y1="{baseline_y}" x2="{W-right}" y2="{baseline_y}" stroke="#8C959F" stroke-width="1.2"/>')
+    parts.append(text(W-right,H-20,"Q8 K/V · FlashAttention · current upstream 3057bb66 · 2026-09-12",size=13,anchor="end",fill=MUTED))
+    parts.append('</svg>')
+    PP_OUT.write_text('\n'.join(parts)+'\n')
 
-    # Improvement pill positioned above the taller bar.
-    pill_w, pill_h = 184, 52
-    pill_y = max(92, min(yu, yf) - 79)
-    pill_x = cx - pill_w / 2
-    parts.append(f'<rect x="{pill_x:.1f}" y="{pill_y:.1f}" width="{pill_w}" height="{pill_h}" rx="10" fill="{pill_fill}" stroke="{pill_stroke}"/>')
-    parts.append(svg_text(cx, pill_y + 21, f'+{row["gain"]:.1f}% PP', size=16, weight=700))
-    if row["ttft"] is not None:
-        parts.append(svg_text(cx, pill_y + 41, f'{row["ttft"]:.1f}% lower TTFT', size=14, weight=600, fill=muted))
-    else:
-        parts.append(svg_text(cx, pill_y + 41, 'depth-mode llama-bench', size=13, weight=600, fill=muted))
 
-    label_y = baseline_y + 30
-    for j, line in enumerate(row["lines"]):
-        parts.append(svg_text(cx, label_y + 22*j, line, size=15 if j else 16, weight=650 if j == 0 else 500, fill=text_color if j < 2 else muted))
+def render_tg(rows):
+    W, H = 2200, 780
+    left, right, top, bottom = 90, 45, 128, 170
+    plot_w, plot_h = W-left-right, H-top-bottom
+    ymax = nice_ymax([r[k] for r in rows for k in ("upstream_tg", "current_tg")], 10)
+    baseline_y = top + plot_h
+    y = lambda v: baseline_y - (v / ymax) * plot_h
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="title desc">',
+        '<title id="title">Token generation throughput: current upstream versus v100-optimized</title>',
+        '<desc id="desc">Grouped bars comparing 128-token generation throughput for current upstream llama.cpp and v100-optimized after the same long-context setup used in the prompt-processing benchmark.</desc>',
+        f'<rect width="{W}" height="{H}" rx="12" fill="#FFFFFF"/>',
+        text(left,42,"Token generation throughput",size=30,weight=700,anchor="start"),
+        text(left,72,"Current upstream vs v100-optimized · 128 generated tokens (tok/s)",size=17,anchor="start",fill=MUTED),
+    ]
+    lx=W-360
+    parts += [f'<rect x="{lx}" y="37" width="20" height="20" rx="4" fill="{UPSTREAM_COLOR}"/>',text(lx+30,53,"Upstream",size=16,anchor="start",fill=MUTED),f'<rect x="{lx+135}" y="37" width="20" height="20" rx="4" fill="{FORK_COLOR}"/>',text(lx+165,53,"v100-optimized",size=16,anchor="start",fill=MUTED)]
+    for tick in range(0,int(ymax)+1,10):
+        yy=y(tick); parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{W-right}" y2="{yy:.1f}" stroke="{GRID}" stroke-width="1"/>'); parts.append(text(left-14,yy+6,tick,size=14,anchor="end",fill=MUTED))
+    parts.append(text(24,top+plot_h/2,"tok/s",size=14,fill=MUTED).replace('<text ',f'<text transform="rotate(-90 24 {top+plot_h/2:.1f})" ',1))
+    group_w=plot_w/len(rows); bar_w=52; gap=12
+    for i,r in enumerate(rows):
+        cx=left+group_w*(i+.5); xu=cx-gap/2-bar_w; xf=cx+gap/2; yu=y(r['upstream_tg']); yf=y(r['current_tg'])
+        parts += [f'<rect x="{xu:.1f}" y="{yu:.1f}" width="{bar_w}" height="{baseline_y-yu:.1f}" rx="5" fill="{UPSTREAM_COLOR}"/>',f'<rect x="{xf:.1f}" y="{yf:.1f}" width="{bar_w}" height="{baseline_y-yf:.1f}" rx="5" fill="{FORK_COLOR}"/>',text(xu+bar_w/2,yu-9,f'{r["upstream_tg"]:.1f}',size=14,weight=600,fill=MUTED),text(xf+bar_w/2,yf-9,f'{r["current_tg"]:.1f}',size=14,weight=700,fill=FORK_COLOR)]
+        pw,ph=170,32; py=max(92,min(yu,yf)-55); px=cx-pw/2
+        parts += [f'<rect x="{px:.1f}" y="{py:.1f}" width="{pw}" height="{ph}" rx="10" fill="{PILL_FILL}" stroke="{PILL_STROKE}"/>',text(cx,py+22,f'{r["tg_gain"]:+.1f}% TG',size=15,weight=700)]
+        ly=baseline_y+30
+        for j,line in enumerate(r['lines']): parts.append(text(cx,ly+22*j,line,size=15 if j else 16,weight=650 if j==0 else 500,fill=TEXT_COLOR if j<2 else MUTED))
+    parts.append(f'<line x1="{left}" y1="{baseline_y}" x2="{W-right}" y2="{baseline_y}" stroke="#8C959F" stroke-width="1.2"/>')
+    parts.append(text(W-right,H-20,"128 generated tokens · same long-context setup as PP chart · current upstream 3057bb66 · 2026-09-12",size=13,anchor="end",fill=MUTED))
+    parts.append('</svg>')
+    TG_OUT.write_text('\n'.join(parts)+'\n')
 
-# Baseline and footer
-parts.append(f'<line x1="{left}" y1="{baseline_y}" x2="{W-right}" y2="{baseline_y}" stroke="#8C959F" stroke-width="1.2"/>')
-parts.append(svg_text(W-right, H-20, "Q8 K/V · FlashAttention · 2026-09-11 measurements", size=13, anchor="end", fill=muted))
-parts.append('</svg>')
 
-OUT.write_text("\n".join(parts) + "\n")
-print(OUT)
+if __name__ == '__main__':
+    rows=load_rows(); render_pp(rows); render_tg(rows); print(PP_OUT); print(TG_OUT)

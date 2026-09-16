@@ -1,0 +1,57 @@
+{
+  "summary": {
+    "current-moe": {
+      "pp": 952.1986764999999,
+      "pp_ms": 1050.226551,
+      "tg": 53.413081500000004,
+      "tg_ms": 2396.5007429999996
+    },
+    "upstream-force": {
+      "pp": 691.682116,
+      "pp_ms": 1445.779138,
+      "tg": 53.118498,
+      "tg_ms": 2409.817077
+    },
+    "upstream-normal": {
+      "pp": 688.291176,
+      "pp_ms": 1452.876523,
+      "tg": 53.197023,
+      "tg_ms": 2406.251674
+    }
+  },
+  "rows": [
+    {
+      "policy": "upstream-normal",
+      "file": "gemma26-0-upstream-normal.json",
+      "pp": 688.291176,
+      "pp_ms": 1452.876523,
+      "tg": 53.197023,
+      "tg_ms": 2406.251674
+    },
+    {
+      "policy": "upstream-force",
+      "file": "gemma26-1-upstream-force.json",
+      "pp": 691.682116,
+      "pp_ms": 1445.779138,
+      "tg": 53.118498,
+      "tg_ms": 2409.817077
+    },
+    {
+      "policy": "current-moe",
+      "file": "gemma26-2-current-moe.json",
+      "pp": 951.125197,
+      "pp_ms": 1051.413982,
+      "tg": 53.423271,
+      "tg_ms": 2396.032339
+    },
+    {
+      "policy": "current-moe",
+      "file": "gemma26-3-current-moe.json",
+      "pp": 953.272156,
+      "pp_ms": 1049.03912,
+      "tg": 53.402892,
+      "tg_ms": 2396.969147
+    }
+  ],
+  "note": "upstream-normal and upstream-force each use one llama-bench process with 3 timed samples; current-moe uses two independent processes with 3 timed samples each"
+}
