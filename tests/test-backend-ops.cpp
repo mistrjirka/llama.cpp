@@ -10606,6 +10606,8 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 
     // Qwen3.8-27B target-verification geometry for the q8_0 tiled Volta path.
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    // Qwen3.8 4:5 tensor-parallel V100 shard: 12 Q heads / 2 KV heads, long-context W4 verification.
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 65536, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
     // Qwen3.8-27B Volta cached-prompt route derived from NInfer's sm70 FA configuration.
     for (int nb : {64, 128, 256, 512}) {
         test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 1024, nb, true, false, 0, 0,
@@ -11232,6 +11234,8 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32, 17408, 4,  5120, {1,1}, {1,1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32,  5120, 4, 17408, {1,1}, {1,1}));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 101120, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 101120, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 260096, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
     // Qwen3.8 long-context production geometry used by the V100/Turing regression gate.
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 101120, 1000, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
 

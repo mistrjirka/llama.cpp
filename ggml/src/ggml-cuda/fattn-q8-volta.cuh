@@ -142,8 +142,6 @@ __device__ __forceinline__ void volta_softmax_to_half2(half2 (&p)[4], const floa
 #endif
 
 constexpr int D = 256;
-constexpr int QH = 24;
-constexpr int KVH = 4;
 constexpr int G = 6;
 constexpr int T = 4;
 constexpr int BC = 16;
@@ -166,16 +164,19 @@ static inline int split_count(int n_kv) {
 struct extra_data { uintptr_t pacc=0, pm=0, pl=0, end=0; int splits=0; };
 
 static inline extra_data get_extra(const ggml_tensor * dst) {
+    const ggml_tensor * Q = dst->src[0];
     const ggml_tensor * K = dst->src[1];
+    const int qh = (int) Q->ne[2];
+    GGML_ASSERT(qh == (int) K->ne[2] * G);
     extra_data e{};
     e.splits = split_count((int) K->ne[1]);
     e.end = (uintptr_t) dst->data + ggml_nbytes(dst);
     e.end = GGML_PAD(e.end, 128); e.pacc = e.end;
-    e.end += (size_t)e.splits*T*QH*D*sizeof(__nv_bfloat16);
+    e.end += (size_t)e.splits*T*qh*D*sizeof(__nv_bfloat16);
     e.end = GGML_PAD(e.end, 128); e.pm = e.end;
-    e.end += (size_t)e.splits*T*QH*sizeof(float);
+    e.end += (size_t)e.splits*T*qh*sizeof(float);
     e.end = GGML_PAD(e.end, 128); e.pl = e.end;
-    e.end += (size_t)e.splits*T*QH*sizeof(float);
+    e.end += (size_t)e.splits*T*qh*sizeof(float);
     return e;
 }
 
@@ -185,11 +186,11 @@ static inline size_t get_alloc_size(const ggml_tensor * dst) {
 
 __device__ __forceinline__ int row_qh(int row, int kvh) { return kvh*G + row % G; }
 __device__ __forceinline__ int row_tok(int row) { return row/G; }
-__device__ __forceinline__ int64_t pacc_idx(int qh,int d,int tok,int split) {
-    return d + (int64_t)D*(qh + (int64_t)QH*(tok + (int64_t)T*split));
+__device__ __forceinline__ int64_t pacc_idx(int qh,int d,int tok,int split,int qh_count) {
+    return d + (int64_t)D*(qh + (int64_t)qh_count*(tok + (int64_t)T*split));
 }
-__device__ __forceinline__ int64_t pstat_idx(int qh,int tok,int split) {
-    return qh + (int64_t)QH*(tok + (int64_t)T*split);
+__device__ __forceinline__ int64_t pstat_idx(int qh,int tok,int split,int qh_count) {
+    return qh + (int64_t)qh_count*(tok + (int64_t)T*split);
 }
 
 __device__ __forceinline__ int4 deq8(const block_q8_0 & b, int off) {
@@ -203,7 +204,7 @@ __device__ __forceinline__ int4 deq8(const block_q8_0 & b, int off) {
 __launch_bounds__(128,2)
 static __global__ void partial_kernel(
         const float * q, const block_q8_0 * K, const block_q8_0 * V, const half * mask,
-        int n_kv, int splits, float scale,
+        int n_kv, int splits, int qh_count, float scale,
         int64_t q_s1, int64_t q_s2, int64_t k_s1, int64_t k_s2, int64_t v_s1, int64_t v_s2, int64_t mask_s1,
         __nv_bfloat16 * pacc, float * pm, float * pl) {
 #if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ == 700
@@ -293,27 +294,29 @@ static __global__ void partial_kernel(
         __syncthreads();
     }
     const int row=lane; const float ownm=(lane&2)?mhi:mlo, ownl=(lane&2)?lhi:llo;
-    if(dim_warp==0&&row<row_count){const int qh=row_qh(row,kvh),tok=row_tok(row);pm[pstat_idx(qh,tok,split)]=ownm;pl[pstat_idx(qh,tok,split)]=ownl;}
+    if(dim_warp==0&&row<row_count){const int qh=row_qh(row,kvh),tok=row_tok(row);pm[pstat_idx(qh,tok,split,qh_count)]=ownm;pl[pstat_idx(qh,tok,split,qh_count)]=ownl;}
     if(row<row_count){const int qh=row_qh(row,kvh),tok=row_tok(row);
 #pragma unroll
-        for(int c=0;c<D_SLICE/8;c++){const int d=dim_warp*D_SLICE+c*8;__nv_bfloat16 o[8];for(int i=0;i<8;i++)o[i]=__float2bfloat16(acc[c][i]);*reinterpret_cast<int4*>(&pacc[pacc_idx(qh,d,tok,split)])=*reinterpret_cast<int4*>(o);}
+        for(int c=0;c<D_SLICE/8;c++){const int d=dim_warp*D_SLICE+c*8;__nv_bfloat16 o[8];for(int i=0;i<8;i++)o[i]=__float2bfloat16(acc[c][i]);*reinterpret_cast<int4*>(&pacc[pacc_idx(qh,d,tok,split,qh_count)])=*reinterpret_cast<int4*>(o);}
     }
 #endif
 }
 
-static __global__ void reduce_kernel(const __nv_bfloat16 *pa,const float *pm,const float *pl,int splits,float *out,int64_t o_s1,int64_t o_s2){
+static __global__ void reduce_kernel(const __nv_bfloat16 *pa,const float *pm,const float *pl,int splits,int qh_count,float *out,int64_t o_s1,int64_t o_s2){
     const int qh=blockIdx.x,tok=blockIdx.y,d=threadIdx.x;__shared__ float red[256];
-    float lm=-CUDART_INF_F;for(int s=d;s<splits;s+=256)lm=fmaxf(lm,pm[pstat_idx(qh,tok,s)]);red[d]=lm;__syncthreads();
+    float lm=-CUDART_INF_F;for(int s=d;s<splits;s+=256)lm=fmaxf(lm,pm[pstat_idx(qh,tok,s,qh_count)]);red[d]=lm;__syncthreads();
     for(int st=128;st;st>>=1){if(d<st)red[d]=fmaxf(red[d],red[d+st]);__syncthreads();}const float hm=red[0];
     if(hm==-CUDART_INF_F){out[d+o_s1*qh+o_s2*tok]=0.0f;return;}
-    float ll=0;for(int s=d;s<splits;s+=256){const float l=pl[pstat_idx(qh,tok,s)];if(l>0)ll+=l*expf(pm[pstat_idx(qh,tok,s)]-hm);}red[d]=ll;__syncthreads();
+    float ll=0;for(int s=d;s<splits;s+=256){const float l=pl[pstat_idx(qh,tok,s,qh_count)];if(l>0)ll+=l*expf(pm[pstat_idx(qh,tok,s,qh_count)]-hm);}red[d]=ll;__syncthreads();
     for(int st=128;st;st>>=1){if(d<st)red[d]+=red[d+st];__syncthreads();}const float hl=red[0];
-    float num=0;for(int s=0;s<splits;s++){const float l=pl[pstat_idx(qh,tok,s)];if(l>0)num+=__bfloat162float(pa[pacc_idx(qh,d,tok,s)])*expf(pm[pstat_idx(qh,tok,s)]-hm);}
+    float num=0;for(int s=0;s<splits;s++){const float l=pl[pstat_idx(qh,tok,s,qh_count)];if(l>0)num+=__bfloat162float(pa[pacc_idx(qh,d,tok,s,qh_count)])*expf(pm[pstat_idx(qh,tok,s,qh_count)]-hm);}
     out[d+o_s1*qh+o_s2*tok]=hl>0?num/hl:0.0f;
 }
 
 static inline void launch(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor *Q=dst->src[0],*K=dst->src[1],*V=dst->src[2],*M=dst->src[3];
+    const int qh_count=(int)Q->ne[2],kvh_count=(int)K->ne[2];
+    GGML_ASSERT(qh_count == kvh_count*G);
     const extra_data e=get_extra(dst);
     float scale=1.0f;memcpy(&scale,(const float*)dst->op_params,sizeof(float));
     const int64_t q_s1=Q->nb[1]/sizeof(float),q_s2=Q->nb[2]/sizeof(float);
@@ -322,13 +325,13 @@ static inline void launch(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int64_t m_s1=M->nb[1]/sizeof(half);
     const int64_t o_s1=dst->nb[1]/sizeof(float),o_s2=dst->nb[2]/sizeof(float);
     cudaStream_t stream=ctx.stream();
-    partial_kernel<<<dim3(KVH,e.splits),128,0,stream>>>(
+    partial_kernel<<<dim3(kvh_count,e.splits),128,0,stream>>>(
         (const float*)Q->data,(const block_q8_0*)K->data,(const block_q8_0*)V->data,(const half*)M->data,
-        (int)K->ne[1],e.splits,scale,q_s1,q_s2,k_s1,k_s2,v_s1,v_s2,m_s1,
+        (int)K->ne[1],e.splits,qh_count,scale,q_s1,q_s2,k_s1,k_s2,v_s1,v_s2,m_s1,
         (__nv_bfloat16*)e.pacc,(float*)e.pm,(float*)e.pl);
     CUDA_CHECK(cudaGetLastError());
-    reduce_kernel<<<dim3(QH,T),256,0,stream>>>(
-        (const __nv_bfloat16*)e.pacc,(const float*)e.pm,(const float*)e.pl,e.splits,
+    reduce_kernel<<<dim3(qh_count,T),256,0,stream>>>(
+        (const __nv_bfloat16*)e.pacc,(const float*)e.pm,(const float*)e.pl,e.splits,qh_count,
         (float*)dst->data,o_s1,o_s2);
     CUDA_CHECK(cudaGetLastError());
 }

@@ -710,9 +710,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
     // Opt-in validated Qwen3.8-27B target-verification route: ordinary llama q8_0 KV is
     // widened only on shared-memory tile load and consumed by Volta tensor cores.
     if (cc == GGML_CUDA_CC_VOLTA && std::getenv("GGML_CUDA_VOLTA_Q8_FATTN_TC") != nullptr &&
-            Q->ne[0] == 256 && Q->ne[1] == 4 && Q->ne[2] == 24 && Q->ne[3] == 1 &&
+            Q->ne[0] == 256 && Q->ne[1] == 4 && Q->ne[3] == 1 &&
+            ((Q->ne[2] == 24 && K->ne[2] == 4) ||
+             (Q->ne[2] == 12 && K->ne[2] == 2 && K->ne[1] >= 65536)) &&
             K->type == GGML_TYPE_Q8_0 && V->type == GGML_TYPE_Q8_0 &&
-            K->ne[0] == 256 && V->ne[0] == 256 && K->ne[2] == 4 && V->ne[2] == 4 &&
+            K->ne[0] == 256 && V->ne[0] == 256 && V->ne[2] == K->ne[2] &&
             K->ne[3] == 1 && V->ne[3] == 1 && mask != nullptr && max_bias == 0.0f &&
             KQV->src[4] == nullptr) {
         float logit_softcap = 0.0f;
