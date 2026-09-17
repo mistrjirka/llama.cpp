@@ -10960,6 +10960,7 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     // Qwen3.8 long-context production geometry for the Volta/Turing Q8 attention regression gate.
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 101120,    4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 101120, 1000, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
 
     return test_cases;

@@ -833,8 +833,13 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
                 static_assert(DKQ == 256 && DV == 256 && ncols1*ncols2 == 32 &&
                     (ncols2 == 2 || ncols2 == 4 || ncols2 == 8), "bad int8 QK shape");
                 static_assert(!use_sparse && nbatch_K2 == DKQ/2, "bad int8 QK staging");
-                flash_attn_ext_q8_packed_load_tile_i8<DKQ, nwarps, nbatch_fa, oob_check>(
-                    reinterpret_cast<const char *>(K_h2), reinterpret_cast<int *>(tile_K), stride_K, k_VKQ_0, k_VKQ_sup);
+                if (stride_K == int(sizeof(ggml_cuda_fattn_q8_d256_row))) {
+                    flash_attn_ext_q8_packed_load_tile_i8<DKQ, nwarps, nbatch_fa, oob_check>(
+                        reinterpret_cast<const char *>(K_h2), reinterpret_cast<int *>(tile_K), stride_K, k_VKQ_0, k_VKQ_sup);
+                } else {
+                    flash_attn_ext_q8_0_load_tile_i8<DKQ, nwarps, nbatch_fa, oob_check>(
+                        reinterpret_cast<const char *>(K_h2), reinterpret_cast<int *>(tile_K), stride_K, k_VKQ_0, k_VKQ_sup);
+                }
             } else {
                 flash_attn_ext_f16_load_tile<stride_tile_K, swz_K, nwarps, nbatch_fa, use_cp_async, oob_check, use_sparse>
                     (K_h2 + k0_start, tile_K, k0_diff, stride_K, k_VKQ_0, k_VKQ_sup, indices);
@@ -2634,10 +2639,15 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
                 shared_memory_limit_raised_i8[id] = true;
             }
 #endif
-            // Keep K in q8_0 for integer QK; V still uses the proven one-time FP16 expansion.
+            const char * native_q8_k_env = std::getenv("GGML_CUDA_TURING_NATIVE_Q8_K");
+            const bool native_q8_k = gqa_ratio_i8 == 6 && Q_src->ne[1] <= 8 &&
+                (!native_q8_k_env || atoi(native_q8_k_env) != 0);
+            // Small Qwen verifier batches read native llama q8_0 K tile-by-tile for INT8 QK.
+            // Wide prompt batches retain the one-time packed-K path because many query rows reuse each K tile.
+            // V keeps the proven one-time FP16 expansion.
             launch_fattn<DV, ncols1, ncols2>
                 (ctx, dst, fattn_kernel, nwarps, nbytes_shared_total_i8, nbatch_fa,
-                 false, true, true, false, warp_size_host, true, true);
+                 false, true, true, false, warp_size_host, true, !native_q8_k);
             return;
         }
     }
