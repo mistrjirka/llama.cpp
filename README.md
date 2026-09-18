@@ -48,7 +48,7 @@ A model first reads the new input and then writes the answer. **Prompt processin
 
 ![Qwen3.8 27B token-generation speed on a single V100 at 100k cached context, comparing upstream llama.cpp with v100-optimized with MTP off and MTP3](docs/benchmarks/qwen38-v100-token-generation.svg)
 
-The Qwen3.8 generation comparison uses a single V100, Q8_0 K/V, 100k cached tokens and TG512. MTP3 acceptance was **94.97%** on both engines.
+The Qwen3.8 generation comparison uses a single V100, Q8_0 K/V, 100k cached tokens and TG512. MTP3 acceptance was **94.97%** on both engines. The validated Volta MTP verifier attention and Q5_K/Q6_K four-token kernels used here are enabled automatically; set `GGML_CUDA_VOLTA_Q8_FATTN_TC=0`, `GGML_CUDA_VOLTA_Q5_X4=0`, or `GGML_CUDA_VOLTA_Q6_W4R4=0` to roll back an individual path.
 
 Most rows add about 1,000 new tokens to an already-computed long history. A label such as **100k cached + 1k input** does not mean the benchmark rereads 101,000 tokens from zero. See [the short terminology guide](docs/fork-concepts.md#prompt-processing-generation-and-first-token-time) if that distinction is unclear.
 

@@ -26,17 +26,17 @@
 <text x="26.0" y="210.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k cached · TG512</text>
 <rect x="370" y="153" width="200.76" height="21" rx="3" fill="#8C959F"/>
 <text x="578.8" y="170.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">15.9</text>
-<rect x="370" y="181" width="228.07" height="21" rx="3" fill="#0969DA"/>
-<text x="606.1" y="198.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">18.1</text>
-<text x="1120.0" y="184.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+13.6%</text>
+<rect x="370" y="181" width="228.24" height="21" rx="3" fill="#0969DA"/>
+<text x="606.2" y="198.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">18.1</text>
+<text x="1120.0" y="184.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+13.7%</text>
 <text x="26.0" y="246.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" font-weight="600" fill="#24292F">MTP3</text>
 <text x="26.0" y="268.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="400" fill="#24292F">Qwen3.8 27B · V100 32 GB</text>
 <text x="26.0" y="288.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">100k cached · TG512</text>
 <rect x="370" y="231" width="441.02" height="21" rx="3" fill="#8C959F"/>
 <text x="819.0" y="248.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#57606A">35.0</text>
-<rect x="370" y="259" width="452.63" height="21" rx="3" fill="#0969DA"/>
-<text x="830.6" y="276.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">35.9</text>
-<text x="1120.0" y="262.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+2.6%</text>
+<rect x="370" y="259" width="526.56" height="21" rx="3" fill="#0969DA"/>
+<text x="904.6" y="276.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#0969DA">41.8</text>
+<text x="1120.0" y="262.0" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="21" font-weight="600" fill="#24292F">+19.4%</text>
 <text x="26.0" y="330.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#24292F">Tokens per second - higher is faster</text>
 <text x="26.0" y="354.0" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" font-weight="400" fill="#57606A">MTP off vs MTP3 · MTP3 acceptance 94.97% on both · measured 2026-09-18</text>
 </svg>
