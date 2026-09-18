@@ -10676,6 +10676,18 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // Qwen3.8-27B one-token decode geometry: 24 Q heads / 4 KV heads (GQA6).
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 1024, 1, true, false, 0, 0,
+                                                    GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 1024, 1, false, false, 0, 0,
+                                                    GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    // Long-context padded cache geometry used by the 100k server fixture.
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 101120, 1, true, false, 0, 0,
+                                                    GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    // Qwen3.8 tensor-parallel V100 shard: 12 Q heads / 2 KV heads, still GQA6.
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 65536, 1, true, false, 0, 0,
+                                                    GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+
     // Qwen3.8-27B target-verification geometry for the q8_0 tiled Volta path.
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
     // Qwen3.8 4:5 tensor-parallel V100 shard: 12 Q heads / 2 KV heads, long-context W4 verification.
