@@ -13,6 +13,7 @@ ROOT = HERE.parents[1]
 FINAL = ROOT / "benches/upstream-sync-0912/headline-final-summary.json"
 EXPERIMENT = ROOT / "benches/moe-prefill-0916/results/graph.json"
 UPSTREAM_RUNTIME = ROOT / "benches/moe-prefill-0916/results/upstream-runtime-0916"
+TG_HERO = HERE / "qwen38-v100-tg-0918.json"
 ORDER = [
     ("qwen-v100", "Qwen3.8 27B", "V100 32 GB", "100k cached + 1k input"),
     ("qwen-rtx", "Qwen3.8 27B", "RTX 2080 Ti 22 GB", "65k cached + 1k input"),
@@ -105,6 +106,30 @@ def main():
                      footer=("Q8 history | 12 Sep rows: upstream 3057bb66 · Flash-Next 16 Sep: upstream 83078fec0"
                              if metric == "pp" else
                              "Q8 history cache | Upstream 3057bb66 vs v100-optimized, 12 Sep | Exact settings: benches/upstream-sync-0912/REPORT.md"))
+    if TG_HERO.exists():
+        tg = json.loads(TG_HERO.read_text())
+        rows = [
+            {
+                "model": row["label"],
+                "hardware": "Qwen3.8 27B · V100 32 GB",
+                "workload": "100k cached · TG512",
+                "a": row["upstream_tg"],
+                "b": row["optimized_tg"],
+            }
+            for row in tg["rows"]
+        ]
+        acceptance = next((row.get("acceptance") for row in tg["rows"] if row.get("acceptance") is not None), None)
+        acceptance_text = f" · MTP3 acceptance {acceptance*100:.2f}% on both" if acceptance is not None else ""
+        paired_chart(
+            HERE / "qwen38-v100-token-generation.svg",
+            title="Qwen3.8 27B on V100: token generation",
+            subtitle="100k cached context · TG512 · Q8_0 KV cache",
+            legends=(f"Upstream {tg['upstream_commit'][:9]}", "v100-optimized"),
+            rows=rows,
+            step=10,
+            footer=f"MTP off vs MTP3{acceptance_text} · measured {tg['date']}",
+        )
+
     if EXPERIMENT.exists():
         experiment = json.loads(EXPERIMENT.read_text())
         rows = [{"model": row["label"], "hardware": row["placement"], "workload": "100k cached + 1k input",

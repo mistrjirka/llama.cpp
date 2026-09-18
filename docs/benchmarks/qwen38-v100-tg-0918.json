@@ -1,0 +1,23 @@
+{
+  "date": "2026-09-18",
+  "model": "Qwen3.8-27B-UD-Q5_K_XL.gguf",
+  "hardware": "Tesla V100-SXM2-32GB",
+  "context": "100k cached",
+  "generated_tokens": 512,
+  "kv_cache": "q8_0",
+  "upstream_commit": "44be98f057e9f9902a8ee12630e181c7f8ec2953",
+  "optimized_commit": "269bd139a13e106043181d86638869d921348565",
+  "rows": [
+    {
+      "label": "MTP off",
+      "upstream_tg": 15.933715742511152,
+      "optimized_tg": 18.10093620450785
+    },
+    {
+      "label": "MTP3",
+      "upstream_tg": 35.001613430536906,
+      "optimized_tg": 35.922944089839135,
+      "acceptance": 0.949748743718593
+    }
+  ]
+}
