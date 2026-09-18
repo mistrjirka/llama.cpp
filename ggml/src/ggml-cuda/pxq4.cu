@@ -219,6 +219,12 @@ void ggml_cuda_pxq4_mmvq_launch(
             }
         };
         int wr = fuse_gate && ncols_dst == 1 && K >= 1024 ? 2 : 4;
+        // Volta plain decode: smaller output projections need more CTAs to hide global-memory
+        // latency. Keep the existing geometry on other architectures and on multi-token work.
+        const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+        if (!fuse_gate && ncols_dst == 1 && cc == GGML_CUDA_CC_VOLTA && nrows <= 6144) {
+            wr = 2;
+        }
         if (const char * e = std::getenv("GGML_CUDA_PXQ4_WARP_ROWS")) wr = std::atoi(e);
         int vdr = 4;
         if (const char * e = std::getenv("GGML_CUDA_PXQ4_VDR")) vdr = std::atoi(e);
