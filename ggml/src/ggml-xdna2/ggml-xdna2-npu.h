@@ -35,6 +35,8 @@ struct ExecStats {
     double   t_unpermute = 0;     // sync Y + copy to dst (s)
     double   t_setup = 0;         // contexts, jobs, instruction streams (s)
     double   t_kernel_wait = 0;   // blocked on kernel builds (s)
+    uint64_t n_switch = 0;        // submissions whose hw context differs from the previous one
+    double   t_wait_switch = 0;   // wait time of those submissions (s)
     double   bytes_w = 0;         // weight bytes streamed
 };
 

@@ -336,9 +336,9 @@ static void ggml_backend_xdna2_free(ggml_backend_t backend) {
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();
         GGML_LOG_INFO("ggml-xdna2: %llu graph splits, %llu mul_mat; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
-                      "pack act %.3f s, wait %.3f s, unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
+                      "pack act %.3f s, wait %.3f s (%llu hw context switches: %.3f s), unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
                       (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, ctx->t_quant, ctx->t_graph,
-                      (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, st.t_unpermute, st.t_setup,
+                      (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, (unsigned long long) st.n_switch, st.t_wait_switch, st.t_unpermute, st.t_setup,
                       st.t_kernel_wait, st.bytes_w / 1e9);
     }
     delete ctx;

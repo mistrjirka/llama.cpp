@@ -172,6 +172,7 @@ private:
             if (it->second->last_use < victim->second->last_use) victim = it;
         }
         GGML_LOG_DEBUG("ggml-xdna2: evicting NPU context %s\n", victim->first.name().c_str());
+        if (last_ctx_ == victim->second.get()) last_ctx_ = nullptr;
         std::list<Job *> js = victim->second->jobs;
         for (Job * j : js) unbind(*j);
         ctxs_.erase(victim);
@@ -273,6 +274,8 @@ private:
                 }
                 st_.t_pack_a += now_s() - t0;
                 // 2. execute
+                const bool switched = last_ctx_ != &c;
+                last_ctx_ = &c;
                 t0 = now_s();
                 if (act.size() == 1) {
                     Job & j = *js[act[0]];
@@ -291,6 +294,7 @@ private:
                     it->second.wait();
                 }
                 st_.t_wait += now_s() - t0;
+                if (switched) { st_.n_switch++; st_.t_wait_switch += now_s() - t0; }
                 st_.runs += act.size();
                 st_.batches += 1;
                 // 3. results
@@ -329,6 +333,7 @@ private:
     xrt::device dev_;
     bool ok_ = false;
     uint64_t tick_ = 0;
+    const Ctx * last_ctx_ = nullptr;
     std::map<KernelKey, std::unique_ptr<Ctx>> ctxs_;
     std::map<JobKey, std::unique_ptr<Job>> jobs_;
     ExecStats st_;
