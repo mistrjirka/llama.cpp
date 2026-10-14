@@ -28,12 +28,27 @@ static bool xdna2_disabled() {
 // helpers
 //
 
-static bool xdna2_is_repacked(const ggml_tensor * t) {
-    return t->type == GGML_TYPE_Q4_0;
+// ggml quantization types with a device layout (ggml-xdna2-layout.h)
+static bool xdna2_fmt_of(ggml_type type, layout::Fmt & fmt) {
+    switch (type) {
+        case GGML_TYPE_Q4_0: fmt = layout::Fmt::Q4_0; return true;
+        case GGML_TYPE_Q8_0: fmt = layout::Fmt::Q8_0; return true;
+        case GGML_TYPE_Q4_K: fmt = layout::Fmt::Q4_K; return true;
+        case GGML_TYPE_Q5_K: fmt = layout::Fmt::Q5_K; return true;
+        case GGML_TYPE_Q6_K: fmt = layout::Fmt::Q6_K; return true;
+        default:             return false;
+    }
 }
 
-static layout::Q4Geom xdna2_geom(const ggml_tensor * t) {
-    return layout::q4_geom(t->ne[1], t->ne[0]);
+static bool xdna2_is_repacked(const ggml_tensor * t) {
+    layout::Fmt f;
+    return xdna2_fmt_of(t->type, f);
+}
+
+static layout::Geom xdna2_geom(const ggml_tensor * t) {
+    layout::Fmt f = layout::Fmt::Q4_0;
+    xdna2_fmt_of(t->type, f);
+    return layout::make_geom(f, t->ne[1], t->ne[0]);
 }
 
 static size_t xdna2_slices(const ggml_tensor * t) {
@@ -64,7 +79,7 @@ static void * ggml_backend_xdna2_buffer_get_base(ggml_backend_buffer_t buffer) {
 
 static void xdna2_check_tensor(const ggml_tensor * t) {
     if (xdna2_is_repacked(t)) {
-        GGML_ASSERT(t->view_src == nullptr && "xdna2: views of repacked (Q4_0) tensors are not supported");
+        GGML_ASSERT(t->view_src == nullptr && "xdna2: views of repacked tensors are not supported");
         GGML_ASSERT(ggml_is_contiguous(t));
     }
 }
@@ -78,12 +93,20 @@ static size_t xdna2_arena_off(ggml_backend_buffer_t buffer, const ggml_tensor * 
     return size_t(static_cast<const uint8_t *>(t->data) - xdna2_ctx(buffer)->arena->base());
 }
 
+static enum ggml_status ggml_backend_xdna2_buffer_init_tensor(ggml_backend_buffer_t, ggml_tensor * tensor) {
+    if (xdna2_is_repacked(tensor)) {
+        // collect the unique weight shapes: missing NPU kernels are built in the background while the model loads
+        request_kernels(xdna2_geom(tensor));
+    }
+    return GGML_STATUS_SUCCESS;
+}
+
 static void ggml_backend_xdna2_buffer_memset_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, uint8_t value, size_t offset, size_t size) {
     xdna2_check_tensor(tensor);
     if (xdna2_is_repacked(tensor)) {
         // logical memset on the GGUF byte stream
         std::vector<uint8_t> tmp(size, value);
-        layout::q4_0_tensor_pack_range(xdna2_geom(tensor), static_cast<uint8_t *>(tensor->data), tmp.data(), offset, size);
+        layout::tensor_pack_range(xdna2_geom(tensor), static_cast<uint8_t *>(tensor->data), tmp.data(), offset, size);
         xdna2_ctx(buffer)->arena->sync_to_device(xdna2_arena_off(buffer, tensor), xdna2_tensor_dev_bytes(tensor));
     } else {
         std::memset(static_cast<uint8_t *>(tensor->data) + offset, value, size);
@@ -95,7 +118,7 @@ static void ggml_backend_xdna2_buffer_set_tensor(ggml_backend_buffer_t buffer, g
     xdna2_check_tensor(tensor);
     Arena * arena = xdna2_ctx(buffer)->arena.get();
     if (xdna2_is_repacked(tensor)) {
-        layout::q4_0_tensor_pack_range(xdna2_geom(tensor), static_cast<uint8_t *>(tensor->data),
+        layout::tensor_pack_range(xdna2_geom(tensor), static_cast<uint8_t *>(tensor->data),
                                        static_cast<const uint8_t *>(data), offset, size);
         arena->sync_to_device(xdna2_arena_off(buffer, tensor), xdna2_tensor_dev_bytes(tensor));
     } else {
@@ -109,7 +132,7 @@ static void ggml_backend_xdna2_buffer_get_tensor(ggml_backend_buffer_t buffer, c
     Arena * arena = xdna2_ctx(buffer)->arena.get();
     if (xdna2_is_repacked(tensor)) {
         arena->sync_from_device(xdna2_arena_off(buffer, tensor), xdna2_tensor_dev_bytes(tensor));
-        layout::q4_0_tensor_unpack_range(xdna2_geom(tensor), static_cast<const uint8_t *>(tensor->data),
+        layout::tensor_unpack_range(xdna2_geom(tensor), static_cast<const uint8_t *>(tensor->data),
                                          static_cast<uint8_t *>(data), offset, size);
     } else {
         arena->sync_from_device(xdna2_arena_off(buffer, tensor) + offset, size);
@@ -128,7 +151,7 @@ static void ggml_backend_xdna2_buffer_clear(ggml_backend_buffer_t buffer, uint8_
 static const ggml_backend_buffer_i ggml_backend_xdna2_buffer_i = {
     /* .free_buffer   = */ ggml_backend_xdna2_buffer_free_buffer,
     /* .get_base      = */ ggml_backend_xdna2_buffer_get_base,
-    /* .init_tensor   = */ nullptr,
+    /* .init_tensor   = */ ggml_backend_xdna2_buffer_init_tensor,
     /* .memset_tensor = */ ggml_backend_xdna2_buffer_memset_tensor,
     /* .set_tensor    = */ ggml_backend_xdna2_buffer_set_tensor,
     /* .get_tensor    = */ ggml_backend_xdna2_buffer_get_tensor,
@@ -169,7 +192,7 @@ static size_t ggml_backend_xdna2_buft_get_alignment(ggml_backend_buffer_type_t) 
 
 static size_t ggml_backend_xdna2_buft_get_alloc_size(ggml_backend_buffer_type_t, const ggml_tensor * tensor) {
     if (xdna2_is_repacked(tensor)) {
-        // padded to 512 rows / 8 blocks per 2D slice (see ggml-xdna2-layout.h)
+        // padded to 512 rows (and whole records along K) per 2D slice (see ggml-xdna2-layout.h)
         return xdna2_slices(tensor) * xdna2_geom(tensor).bytes;
     }
     return ggml_nbytes(tensor);
@@ -206,12 +229,12 @@ ggml_backend_buffer_type_t ggml_backend_xdna2_buffer_type(void) {
 //
 
 struct ggml_backend_xdna2_context {
-    Q8Act act; // scratch
+    ActQ act; // scratch
 };
 
-static ComputePath & xdna2_select_path(const layout::Q4Geom & geom) {
-    ComputePath & npu = npu_path();
-    return npu.supports(geom) ? npu : host_reference_path();
+// The host reference path is a test/debug tool (GGML_XDNA2_REFERENCE=1) and never a fallback for the NPU.
+static ComputePath & xdna2_select_path() {
+    return reference_mode() ? host_reference_path() : npu_path();
 }
 
 static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_tensor * dst) {
@@ -220,12 +243,12 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
 
     GGML_TENSOR_BINARY_OP_LOCALS
 
-    GGML_ASSERT(src0->type == GGML_TYPE_Q4_0 && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(xdna2_is_repacked(src0) && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32);
     GGML_ASSERT(src0->buffer && src0->buffer->buft == xdna2_buft());
     GGML_ASSERT(ne00 == ne10 && ne0 == ne01 && ne1 == ne11 && ne2 == ne12 && ne3 == ne13);
     GGML_ASSERT(nb10 == sizeof(float) && nb0 == sizeof(float));
 
-    const layout::Q4Geom geom = xdna2_geom(src0);
+    const layout::Geom geom = xdna2_geom(src0);
     const Arena * arena = xdna2_ctx(src0->buffer)->arena.get();
     const size_t base_off = xdna2_arena_off(src0->buffer, src0);
 
@@ -236,8 +259,8 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
         for (int64_t i12 = 0; i12 < ne12; ++i12) {
             const int64_t i02 = i12 / r2, i03 = i13 / r3;
 
-            quantize_acts(ctx->act, reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13),
-                          ne10, ne11, nb11);
+            quantize_acts(ctx->act, geom, reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13),
+                          ne11, nb11);
 
             MulMatJob job;
             job.arena          = arena;
@@ -248,9 +271,10 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
             job.dst            = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i12 * nb2 + i13 * nb3);
             job.dst_row_stride = nb1;
 
-            ComputePath & path = xdna2_select_path(geom);
-            if (!path.mul_mat_q4_0(job)) {
-                host_reference_path().mul_mat_q4_0(job);
+            ComputePath & path = xdna2_select_path();
+            if (!path.mul_mat(job)) {
+                GGML_ABORT("%s: %s compute path failed for a %s %lld x %lld weight", __func__, path.name(),
+                           layout::fmt_info(geom.fmt).name, (long long) geom.n, (long long) geom.k);
             }
         }
     }
@@ -394,7 +418,8 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             const ggml_tensor * src0 = op->src[0];
             const ggml_tensor * src1 = op->src[1];
 
-            if (src0->type != GGML_TYPE_Q4_0 || src1->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) {
+            layout::Fmt fmt;
+            if (!xdna2_fmt_of(src0->type, fmt) || src1->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) {
                 return false;
             }
             // the weights must be (or, when not allocated yet, will be) in our buffer type; weights in any
@@ -405,7 +430,7 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             if (src0->view_src != nullptr || !ggml_is_contiguous(src0)) {
                 return false;
             }
-            if (src0->ne[0] % layout::QK != 0 || src0->ne[0] != src1->ne[0]) {
+            if (src0->ne[0] % layout::fmt_info(fmt).elems != 0 || src0->ne[0] != src1->ne[0]) {
                 return false;
             }
             if (src1->nb[0] != sizeof(float) || op->nb[0] != sizeof(float)) {
@@ -414,7 +439,9 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             if (src1->ne[2] % src0->ne[2] != 0 || src1->ne[3] % src0->ne[3] != 0) {
                 return false;
             }
-            return true;
+            // placement policy: only weights that can really run on the NPU (a kernel exists or can be built)
+            // may live in our buffer; everything else must stay in CPU buffers
+            return placement_ok(layout::make_geom(fmt, src0->ne[1], src0->ne[0]));
         }
 
         default:
@@ -453,7 +480,11 @@ static const char * ggml_backend_xdna2_reg_get_name(ggml_backend_reg_t) {
 }
 
 static bool xdna2_available() {
-    return !xdna2_disabled() && npu_device_present();
+    if (xdna2_disabled()) {
+        return false;
+    }
+    // GGML_XDNA2_REFERENCE=1 (tests): host emulation, no NPU needed; otherwise the NPU executor must be usable
+    return reference_mode() || (npu_device_present() && npu_executor().available());
 }
 
 static size_t ggml_backend_xdna2_reg_get_device_count(ggml_backend_reg_t) {

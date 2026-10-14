@@ -1,9 +1,19 @@
 #include "ggml-xdna2-npu.h"
 
+#include "ggml.h"
+#include "ggml-impl.h"
+
 #include <cstdlib>
 #include <cstring>
 
 #include <sys/stat.h>
+
+#ifndef GGML_XDNA2_KERNEL_DIR
+#define GGML_XDNA2_KERNEL_DIR ""
+#endif
+#ifndef GGML_XDNA2_MLIR_AIE_ENV
+#define GGML_XDNA2_MLIR_AIE_ENV ""
+#endif
 
 namespace xdna2 {
 
@@ -27,9 +37,8 @@ class StubExecutor final : public NpuExecutor {
 public:
     StubExecutor() : cache_dir_(default_cache_dir()) {}
     bool available() const override { return false; }
-    bool has_kernel(const layout::Q4Geom &) override { return false; }
     std::unique_ptr<Arena> alloc_weight_arena(size_t) override { return nullptr; }
-    bool bind_weights(const Arena &, size_t, const layout::Q4Geom &) override { return false; }
+    bool bind_weights(const Arena &, size_t, const layout::Geom &) override { return false; }
     bool run(const MulMatJob *, size_t) override { return false; }
     std::string cache_dir() const override { return cache_dir_; }
 private:
@@ -39,28 +48,37 @@ private:
 class NpuPath final : public ComputePath {
 public:
     const char * name() const override { return "npu"; }
-    bool supports(const layout::Q4Geom & geom) const override {
-        NpuExecutor & e = npu_executor();
-        return e.available() && e.has_kernel(geom);
-    }
-    bool mul_mat_q4_0(const MulMatJob & job) override {
+    bool supports(const layout::Geom & geom) const override { return placement_ok(geom); }
+    bool mul_mat(const MulMatJob & job) override {
         NpuExecutor & e = npu_executor();
         return e.bind_weights(*job.arena, job.w_off, job.geom) && e.run(&job, 1);
     }
 };
 
-} // namespace
-
-size_t act_blob_bytes_per_token(const layout::Q4Geom & geom) {
-    return size_t(geom.kb_pad) * (layout::QK + sizeof(float));
+void kernel_log(int level, const std::string & msg) {
+    switch (level) {
+        case 0:  GGML_LOG_INFO ("ggml-xdna2: kernels: %s\n", msg.c_str()); break;
+        case 1:  GGML_LOG_WARN ("ggml-xdna2: kernels: %s\n", msg.c_str()); break;
+        default: GGML_LOG_ERROR("ggml-xdna2: kernels: %s\n", msg.c_str()); break;
+    }
 }
 
-void pack_act_blob(const Q8Act & act, uint8_t * dst) {
-    const size_t qb = size_t(act.kb_pad) * layout::QK, db = size_t(act.kb_pad) * sizeof(float);
+} // namespace
+
+size_t act_blob_bytes_per_token(const ActQ & act) {
+    return size_t(act.k_pad) + size_t(act.nd) * sizeof(float) + size_t(act.nbs) * sizeof(int32_t);
+}
+
+void pack_act_blob(const ActQ & act, uint8_t * dst) {
     for (int64_t t = 0; t < act.n_tok; ++t) {
-        std::memcpy(dst, act.q_row(t), qb);
-        std::memcpy(dst + qb, act.d_row(t), db);
-        dst += qb + db;
+        std::memcpy(dst, act.q_row(t), size_t(act.k_pad));
+        dst += act.k_pad;
+        std::memcpy(dst, act.d_row(t), size_t(act.nd) * sizeof(float));
+        dst += act.nd * sizeof(float);
+        if (act.nbs) {
+            std::memcpy(dst, act.bs_row(t), size_t(act.nbs) * sizeof(int32_t));
+            dst += act.nbs * sizeof(int32_t);
+        }
     }
 }
 
@@ -72,6 +90,49 @@ NpuExecutor & npu_executor() {
 ComputePath & npu_path() {
     static NpuPath p;
     return p;
+}
+
+KernelCache & kernel_cache() {
+    static KernelCache c([] {
+        KernelCache::Config cfg;
+        cfg.cache_dir      = default_cache_dir();
+        cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
+        cfg.toolchain_env  = GGML_XDNA2_MLIR_AIE_ENV;
+        cfg.max_jobs       = 4;
+        cfg.log            = kernel_log;
+        return cfg;
+    }());
+    return c;
+}
+
+bool reference_mode() {
+    const char * e = std::getenv("GGML_XDNA2_REFERENCE");
+    return e && *e && std::strcmp(e, "0") != 0;
+}
+
+bool placement_ok(const layout::Geom & geom) {
+    if (reference_mode()) {
+        return true;
+    }
+    if (!npu_executor().available()) {
+        return false;
+    }
+    for (int i = 0; i < geom.nchunks; ++i) {
+        const KernelKey key{ geom.fmt, geom.chunks[i].rows, geom.k, 1 };
+        if (!kernel_cache().available(key)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void request_kernels(const layout::Geom & geom) {
+    if (reference_mode() || !npu_executor().available()) {
+        return;
+    }
+    for (int i = 0; i < geom.nchunks; ++i) {
+        kernel_cache().request(KernelKey{ geom.fmt, geom.chunks[i].rows, geom.k, 1 });
+    }
 }
 
 bool npu_device_present() {

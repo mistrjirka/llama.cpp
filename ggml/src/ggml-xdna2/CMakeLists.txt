@@ -17,8 +17,19 @@ find_library(XRT_COREUTIL_LIB
 ggml_add_backend_library(ggml-xdna2
     ggml-xdna2.cpp
     ggml-xdna2-compute.cpp
+    ggml-xdna2-kernels.cpp
     ggml-xdna2-npu.cpp
 )
+
+# Kernel build step (kernels/: IRON generator + peano kernel sources, run as an external process at model load).
+# GGML_XDNA2_MLIR_AIE_ENV: python environment with mlir_aie + llvm-aie (bin/aiecc, bin/python). Without it, kernels
+# can only come from the cache and weights without a cached kernel stay on the CPU.
+set(GGML_XDNA2_MLIR_AIE_ENV "$ENV{MLIR_AIE_ENV}" CACHE PATH "ggml-xdna2: mlir-aie python environment used to build NPU kernels")
+set(GGML_XDNA2_KERNEL_DEFS
+    GGML_XDNA2_KERNEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/kernels"
+    GGML_XDNA2_MLIR_AIE_ENV="${GGML_XDNA2_MLIR_AIE_ENV}")
+target_compile_definitions(ggml-xdna2 PRIVATE ${GGML_XDNA2_KERNEL_DEFS})
+target_link_libraries(ggml-xdna2 PRIVATE Threads::Threads)
 
 target_compile_features(ggml-xdna2 PRIVATE cxx_std_17)
 target_include_directories(ggml-xdna2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -51,4 +62,11 @@ if (GGML_BUILD_TESTS OR LLAMA_BUILD_TESTS)
         target_link_libraries(test-xdna2-layout PRIVATE ${GGML_OPENMP_TARGET_CXX})
     endif()
     add_test(NAME test-xdna2-layout COMMAND test-xdna2-layout)
+
+    # kernel cache exerciser (builds NPU kernels, does not touch the NPU)
+    add_executable(xdna2-kernel-tool tests/xdna2-kernel-tool.cpp ggml-xdna2-kernels.cpp)
+    target_compile_features(xdna2-kernel-tool PRIVATE cxx_std_17)
+    target_include_directories(xdna2-kernel-tool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(xdna2-kernel-tool PRIVATE ${GGML_XDNA2_KERNEL_DEFS})
+    target_link_libraries(xdna2-kernel-tool PRIVATE Threads::Threads)
 endif()
