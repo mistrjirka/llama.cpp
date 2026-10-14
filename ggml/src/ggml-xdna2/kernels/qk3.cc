@@ -1,5 +1,5 @@
-// K-quant GEMV core kernels (AIE2P): Q4_K and Q6_K, QK_M activation vectors (Q8_K-like).
-// -DQK_T=4|6 -DQK_K=<K> -DQK_RPC=<rows/core> -DQK_M=<#act vectors>
+// K-quant / Q8_0 GEMV core kernels (AIE2P), activation in its own BO (header 64 B + M Q8 vectors).
+// -DQK_T=4|5|6|8 -DQK_K=<K> -DQK_M=<#act vectors>.  Record = 16 rows x 256 weights; output object per 16-row group = M x 16 f32.
 #include <aie_api/aie.hpp>
 #include <stdint.h>
 #ifndef QK_T
@@ -8,31 +8,33 @@
 #ifndef QK_K
 #define QK_K 4096
 #endif
-#ifndef QK_RPC
-#define QK_RPC 384
-#endif
-#ifndef QK_DBG
-#define QK_DBG 0
-#endif
 #ifndef QK_M
 #define QK_M 1
 #endif
 #define NBK (QK_K / 256)
-#define SV (QK_K + NBK * 4 + QK_K / 8)           // per-vector act bytes: qs, d(f32 per 256), bsum32 (f32 per 32)
+#if QK_T == 8
+#define SV (QK_K + QK_K / 8)                     // qs + f32 d per 32
+#define REC 4352
+#else
+#define SV (QK_K + NBK * 4 + QK_K / 8)           // qs, f32 d per 256, i32 bsum per 32
 #if QK_T == 4
 #define REC 2304
+#elif QK_T == 5
+#define REC 2816
 #else
 #define REC 3360
 #endif
-#define ACT_RECS ((QK_M * SV + REC - 1) / REC)
-#define ACT_BYTES ((QK_M * SV + 63) & ~63)
+#endif
+#define ACT_BYTES ((64 + QK_M * SV + 63) & ~63)
+#define ACT_RECS ((ACT_BYTES + REC - 1) / REC)
 alignas(64) static float yst[QK_M][16];
-static int act_cnt = 0, blk = 0, grp = 0;
+static int act_cnt = 0, blk = 0;
 
-extern "C" void qk_act_rec(const int8_t *__restrict rec, int8_t *__restrict act_blob) {
-  int8_t *dst = act_blob + act_cnt * REC;
+extern "C" void qk_act_rec(const int8_t *__restrict rec, int8_t *__restrict act, int32_t *__restrict hdr) {
+  int8_t *dst = act + act_cnt * REC;
   int rem = ACT_BYTES - act_cnt * REC; int n = (rem < REC ? rem : REC) / 32;
   for (int i = 0; i < n; i++) aie::store_v(dst + i * 32, aie::load_v<32>(rec + i * 32));
+  if (act_cnt == 0) { hdr[0] = ((const int32_t *)act)[0]; }
   act_cnt = (act_cnt + 1 == ACT_RECS) ? 0 : act_cnt + 1;
 }
 
@@ -53,7 +55,8 @@ static inline aie::vector<float, 16> h2f(const uint16_t *p) {
 }
 
 #if QK_T == 4
-extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_blob) {
+extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_blob_) {
+  const int8_t *act_blob = act_blob_ + 64;
   const uint8_t *scp = (const uint8_t *)(rec + 2048);
   aie::vector<uint16, 32> Va = aie::unpack(aie::load_v<32>(scp)), Vb = aie::unpack(aie::load_v<32>(scp + 32)),
                           Vc = aie::unpack(aie::load_v<32>(scp + 64)), Vd = aie::unpack(aie::load_v<32>(scp + 96)),
@@ -108,16 +111,17 @@ extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, co
     aie::vector<float, 16> t2 = aie::mul(dmin_f, ss).to_vector<float>();
     aie::vector<float, 16> t = aie::sub(t1, t2);
     y = aie::add(y, aie::mul(t, aie::broadcast<float, 16>(dact[m][blk])).to_vector<float>());
-    if (blk == NBK - 1) aie::store_v(out + m * QK_RPC + grp * 16, y); else aie::store_v(yst[m], y);
+    if (blk == NBK - 1) aie::store_v(out + m * 16, y); else aie::store_v(yst[m], y);
   }
   blk++;
-  if (blk == NBK) { blk = 0; grp = (grp + 1 == QK_RPC / 16) ? 0 : grp + 1; }
+  if (blk == NBK) blk = 0;
 }
 #endif
 
 #if QK_T == 6
 static_assert(QK_M == 1, "Q6_K kernel is M=1");
-extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_blob) {
+extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_blob_) {
+  const int8_t *act_blob = act_blob_ + 64;
   const int8_t *aq = act_blob;
   const float *dact = (const float *)(act_blob + QK_K);
   const int8_t *sp = rec + 3072;                     // int8 scales [s][row]
@@ -154,8 +158,100 @@ extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, co
   aie::vector<float, 16> si = aie::to_float(sumi.to_vector<int32>(0));
   aie::vector<float, 16> t1 = aie::mul(d_f, si).to_vector<float>();
   y = aie::add(y, aie::mul(t1, aie::broadcast<float, 16>(dact[blk])).to_vector<float>());
-  if (blk == NBK - 1) aie::store_v(out + grp * 16, y); else aie::store_v(yst[0], y);
+  if (blk == NBK - 1) aie::store_v(out, y); else aie::store_v(yst[0], y);
   blk++;
-  if (blk == NBK) { blk = 0; grp = (grp + 1 == QK_RPC / 16) ? 0 : grp + 1; }
+  if (blk == NBK) blk = 0;
+}
+#endif
+
+#if QK_T == 5
+static_assert(QK_M == 1, "Q5_K kernel is M=1");
+extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_) {
+  const int8_t *aq = act_ + 64;
+  const float *dact = (const float *)(aq + QK_K);
+  const int32_t *bsm = (const int32_t *)(aq + QK_K + NBK * 4);
+  const uint8_t *scp = (const uint8_t *)(rec + 2560);
+  aie::vector<uint16, 32> Va = aie::unpack(aie::load_v<32>(scp)), Vb = aie::unpack(aie::load_v<32>(scp + 32)),
+                          Vc = aie::unpack(aie::load_v<32>(scp + 64)), Vd = aie::unpack(aie::load_v<32>(scp + 96)),
+                          Ve = aie::unpack(aie::load_v<32>(scp + 128)), Vf = aie::unpack(aie::load_v<32>(scp + 160));
+  const aie::vector<uint16, 32> m63 = aie::broadcast<uint16, 32>(63), m15 = aie::broadcast<uint16, 32>(15),
+                                mF0 = aie::broadcast<uint16, 32>(0xF0), mC0 = aie::broadcast<uint16, 32>(0xC0);
+  aie::vector<int16, 32> scp2[4], mnp2[4];
+  scp2[0] = aie::bit_and(Va, m63).cast_to<int16>();
+  scp2[1] = aie::bit_and(Vb, m63).cast_to<int16>();
+  scp2[2] = aie::add(aie::bit_and(Ve, m15), aie::downshift(aie::bit_and(Va, mC0), 2)).cast_to<int16>();
+  scp2[3] = aie::add(aie::bit_and(Vf, m15), aie::downshift(aie::bit_and(Vb, mC0), 2)).cast_to<int16>();
+  mnp2[0] = aie::bit_and(Vc, m63).cast_to<int16>();
+  mnp2[1] = aie::bit_and(Vd, m63).cast_to<int16>();
+  mnp2[2] = aie::add(aie::downshift(aie::bit_and(Ve, mF0), 4), aie::downshift(aie::bit_and(Vc, mC0), 2)).cast_to<int16>();
+  mnp2[3] = aie::add(aie::downshift(aie::bit_and(Vf, mF0), 4), aie::downshift(aie::bit_and(Vd, mC0), 2)).cast_to<int16>();
+  aie::vector<float, 16> d_f = h2f((const uint16_t *)(rec + 2752));
+  aie::vector<float, 16> dmin_f = h2f((const uint16_t *)(rec + 2784));
+  aie::accum<acc64, 16> sumi;
+  aie::accum<acc32, 16> summs;
+  const aie::vector<uint32, 16> m10 = aie::broadcast<uint32, 16>(0x10101010u);
+  for (int j = 0; j < 8; j++) {
+    aie::vector<uint32, 16> V = aie::load_v<64>((const uint8 *)(rec + 2048 + j * 64)).cast_to<uint32>();
+    aie::vector<int16, 16> scj = scp2[j >> 1].extract<16>(j & 1), mnj = mnp2[j >> 1].extract<16>(j & 1);
+    aie::mmul<4, 16, 8, int8, int8> m0, m1;
+    for (int hf = 0; hf < 2; hf++) {
+      aie::vector<int8, 16> a16 = aie::load_v<16>(aq + blk * 256 + j * 32 + hf * 16);
+      aie::vector<int8, 32> a32 = aie::concat(a16, a16);
+      aie::vector<int8, 64> A = aie::concat(a32, a32);
+      aie::vector<int8, 64> w[4];
+      for (int c = 0; c < 4; c++) {
+        aie::vector<uint4, 64> l = aie::load_v<64>((const uint4 *)(rec + (2 * j + hf) * 128 + c * 32));
+        aie::vector<uint8, 64> lo8 = aie::unpack(l);
+        aie::vector<uint32, 16> sh = (hf == 0) ? aie::upshift(V, 4 - c) : (c == 0 ? V : aie::downshift(V, c));
+        aie::vector<uint32, 16> hb = aie::bit_and(sh, m10);
+        w[c] = aie::add(lo8, hb.cast_to<uint8>()).cast_to<int8>();
+      }
+      if (hf == 0) { m0.mul(A, aie::concat(w[0], w[1])); m1.mul(A, aie::concat(w[2], w[3])); }
+      else { m0.mac(A, aie::concat(w[0], w[1])); m1.mac(A, aie::concat(w[2], w[3])); }
+    }
+    aie::vector<int32, 16> cv = aie::concat(m0.to_vector<int32>().extract<8>(0), m1.to_vector<int32>().extract<8>(0));
+    aie::vector<int32, 16> sc32 = aie::unpack(scj);
+    aie::vector<int16, 16> bsv = aie::broadcast<int16, 16>((int16_t)bsm[blk * 8 + j]);
+    if (j == 0) { sumi = aie::mul(cv, sc32); summs = aie::mul(mnj, bsv); }
+    else { sumi = aie::mac(sumi, cv, sc32); summs = aie::mac(summs, mnj, bsv); }
+  }
+  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst[0]);
+  aie::vector<float, 16> si = aie::to_float(sumi.to_vector<int32>(0));
+  aie::vector<float, 16> ss = aie::to_float(summs.to_vector<int32>(0));
+  aie::vector<float, 16> t1 = aie::mul(d_f, si).to_vector<float>();
+  aie::vector<float, 16> t2 = aie::mul(dmin_f, ss).to_vector<float>();
+  aie::vector<float, 16> t = aie::sub(t1, t2);
+  y = aie::add(y, aie::mul(t, aie::broadcast<float, 16>(dact[blk])).to_vector<float>());
+  if (blk == NBK - 1) aie::store_v(out, y); else aie::store_v(yst[0], y);
+  blk++;
+  if (blk == NBK) blk = 0;
+}
+#endif
+
+#if QK_T == 8
+static_assert(QK_M == 1, "Q8_0 kernel is M=1");
+extern "C" void qk_w_rec(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_) {
+  const int8_t *aq = act_ + 64;
+  const float *dact = (const float *)(aq + QK_K);       // f32 d per 32
+  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst[0]);
+  for (int b = 0; b < 8; b++) {
+    aie::mmul<4, 16, 8, int8, int8> m0, m1;
+    for (int kc = 0; kc < 2; kc++) {
+      aie::vector<int8, 16> a16 = aie::load_v<16>(aq + blk * 256 + b * 32 + kc * 16);
+      aie::vector<int8, 32> a32 = aie::concat(a16, a16);
+      aie::vector<int8, 64> A = aie::concat(a32, a32);
+      const int8_t *t0 = rec + b * 512 + (kc * 2) * 128;
+      aie::vector<int8, 128> B0 = aie::concat(aie::load_v<64>(t0), aie::load_v<64>(t0 + 64));
+      aie::vector<int8, 128> B1 = aie::concat(aie::load_v<64>(t0 + 128), aie::load_v<64>(t0 + 192));
+      if (kc == 0) { m0.mul(A, B0); m1.mul(A, B1); } else { m0.mac(A, B0); m1.mac(A, B1); }
+    }
+    aie::vector<int32, 16> cv = aie::concat(m0.to_vector<int32>().extract<8>(0), m1.to_vector<int32>().extract<8>(0));
+    aie::vector<float, 16> dw = h2f((const uint16_t *)(rec + 4096 + b * 32));
+    aie::vector<float, 16> t1 = aie::mul(aie::to_float(cv), dw).to_vector<float>();
+    y = aie::add(y, aie::mul(t1, aie::broadcast<float, 16>(dact[blk * 8 + b])).to_vector<float>());
+  }
+  if (blk == NBK - 1) aie::store_v(out, y); else aie::store_v(yst[0], y);
+  blk++;
+  if (blk == NBK) blk = 0;
 }
 #endif

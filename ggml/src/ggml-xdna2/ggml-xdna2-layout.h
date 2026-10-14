@@ -1,29 +1,30 @@
 #pragma once
 
-// Device weight layouts of the ggml-xdna2 backend.
+// Device weight layouts of the ggml-xdna2 backend (stage3 kernel ABI of the lab: xdna-decode-lab-20261014/stage3).
 //
 // This header is dependency free (no ggml, no XRT) so that the layouts can be unit tested on their own.
 //
-// Every layout is a pure PERMUTATION of the bytes/nibbles/bits of the GGUF tensor: the logical payload has
-// exactly the same size as the GGUF data. Only padding is added, to reach the 16 rows x 32 cores granularity (N),
-// and, for the 32-element block formats, the 8-block record granularity (K).
+// Every layout is a pure PERMUTATION of the bytes/nibbles/bits of the GGUF tensor: the logical payload has exactly the
+// same size as the GGUF data. Only whole rows are padded (N -> multiple of 512, zero bytes = zero scale).
 //
-//   Fmt::Q4_0   record 2304 B = 16 rows x 8 blocks   (stage0 kernel, bit identical to prep_q4.py)
-//   Fmt::Q4_K   record 2304 B = 16 rows x 1 super-block   (stage2 kernel, bit identical to pack_qk.py)
-//   Fmt::Q6_K   record 3360 B = 16 rows x 1 super-block   (stage2 kernel, bit identical to pack_qk.py)
-//   Fmt::Q8_0   record 4352 B = 16 rows x 8 blocks   PROVISIONAL (no NPU kernel yet, see section below)
-//   Fmt::Q5_K   record 2816 B = 16 rows x 1 super-block   PROVISIONAL (no NPU kernel yet, see section below)
+//   Fmt::Q4_K   record 2304 B = 16 rows x 256 weights  (1 GGUF super-block per row)
+//   Fmt::Q5_K   record 2816 B
+//   Fmt::Q6_K   record 3360 B
+//   Fmt::Q8_0   record 4352 B = 16 rows x 8 GGUF blocks of 32
+//   (Q4_0 is not supported: its lab kernel uses the older stage0 ABI.)
 //
-// Matrix: N rows (output features) x K columns, KB = K / elems blocks per row (elems = 32 or 256).
-//   N_pad  = roundup(N, 512)            (32 cores x 16-row groups); padded rows/blocks are all zero bytes, which
-//                                       is a zero scale (and zero min) so they contribute exactly 0
-//   KB_pad = roundup(KB, rec_blocks)
+// Matrix: N rows (output features) x K columns, K % 256 == 0, NBK = K/256 records per row.
+//   N_pad = roundup(N, 512), G = N_pad/512 groups of 16 rows per core.
 //
-// Cores: the NPU runs 32 cores (8 columns x 4 rows). A "chunk" is the unit of one NPU dispatch (<= MAX_DISPATCH_BYTES,
-// a larger single dispatch returned wrong data on the lab machine). Chunks are consecutive row ranges, each a
-// multiple of 512 rows. Inside a chunk, core c owns the contiguous row range [c*RPC, (c+1)*RPC), RPC = chunk_rows/32,
-// and its records are one contiguous byte range [c*core_bytes, (c+1)*core_bytes) of the chunk. Within a core the
-// records are ordered group-major: group g (16 rows) -> record r along K: rec = g*recs_per_group + r.
+// W_bo layout (identical to pack3.py with 2 chains per column and 2 lanes per chain):
+//   [16 chains][G*NBK objects][2 lanes][REC]
+//   core c32 = (col*4 + k) (k = 0..3) owns rows [c32*16G, (c32+1)*16G); chain = col*2 + k/2 = c32/2, lane = k%2 = c32%2;
+//   its object index is group*NBK + kb. Hence the record of (row, kb) is at
+//        chain*chain_bytes + ((group*NBK + kb)*2 + lane)*REC,   chain_bytes = G*NBK*2*REC.
+//   The region of one 2D matrix is N_pad*NBK*REC/16 bytes (= GGUF size for N % 512 == 0) and may be used as a
+//   sub-BO at any 64-byte aligned offset.
+//
+// The output of the kernel is f32 [col 8][G][core 4][m][16] ->  row = ((col*4 + k)*G + g)*16 + i  (m = vector).
 //
 // A tensor with ne[2]*ne[3] > 1 is stored as consecutive independent matrices (one per 2D slice).
 // Any byte range of the GGUF stream can be written/read independently (needed for chunked set_tensor).
@@ -39,24 +40,23 @@
 namespace xdna2 {
 namespace layout {
 
-enum class Fmt : int { Q4_0 = 0, Q8_0, Q4_K, Q5_K, Q6_K, COUNT };
+enum class Fmt : int { Q8_0 = 0, Q4_K, Q5_K, Q6_K, COUNT };
 
 struct FmtInfo {
     const char * name;
     int          elems;        // weights per GGUF block
     size_t       block_bytes;  // sizeof(GGUF block)
-    int          rec_blocks;   // blocks along K per record
+    int          rec_blocks;   // GGUF blocks per row per record (record = 256 weights per row)
     size_t       rec_bytes;    // 16 rows * rec_blocks * block_bytes
-    bool         provisional;  // layout not yet fixed by an existing NPU kernel
+    int          qt;           // quantization type id of the lab generator (gen3.py --qt)
 };
 
 inline const FmtInfo & fmt_info(Fmt f) {
     static const FmtInfo t[] = {
-        { "Q4_0",  32,  18, 8, 16 *  8 *  18, false },
-        { "Q8_0",  32,  34, 8, 16 *  8 *  34, true  },
-        { "Q4_K", 256, 144, 1, 16 *  1 * 144, false },
-        { "Q5_K", 256, 176, 1, 16 *  1 * 176, true  },
-        { "Q6_K", 256, 210, 1, 16 *  1 * 210, false },
+        { "Q8_0",  32,  34, 8, 16 * 8 *  34, 8 },
+        { "Q4_K", 256, 144, 1, 16 * 1 * 144, 4 },
+        { "Q5_K", 256, 176, 1, 16 * 1 * 176, 5 },
+        { "Q6_K", 256, 210, 1, 16 * 1 * 210, 6 },
     };
     return t[int(f)];
 }
@@ -65,91 +65,57 @@ constexpr int     QK32       = 32;
 constexpr int     N_CORES    = 32;
 constexpr int     GROUP_ROWS = 16;
 constexpr int64_t ROW_GRAN   = int64_t(N_CORES) * GROUP_ROWS; // 512
-constexpr size_t  MAX_DISPATCH_BYTES = 512000000;              // see stage2 RESULTS.md (834 MB dispatch was wrong)
-constexpr int     MAX_CHUNKS = 32;
+constexpr int     N_CHAINS   = 16;
+constexpr int     N_LANES    = 2;
 constexpr size_t  MAX_BLOCK_BYTES = 210;
 
 constexpr int64_t roundup(int64_t x, int64_t m) { return (x + m - 1) / m * m; }
 
-struct Chunk {
-    int64_t row0 = 0;             // first row of the chunk
-    int64_t rows = 0;             // padded rows of the chunk (multiple of 512)
-    size_t  off = 0;              // byte offset of the chunk inside the matrix region
-    size_t  bytes = 0;
-    int64_t rpc = 0;              // rows per core
-    int64_t groups_per_core = 0;
-    size_t  core_bytes = 0;
-};
-
 struct Geom {
-    Fmt     fmt = Fmt::Q4_0;
+    Fmt     fmt = Fmt::Q4_K;
     int64_t n = 0, k = 0;         // logical rows / columns
-    int64_t kb = 0;               // blocks per row
     int64_t n_pad = 0;
-    int64_t kb_pad = 0;
-    int64_t recs_per_group = 0;   // records along K
+    int64_t groups = 0;           // G = n_pad / 512
+    int64_t nbk = 0;              // records per row (k / 256)
+    int64_t kb = 0;               // GGUF blocks per row
     size_t  rec_bytes = 0;
     size_t  block_bytes = 0;
     int     rec_blocks = 0;
-    size_t  bytes = 0;            // padded bytes of one 2D matrix
+    size_t  rec_stride = 0;       // distance between consecutive records of one core (lane interleave)
+    size_t  chain_bytes = 0;
+    size_t  bytes = 0;            // bytes of one 2D matrix region (padded)
     size_t  row_bytes = 0;        // GGUF bytes of one row
     size_t  gguf_bytes = 0;       // GGUF bytes of one 2D matrix
-    int     nchunks = 0;
-    Chunk   chunks[MAX_CHUNKS];
-
-    const Chunk & chunk_of(int64_t row) const {
-        int i = 0;
-        while (i + 1 < nchunks && row >= chunks[i + 1].row0) ++i;
-        return chunks[i];
-    }
 
     // byte offset (relative to the matrix start) of the first record of the 16-row group containing `row`
     size_t group_base(int64_t row) const {
-        const Chunk & c = chunk_of(row);
-        const int64_t rr = row - c.row0;
-        const int64_t core = rr / c.rpc, g = (rr % c.rpc) / GROUP_ROWS;
-        return c.off + size_t(core) * c.core_bytes + size_t(g * recs_per_group) * rec_bytes;
+        const int64_t rpc = groups * GROUP_ROWS;
+        const int64_t c32 = row / rpc, rr = row % rpc;
+        const int64_t g = rr / GROUP_ROWS;
+        return size_t(c32 / N_LANES) * chain_bytes + size_t(g * nbk * N_LANES + c32 % N_LANES) * rec_bytes;
     }
 };
 
-inline Geom make_geom(Fmt fmt, int64_t n, int64_t k, size_t max_dispatch_bytes = MAX_DISPATCH_BYTES) {
+inline bool k_supported(int64_t k) { return k > 0 && k % 256 == 0; }
+
+inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     const FmtInfo & fi = fmt_info(fmt);
     Geom g;
     g.fmt = fmt;
     g.n = n;
     g.k = k;
-    g.kb = k / fi.elems;
     g.n_pad = roundup(n, ROW_GRAN);
-    g.kb_pad = roundup(g.kb, fi.rec_blocks);
-    g.recs_per_group = g.kb_pad / fi.rec_blocks;
+    g.groups = g.n_pad / ROW_GRAN;
+    g.nbk = k / 256;
+    g.kb = k / fi.elems;
     g.rec_bytes = fi.rec_bytes;
     g.block_bytes = fi.block_bytes;
     g.rec_blocks = fi.rec_blocks;
-    g.bytes = size_t(g.n_pad) * size_t(g.kb_pad) * fi.block_bytes;
+    g.rec_stride = size_t(N_LANES) * fi.rec_bytes;
+    g.chain_bytes = size_t(g.groups) * size_t(g.nbk) * N_LANES * fi.rec_bytes;
+    g.bytes = g.chain_bytes * N_CHAINS;
     g.row_bytes = size_t(g.kb) * fi.block_bytes;
     g.gguf_bytes = size_t(n) * g.row_bytes;
-
-    // split into dispatch chunks of (almost) equal size, each a multiple of 512 rows
-    const int64_t units = g.n_pad / ROW_GRAN;
-    int64_t nch = int64_t((g.bytes + max_dispatch_bytes - 1) / max_dispatch_bytes);
-    if (nch < 1) nch = 1;
-    if (nch > units) nch = units;
-    if (nch > MAX_CHUNKS) nch = MAX_CHUNKS;
-    g.nchunks = int(nch);
-    int64_t row0 = 0;
-    size_t off = 0;
-    for (int i = 0; i < g.nchunks; ++i) {
-        Chunk & c = g.chunks[i];
-        c.row0 = row0;
-        c.rows = (units / nch + (i < units % nch ? 1 : 0)) * ROW_GRAN;
-        c.rpc = c.rows / N_CORES;
-        c.groups_per_core = c.rpc / GROUP_ROWS;
-        c.core_bytes = size_t(c.groups_per_core) * size_t(g.recs_per_group) * fi.rec_bytes;
-        c.bytes = c.core_bytes * N_CORES;
-        c.off = off;
-        row0 += c.rows;
-        off += c.bytes;
-    }
     return g;
 }
 
@@ -160,40 +126,16 @@ inline void put_nib(uint8_t * p, int shift, uint8_t v) {
 }
 inline uint8_t get_nib(const uint8_t * p, int shift) { return uint8_t((*p >> shift) & 15); }
 
-// ---- 4-bit tile addressing shared by Q4_0 / Q4_K / Q5_K ----------------------------------------------------------
-// A tile = 16 consecutive weights (k) x 16 rows (n) = 256 nibbles = 128 B:  byte  tile*128 + k*8 + n/2,
-// low nibble = even row, high nibble = odd row.
-inline uint8_t * tile_nib(uint8_t * rec, int tile, int kk, int n) { return rec + size_t(tile) * 128 + size_t(kk) * 8 + size_t(n >> 1); }
+// ---- tile addressing -------------------------------------------------------------------------------------------
+// "A" tiles (Q4_K): 16 weights (k) x 16 rows (n) = 128 B:  byte  tile*128 + k*8 + n/2, low nibble = even row.
+inline uint8_t * tile_a(uint8_t * rec, int tile, int kk, int n) { return rec + size_t(tile) * 128 + size_t(kk) * 8 + size_t(n >> 1); }
+// "B" tiles (Q5_K, Q6_K): element e = (n/8)*128 + k*8 + n%8 of the 256-element tile; nibble at byte tile*128 + e/2, shift 4*(e&1)
+inline int tile_b_e(int kk, int n) { return (n >> 3) * 128 + kk * 8 + (n & 7); }
 
-// ---- Q4_0 (stage0 q4.cc): per record 8 blocks; block b = tiles 2b, 2b+1; nibble = element ^ 8; scales fp16 [b][n] at 2048
-inline void q4_0_pack(uint8_t * rec, int b, int n, const uint8_t * blk) {
-    const int shift = (n & 1) * 4;
-    uint8_t * sc = rec + 2048 + (size_t(b) * 16 + size_t(n)) * 2;
-    sc[0] = blk[0];
-    sc[1] = blk[1];
-    for (int j = 0; j < 16; ++j) {
-        const uint8_t v = blk[2 + j];
-        put_nib(tile_nib(rec, 2 * b + 0, j, n), shift, uint8_t((v & 15) ^ 8));
-        put_nib(tile_nib(rec, 2 * b + 1, j, n), shift, uint8_t((v >> 4) ^ 8));
-    }
-}
-inline void q4_0_unpack(const uint8_t * rec, int b, int n, uint8_t * blk) {
-    const int shift = (n & 1) * 4;
-    const uint8_t * sc = rec + 2048 + (size_t(b) * 16 + size_t(n)) * 2;
-    blk[0] = sc[0];
-    blk[1] = sc[1];
-    for (int j = 0; j < 16; ++j) {
-        const uint8_t a = uint8_t(get_nib(tile_nib(const_cast<uint8_t *>(rec), 2 * b + 0, j, n), shift) ^ 8);
-        const uint8_t c = uint8_t(get_nib(tile_nib(const_cast<uint8_t *>(rec), 2 * b + 1, j, n), shift) ^ 8);
-        blk[2 + j] = uint8_t(a | (c << 4));
-    }
-}
-
-// ---- Q4_K (stage2 qk.cc / pack_qk.py): block = d, dmin (fp16), scales[12], qs[128]
-//   bytes [0,2048) nibble tiles (tile = w/16, w = weight index 0..255; weight w: chunk c = w/64, r = w%64, l = r%32,
-//                  nibble = r < 32 ? qs[c*32+l] & 15 : qs[c*32+l] >> 4, UNSIGNED 0..15)
-//   [2048,2240)    the 12 packed 6-bit scale/min bytes as planes [p][n]
-//   [2240,2272)    d fp16 [n];  [2272,2304) dmin fp16 [n]
+// ---- Q4_K (kernel qk3.cc QK_T=4): block = d, dmin (fp16), scales[12], qs[128]
+//   [0,2048)  nibble tiles (A addressing; tile = w/16, w = weight 0..255: chunk c = w/64, r = w%64, l = r%32,
+//             nibble = r < 32 ? qs[c*32+l] & 15 : qs[c*32+l] >> 4, unsigned 0..15)
+//   [2048,2240) the 12 packed 6-bit scale/min bytes as planes [p][n] | [2240,2272) d fp16 [n] | [2272,2304) dmin fp16 [n]
 inline void q4k_pack(uint8_t * rec, int n, const uint8_t * blk) {
     const int shift = (n & 1) * 4;
     std::memcpy(rec + 2048 + 192 + 2 * n, blk + 0, 2);
@@ -204,8 +146,8 @@ inline void q4k_pack(uint8_t * rec, int n, const uint8_t * blk) {
         for (int l = 0; l < 32; ++l) {
             const uint8_t v = qs[c * 32 + l];
             const int wl = c * 64 + l, wh = c * 64 + 32 + l;
-            put_nib(tile_nib(rec, wl / 16, wl % 16, n), shift, v & 15);
-            put_nib(tile_nib(rec, wh / 16, wh % 16, n), shift, v >> 4);
+            put_nib(tile_a(rec, wl / 16, wl % 16, n), shift, v & 15);
+            put_nib(tile_a(rec, wh / 16, wh % 16, n), shift, v >> 4);
         }
     }
 }
@@ -218,23 +160,67 @@ inline void q4k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
     for (int c = 0; c < 4; ++c) {
         for (int l = 0; l < 32; ++l) {
             const int wl = c * 64 + l, wh = c * 64 + 32 + l;
-            const uint8_t a = get_nib(tile_nib(const_cast<uint8_t *>(rec), wl / 16, wl % 16, n), shift);
-            const uint8_t b = get_nib(tile_nib(const_cast<uint8_t *>(rec), wh / 16, wh % 16, n), shift);
+            const uint8_t a = get_nib(tile_a(const_cast<uint8_t *>(rec), wl / 16, wl % 16, n), shift);
+            const uint8_t b = get_nib(tile_a(const_cast<uint8_t *>(rec), wh / 16, wh % 16, n), shift);
             qs[c * 32 + l] = uint8_t(a | (b << 4));
         }
     }
 }
 
-// ---- Q6_K (stage2 qk.cc / pack_qk.py): block = ql[128], qh[64], scales[16] int8, d fp16
+// ---- Q5_K (QK_T=5): block = d, dmin, scales[12], qh[32], qs[128]
+//   weight w: sub-block j = w/32, l = w%32, 5-bit value = low nibble (as Q4_K) | ((qh[l] >> j) & 1) << 4
+//   tile t = w/16, k = w%16, e = tile_b_e(k, n)
+//   [0,2048)     low nibbles: byte t*128 + e/2, shift 4*(e&1)
+//   [2048,2560)  high bits: byte 2048 + (t/2)*64 + e%64, bit (e/64) + 4*(t&1)
+//   [2560,2752) scale planes [p][n] | [2752,2784) d | [2784,2816) dmin
+inline void q5k_pos(int w, int n, size_t & lo_byte, int & lo_shift, size_t & hi_byte, int & hi_bit) {
+    const int t = w >> 4, e = tile_b_e(w & 15, n);
+    lo_byte = size_t(t) * 128 + size_t(e >> 1);
+    lo_shift = (e & 1) * 4;
+    hi_byte = 2048 + size_t(t >> 1) * 64 + size_t(e & 63);
+    hi_bit = (e >> 6) + 4 * (t & 1);
+}
+inline void q5k_pack(uint8_t * rec, int n, const uint8_t * blk) {
+    std::memcpy(rec + 2752 + 2 * n, blk + 0, 2);
+    std::memcpy(rec + 2784 + 2 * n, blk + 2, 2);
+    for (int p = 0; p < 12; ++p) rec[2560 + p * 16 + n] = blk[4 + p];
+    const uint8_t * qh = blk + 16, * qs = blk + 48;
+    for (int w = 0; w < 256; ++w) {
+        const int c = w >> 6, r = w & 63, l = r & 31;
+        const uint8_t lo = r < 32 ? (qs[c * 32 + l] & 15) : (qs[c * 32 + l] >> 4);
+        const uint8_t hi = (qh[w & 31] >> (w >> 5)) & 1;
+        size_t lb, hb; int ls, hbit;
+        q5k_pos(w, n, lb, ls, hb, hbit);
+        put_nib(rec + lb, ls, lo);
+        rec[hb] = uint8_t((rec[hb] & ~(1 << hbit)) | (hi << hbit));
+    }
+}
+inline void q5k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
+    std::memcpy(blk + 0, rec + 2752 + 2 * n, 2);
+    std::memcpy(blk + 2, rec + 2784 + 2 * n, 2);
+    for (int p = 0; p < 12; ++p) blk[4 + p] = rec[2560 + p * 16 + n];
+    uint8_t * qh = blk + 16, * qs = blk + 48;
+    std::memset(qh, 0, 32 + 128);
+    for (int w = 0; w < 256; ++w) {
+        const int c = w >> 6, r = w & 63, l = r & 31;
+        size_t lb, hb; int ls, hbit;
+        q5k_pos(w, n, lb, ls, hb, hbit);
+        const uint8_t lo = get_nib(rec + lb, ls);
+        const uint8_t hi = uint8_t((rec[hb] >> hbit) & 1);
+        qs[c * 32 + l] |= r < 32 ? lo : uint8_t(lo << 4);
+        qh[w & 31] |= uint8_t(hi << (w >> 5));
+    }
+}
+
+// ---- Q6_K (QK_T=6): block = ql[128], qh[64], scales[16] int8, d fp16
 //   weight w: h = w/128, r = w%128, qq = r/32, l = r%32; 6-bit value = lo4 | hi2 << 4 (then -32 in the kernel)
 //     lo4 = (qq < 2 ? ql[h*64 + (qq&1)*32 + l] & 15 : ql[h*64 + (qq&1)*32 + l] >> 4),  hi2 = (qh[h*32 + l] >> 2qq) & 3
-//   tile t = w/16, k = w%16, element e = (n/8)*128 + k*8 + n%8 inside the tile
+//   tile t = w/16, k = w%16, e = tile_b_e(k, n)
 //   [0,2048)     lo4 nibble tiles: byte t*128 + e/2, shift 4*(e&1)
 //   [2048,3072)  hi2 bits: byte 2048 + t*64 + e%64, bit 2*(e/64)
 //   [3072,3328)  int8 scales [t][n];  [3328,3360) d fp16 [n]
 inline void q6k_pos(int w, int n, size_t & lo_byte, int & lo_shift, size_t & hi_byte, int & hi_shift) {
-    const int t = w >> 4, k = w & 15;
-    const int e = (n >> 3) * 128 + k * 8 + (n & 7);
+    const int t = w >> 4, e = tile_b_e(w & 15, n);
     lo_byte = size_t(t) * 128 + size_t(e >> 1);
     lo_shift = (e & 1) * 4;
     hi_byte = 2048 + size_t(t) * 64 + size_t(e & 63);
@@ -271,71 +257,23 @@ inline void q6k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
     std::memcpy(blk + 208, rec + 3328 + 2 * n, 2);
 }
 
-// ============================ PROVISIONAL layouts (no NPU kernel exists yet) ====================================
-// Isolated here so that they are easy to swap once the stage3 kernels define the real ones.
-// They keep the same conventions as the proven layouts above (16-row groups, tiles of 16 weights x 16 rows).
-//
-// Q8_0: record = 8 blocks. int8 tiles: byte b*512 + k*16 + n (k = 0..31); scales fp16 [b][n] at 4096.
+// ---- Q8_0 (QK_T=8): record = 8 GGUF blocks (fp16 d, int8 qs[32]) per row
+//   weight k32 (0..31) of block b: kc = k32/16, k = k32%16, row n: nh = n/8, n8 = n%8
+//   [0,4096)    int8: b*512 + kc*256 + nh*128 + k*8 + n8   |   [4096,4352) fp16 scales: 4096 + (b*16 + n)*2
+inline size_t q8_0_off(int b, int k32, int n) {
+    return size_t(b) * 512 + size_t(k32 >> 4) * 256 + size_t(n >> 3) * 128 + size_t(k32 & 15) * 8 + size_t(n & 7);
+}
 inline void q8_0_pack(uint8_t * rec, int b, int n, const uint8_t * blk) {
     std::memcpy(rec + 4096 + (size_t(b) * 16 + size_t(n)) * 2, blk, 2);
-    for (int k = 0; k < 32; ++k) rec[size_t(b) * 512 + size_t(k) * 16 + size_t(n)] = blk[2 + k];
+    for (int k = 0; k < 32; ++k) rec[q8_0_off(b, k, n)] = blk[2 + k];
 }
 inline void q8_0_unpack(const uint8_t * rec, int b, int n, uint8_t * blk) {
     std::memcpy(blk, rec + 4096 + (size_t(b) * 16 + size_t(n)) * 2, 2);
-    for (int k = 0; k < 32; ++k) blk[2 + k] = rec[size_t(b) * 512 + size_t(k) * 16 + size_t(n)];
+    for (int k = 0; k < 32; ++k) blk[2 + k] = rec[q8_0_off(b, k, n)];
 }
-
-// Q5_K: block = d, dmin, scales[12], qh[32], qs[128]. Weight w has sub-block j = w/32, l = w%32:
-//   low nibble as Q4_K, high bit = (qh[l] >> j) & 1.
-//   [0,2048) nibble tiles as Q4_K | [2048,2560) high-bit planes: tile t = w/16, bit index kk*16 + n
-//   -> byte 2048 + t*32 + kk*2 + n/8, bit n%8 | [2560,2752) scale planes [p][n] | [2752,2784) d | [2784,2816) dmin
-inline void q5k_pack(uint8_t * rec, int n, const uint8_t * blk) {
-    const int shift = (n & 1) * 4;
-    std::memcpy(rec + 2752 + 2 * n, blk + 0, 2);
-    std::memcpy(rec + 2784 + 2 * n, blk + 2, 2);
-    for (int p = 0; p < 12; ++p) rec[2560 + p * 16 + n] = blk[4 + p];
-    const uint8_t * qh = blk + 16, * qs = blk + 48;
-    for (int c = 0; c < 4; ++c) {
-        for (int l = 0; l < 32; ++l) {
-            const uint8_t v = qs[c * 32 + l];
-            const int wl = c * 64 + l, wh = c * 64 + 32 + l;
-            put_nib(tile_nib(rec, wl / 16, wl % 16, n), shift, v & 15);
-            put_nib(tile_nib(rec, wh / 16, wh % 16, n), shift, v >> 4);
-        }
-    }
-    for (int w = 0; w < 256; ++w) {
-        const int j = w >> 5, l = w & 31;
-        const uint8_t bit = (qh[l] >> j) & 1;
-        uint8_t * p = rec + 2048 + size_t(w >> 4) * 32 + size_t(w & 15) * 2 + size_t(n >> 3);
-        *p = uint8_t((*p & ~(1 << (n & 7))) | (bit << (n & 7)));
-    }
-}
-inline void q5k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
-    const int shift = (n & 1) * 4;
-    std::memcpy(blk + 0, rec + 2752 + 2 * n, 2);
-    std::memcpy(blk + 2, rec + 2784 + 2 * n, 2);
-    for (int p = 0; p < 12; ++p) blk[4 + p] = rec[2560 + p * 16 + n];
-    uint8_t * qh = blk + 16, * qs = blk + 48;
-    std::memset(qh, 0, 32);
-    for (int c = 0; c < 4; ++c) {
-        for (int l = 0; l < 32; ++l) {
-            const int wl = c * 64 + l, wh = c * 64 + 32 + l;
-            const uint8_t a = get_nib(tile_nib(const_cast<uint8_t *>(rec), wl / 16, wl % 16, n), shift);
-            const uint8_t b = get_nib(tile_nib(const_cast<uint8_t *>(rec), wh / 16, wh % 16, n), shift);
-            qs[c * 32 + l] = uint8_t(a | (b << 4));
-        }
-    }
-    for (int w = 0; w < 256; ++w) {
-        const int j = w >> 5, l = w & 31;
-        const uint8_t * p = rec + 2048 + size_t(w >> 4) * 32 + size_t(w & 15) * 2 + size_t(n >> 3);
-        qh[l] |= uint8_t(((*p >> (n & 7)) & 1) << j);
-    }
-}
-// ================================================================================================================
 
 inline void pack_block(Fmt f, uint8_t * rec, int b, int n, const uint8_t * blk) {
     switch (f) {
-        case Fmt::Q4_0: q4_0_pack(rec, b, n, blk); break;
         case Fmt::Q8_0: q8_0_pack(rec, b, n, blk); break;
         case Fmt::Q4_K: q4k_pack(rec, n, blk); break;
         case Fmt::Q5_K: q5k_pack(rec, n, blk); break;
@@ -345,7 +283,6 @@ inline void pack_block(Fmt f, uint8_t * rec, int b, int n, const uint8_t * blk) 
 }
 inline void unpack_block(Fmt f, const uint8_t * rec, int b, int n, uint8_t * blk) {
     switch (f) {
-        case Fmt::Q4_0: q4_0_unpack(rec, b, n, blk); break;
         case Fmt::Q8_0: q8_0_unpack(rec, b, n, blk); break;
         case Fmt::Q4_K: q4k_unpack(rec, n, blk); break;
         case Fmt::Q5_K: q5k_unpack(rec, n, blk); break;
@@ -394,7 +331,7 @@ inline void for_range(const Geom & g, size_t off, size_t size, Op op) {
 // into the matrix region `dev` (g.bytes bytes). Padding is not modified.
 inline void pack_range(const Geom & g, uint8_t * dev, const uint8_t * src, size_t off, size_t size) {
     detail::for_range(g, off, size, [&](size_t gbase, int n, int64_t kb, int lo, int hi, size_t src_off) {
-        uint8_t * rec = dev + gbase + size_t(kb / g.rec_blocks) * g.rec_bytes;
+        uint8_t * rec = dev + gbase + size_t(kb / g.rec_blocks) * g.rec_stride;
         const int b = int(kb % g.rec_blocks);
         if (lo == 0 && hi == int(g.block_bytes)) {
             detail::pack_block(g.fmt, rec, b, n, src + src_off);
@@ -411,7 +348,7 @@ inline void pack_range(const Geom & g, uint8_t * dev, const uint8_t * src, size_
 // Inverse of pack_range: bit exact.
 inline void unpack_range(const Geom & g, const uint8_t * dev, uint8_t * dst, size_t off, size_t size) {
     detail::for_range(g, off, size, [&](size_t gbase, int n, int64_t kb, int lo, int hi, size_t dst_off) {
-        const uint8_t * rec = dev + gbase + size_t(kb / g.rec_blocks) * g.rec_bytes;
+        const uint8_t * rec = dev + gbase + size_t(kb / g.rec_blocks) * g.rec_stride;
         const int b = int(kb % g.rec_blocks);
         if (lo == 0 && hi == int(g.block_bytes)) {
             detail::unpack_block(g.fmt, rec, b, n, dst + dst_off);

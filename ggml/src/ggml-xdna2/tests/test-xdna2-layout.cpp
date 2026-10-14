@@ -1,11 +1,10 @@
-// Unit test of the device weight layouts (ggml-xdna2-layout.h) for Q4_0, Q8_0, Q4_K, Q5_K, Q6_K:
-// round trip, chunked/unaligned writes, dispatch chunks, padding, and (Q4_0) an independent reference packer
-// written in the style of the stage0 prep_q4.py.
+// Unit test of the device weight layouts (ggml-xdna2-layout.h) for Q8_0, Q4_K, Q5_K, Q6_K:
+// round trip, chunked/unaligned writes, padding. Bit equality with the lab packer (stage3 pack3.py) is checked
+// with --compare (see tests/check-layout-vs-lab.sh).
 //
 //   test-xdna2-layout                         run all tests
 //   test-xdna2-layout --compare FMT N K blk.bin expected.bin
-//        pack the GGUF-format blocks in blk.bin and compare with expected.bin (the 32 core streams of the single
-//        chunk, produced by a python script that uses the lab's prep_q4.py / pack_qk.py packing code)
+//        pack the GGUF-format blocks in blk.bin and compare with expected.bin (W_bo as written by pack3.py)
 
 #include "ggml-xdna2-layout.h"
 
@@ -21,48 +20,6 @@ using namespace xdna2::layout;
 
 static int g_fail = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); ++g_fail; } } while (0)
-
-// Independent Q4_0 packer: follows prep_q4.py literally (explicit [g, kb, k, n] transpose, nibble pairing, records).
-static std::vector<uint8_t> reference_pack_q4_0(const Geom & g, const std::vector<uint8_t> & gguf) {
-    std::vector<uint8_t> out(g.bytes, 0);
-    const int64_t KB = g.kb_pad;
-    std::vector<uint8_t> nib(size_t(g.n_pad) * KB * 32, 0), sc(size_t(g.n_pad) * KB * 2, 0);
-    for (int64_t r = 0; r < g.n; ++r) {
-        for (int64_t b = 0; b < g.kb; ++b) {
-            const uint8_t * blk = gguf.data() + (size_t(r) * g.kb + b) * 18;
-            sc[(size_t(r) * KB + b) * 2]     = blk[0];
-            sc[(size_t(r) * KB + b) * 2 + 1] = blk[1];
-            for (int j = 0; j < 16; ++j) {
-                nib[(size_t(r) * KB + b) * 32 + j]      = (blk[2 + j] & 15) ^ 8;
-                nib[(size_t(r) * KB + b) * 32 + j + 16] = (blk[2 + j] >> 4) ^ 8;
-            }
-        }
-    }
-    for (int ci = 0; ci < g.nchunks; ++ci) {
-        const Chunk & ch = g.chunks[ci];
-        for (int64_t core = 0; core < 32; ++core) {
-            for (int64_t gr = 0; gr < ch.groups_per_core; ++gr) {
-                const int64_t r0 = ch.row0 + core * ch.rpc + gr * 16;
-                for (int64_t rec = 0; rec < g.recs_per_group; ++rec) {
-                    uint8_t * R = out.data() + ch.off + size_t(core) * ch.core_bytes + size_t(gr * g.recs_per_group + rec) * 2304;
-                    for (int b = 0; b < 8; ++b) {
-                        const int64_t kb = rec * 8 + b;
-                        std::vector<uint8_t> t(512);
-                        for (int k = 0; k < 32; ++k)
-                            for (int n = 0; n < 16; ++n)
-                                t[size_t(k) * 16 + n] = nib[(size_t(r0 + n) * KB + kb) * 32 + k];
-                        for (int i = 0; i < 256; ++i) R[b * 256 + i] = t[2 * i] | (t[2 * i + 1] << 4);
-                        for (int n = 0; n < 16; ++n) {
-                            R[2048 + (b * 16 + n) * 2]     = sc[(size_t(r0 + n) * KB + kb) * 2];
-                            R[2048 + (b * 16 + n) * 2 + 1] = sc[(size_t(r0 + n) * KB + kb) * 2 + 1];
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return out;
-}
 
 static std::vector<uint8_t> random_bytes(size_t n, uint32_t seed) {
     std::mt19937 rng(seed);
@@ -80,20 +37,14 @@ static void scale_field(Fmt f, size_t & off, size_t & len) {
     }
 }
 
-static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, size_t max_dispatch = MAX_DISPATCH_BYTES) {
+static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed) {
     const FmtInfo & fi = fmt_info(fmt);
-    const Geom g = make_geom(fmt, n, k, max_dispatch);
-    CHECK(g.bytes == size_t(g.n_pad) * size_t(g.kb_pad) * fi.block_bytes);
-    CHECK(g.gguf_bytes == size_t(n) * size_t(k / fi.elems) * fi.block_bytes);   // weight records are exactly GGUF sized
-    CHECK(g.n_pad % 512 == 0 && g.kb_pad % fi.rec_blocks == 0 && g.bytes >= g.gguf_bytes);
+    const Geom g = make_geom(fmt, n, k);
+    CHECK(g.bytes == size_t(g.n_pad) * size_t(k / 256) * fi.rec_bytes / 16);
+    CHECK(g.gguf_bytes == size_t(n) * size_t(k / fi.elems) * fi.block_bytes);
+    CHECK(g.n_pad % 512 == 0 && g.bytes >= g.gguf_bytes);
+    if (n % 512 == 0) CHECK(g.bytes == g.gguf_bytes);                       // weight records are exactly GGUF sized
     CHECK(fi.rec_bytes == 16 * size_t(fi.rec_blocks) * fi.block_bytes);
-    size_t csum = 0; int64_t rsum = 0;
-    for (int i = 0; i < g.nchunks; ++i) {
-        CHECK(g.chunks[i].rows % 512 == 0 && g.chunks[i].off == csum && g.chunks[i].row0 == rsum);
-        csum += g.chunks[i].bytes; rsum += g.chunks[i].rows;
-        if (max_dispatch == MAX_DISPATCH_BYTES) CHECK(g.chunks[i].bytes <= max_dispatch);
-    }
-    CHECK(csum == g.bytes && rsum == g.n_pad);
 
     const std::vector<uint8_t> src = random_bytes(g.gguf_bytes, seed);
 
@@ -108,25 +59,21 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, size_t max_
     std::vector<uint8_t> dev(g.bytes, 0);
     pack(g, dev.data(), src.data());
 
-    // 2. Q4_0 only: same as the independent reference packer
-    if (fmt == Fmt::Q4_0) CHECK(dev == reference_pack_q4_0(g, src));
-
-    // 3. padded rows / blocks have a zero scale
+    // 2. padded rows have a zero scale
     size_t bad = 0;
     size_t so, sl;
     scale_field(fmt, so, sl);
-    for (int64_t r = 0; r < g.n_pad; ++r) {
-        for (int64_t b = 0; b < g.kb_pad; ++b) {
-            if (r < g.n && b < g.kb) continue;
+    for (int64_t r = g.n; r < g.n_pad; ++r) {
+        for (int64_t b = 0; b < g.kb; ++b) {
             uint8_t blk[MAX_BLOCK_BYTES];
-            const uint8_t * rec = dev.data() + g.group_base(r) + size_t(b / g.rec_blocks) * g.rec_bytes;
+            const uint8_t * rec = dev.data() + g.group_base(r) + size_t(b / g.rec_blocks) * g.rec_stride;
             detail::unpack_block(fmt, rec, int(b % g.rec_blocks), int(r % 16), blk);
             for (size_t i = 0; i < sl; ++i) bad += blk[so + i] != 0;
         }
     }
     CHECK(bad == 0);
 
-    // 4. chunked, arbitrarily aligned writes give the same device bytes; random partial reads match
+    // 3. chunked, arbitrarily aligned writes give the same device bytes; random partial reads match
     std::mt19937 rng(seed + 1);
     std::vector<uint8_t> dev2(g.bytes, 0);
     for (size_t off = 0; off < g.gguf_bytes;) {
@@ -161,7 +108,7 @@ static void test_slices(Fmt fmt, int64_t k) {
 }
 
 static int compare(const std::string & fname, int64_t n, int64_t k, const char * blk, const char * exp) {
-    Fmt fmt = Fmt::Q4_0;
+    Fmt fmt = Fmt::Q4_K;
     bool found = false;
     for (int i = 0; i < int(Fmt::COUNT); ++i) if (fname == fmt_info(Fmt(i)).name) { fmt = Fmt(i); found = true; }
     if (!found) { std::printf("unknown format %s\n", fname.c_str()); return 2; }
@@ -195,12 +142,11 @@ int main(int argc, char ** argv) {
         return compare(argv[2], std::atoll(argv[3]), std::atoll(argv[4]), argv[5], argv[6]);
     }
     const int64_t Ns[] = {1, 16, 17, 100, 512, 513, 1000, 1537, 2048};
+    const int64_t Ks[] = {256, 512, 768, 1536, 4096};
     int cases = 0;
     uint32_t seed = 1;
     for (int f = 0; f < int(Fmt::COUNT); ++f) {
         const Fmt fmt = Fmt(f);
-        const std::vector<int64_t> Ks = fmt_info(fmt).elems == 32 ? std::vector<int64_t>{32, 64, 256, 288, 800, 1536, 4096}
-                                                                  : std::vector<int64_t>{256, 512, 768, 1536, 4096};
         for (int64_t n : Ns) {
             for (int64_t k : Ks) {
                 if (n * k > 1537 * 1536 && k > 1536) continue; // keep the runtime short
@@ -208,22 +154,13 @@ int main(int argc, char ** argv) {
                 ++cases;
             }
         }
-        // multi-chunk geometry (limit shrunk to ~0.6 MB so that small tensors split into several dispatches)
-        for (int64_t n : {2048, 5000}) {
-            const int64_t k = fmt_info(fmt).elems == 32 ? 800 : 768;
-            const Geom g = make_geom(fmt, n, k, 600000);
-            CHECK(g.nchunks > 1);
-            test_shape(fmt, n, k, seed++, 600000);
-            ++cases;
-        }
-        test_slices(fmt, fmt_info(fmt).elems == 32 ? 288 : 512);
+        test_slices(fmt, 512);
         std::printf("  %s: ok so far (%d failures)\n", fmt_info(fmt).name, g_fail);
     }
-    // Ornith output.weight (Q6_K, K=4096, N=248320) must split into two <=512 MB dispatches
+    // Ornith output.weight (Q6_K, K=4096, N=248320): one dispatch, no padding
     {
         const Geom g = make_geom(Fmt::Q6_K, 248320, 4096);
-        CHECK(g.nchunks == 2 && g.chunks[0].rows == 124416 && g.chunks[1].rows == 123904);
-        CHECK(g.gguf_bytes == size_t(248320) * 16 * 210 && g.bytes == g.gguf_bytes);   // N is a multiple of 512: no padding
+        CHECK(g.bytes == g.gguf_bytes && g.bytes == size_t(248320) * 16 * 210);
     }
     std::printf("test-xdna2-layout: %d shapes + slices, %s\n", cases, g_fail ? "FAILED" : "PASSED");
     return g_fail ? 1 : 0;

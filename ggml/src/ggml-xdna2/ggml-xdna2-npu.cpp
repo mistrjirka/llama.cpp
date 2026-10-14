@@ -4,6 +4,7 @@
 #include "ggml-impl.h"
 
 #include <cstdlib>
+#include <memory>
 #include <cstring>
 
 #include <sys/stat.h>
@@ -32,27 +33,23 @@ std::string default_cache_dir() {
     return "ggml-xdna2-cache";
 }
 
-// Stub: never available. The real implementation (see the TODO list in ggml-xdna2-npu.h) replaces this class.
+// Never available: used with the host reference mode, without XRT, or without an NPU.
 class StubExecutor final : public NpuExecutor {
 public:
-    StubExecutor() : cache_dir_(default_cache_dir()) {}
     bool available() const override { return false; }
     std::unique_ptr<Arena> alloc_weight_arena(size_t) override { return nullptr; }
-    bool bind_weights(const Arena &, size_t, const layout::Geom &) override { return false; }
+    void release_arena(const Arena *) override {}
     bool run(const MulMatJob *, size_t) override { return false; }
-    std::string cache_dir() const override { return cache_dir_; }
-private:
-    std::string cache_dir_;
+    ExecStats stats() const override { return ExecStats(); }
+    void reset_stats() override {}
 };
 
 class NpuPath final : public ComputePath {
 public:
     const char * name() const override { return "npu"; }
     bool supports(const layout::Geom & geom) const override { return placement_ok(geom); }
-    bool mul_mat(const MulMatJob & job) override {
-        NpuExecutor & e = npu_executor();
-        return e.bind_weights(*job.arena, job.w_off, job.geom) && e.run(&job, 1);
-    }
+    bool mul_mat(const MulMatJob & job) override { return npu_executor().run(&job, 1); }
+    bool mul_mat_batch(const MulMatJob * jobs, size_t n) override { return npu_executor().run(jobs, n); }
 };
 
 void kernel_log(int level, const std::string & msg) {
@@ -65,26 +62,16 @@ void kernel_log(int level, const std::string & msg) {
 
 } // namespace
 
-size_t act_blob_bytes_per_token(const ActQ & act) {
-    return size_t(act.k_pad) + size_t(act.nd) * sizeof(float) + size_t(act.nbs) * sizeof(int32_t);
-}
-
-void pack_act_blob(const ActQ & act, uint8_t * dst) {
-    for (int64_t t = 0; t < act.n_tok; ++t) {
-        std::memcpy(dst, act.q_row(t), size_t(act.k_pad));
-        dst += act.k_pad;
-        std::memcpy(dst, act.d_row(t), size_t(act.nd) * sizeof(float));
-        dst += act.nd * sizeof(float);
-        if (act.nbs) {
-            std::memcpy(dst, act.bs_row(t), size_t(act.nbs) * sizeof(int32_t));
-            dst += act.nbs * sizeof(int32_t);
-        }
-    }
-}
-
 NpuExecutor & npu_executor() {
-    static StubExecutor e;
-    return e;
+    static std::unique_ptr<NpuExecutor> e = []() -> std::unique_ptr<NpuExecutor> {
+#ifdef GGML_XDNA2_HAVE_XRT
+        if (!reference_mode() && npu_device_present()) {
+            return make_xrt_executor();
+        }
+#endif
+        return std::make_unique<StubExecutor>();
+    }();
+    return *e;
 }
 
 ComputePath & npu_path() {
@@ -117,22 +104,14 @@ bool placement_ok(const layout::Geom & geom) {
     if (!npu_executor().available()) {
         return false;
     }
-    for (int i = 0; i < geom.nchunks; ++i) {
-        const KernelKey key{ geom.fmt, geom.chunks[i].rows, geom.k, 1 };
-        if (!kernel_cache().available(key)) {
-            return false;
-        }
-    }
-    return true;
+    return kernel_cache().available(KernelKey{ geom.fmt, geom.k, 1 });
 }
 
 void request_kernels(const layout::Geom & geom) {
     if (reference_mode() || !npu_executor().available()) {
         return;
     }
-    for (int i = 0; i < geom.nchunks; ++i) {
-        kernel_cache().request(KernelKey{ geom.fmt, geom.chunks[i].rows, geom.k, 1 });
-    }
+    kernel_cache().request(KernelKey{ geom.fmt, geom.k, 1 });
 }
 
 bool npu_device_present() {

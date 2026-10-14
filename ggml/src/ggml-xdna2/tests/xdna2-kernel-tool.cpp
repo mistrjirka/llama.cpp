@@ -3,9 +3,10 @@
 //   xdna2-kernel-tool [--cache DIR] [--jobs N] [--toolchain DIR] [--src DIR] [--m M] [--list] SPEC...
 //   SPEC = QTYPE:KxN   in GGUF shape order (K, N), e.g. Q4_K:4096x12288  Q6_K:4096x248320
 //   SPEC = ornith      the unique weight shapes of Ornith-1.5-9B
+//   xdna2-kernel-tool patch QTYPE K M N out.bin   write the instruction stream for N derived from the cached reference streams
 //
-// Prints the dispatch chunks (kernel keys) of every shape, builds the missing kernels (<= --jobs in parallel) and
-// reports the wall time. Running it twice shows the warm (all cached) path.
+// A kernel serves every N, so only the unique (qtype, K, M) are built (<= --jobs in parallel); the wall time is reported.
+// Running it twice shows the warm (all cached) path.
 
 #include "ggml-xdna2-kernels.h"
 
@@ -59,6 +60,20 @@ int main(int argc, char ** argv) {
                                     "Q8_0:4096x4096", "Q5_K:4096x1024", "Q5_K:4096x4096" }) specs.push_back(s);
         } else specs.push_back(a);
     }
+    if (specs.size() == 6 && specs[0] == "patch") {
+        layout::Fmt fmt;
+        if (!parse_fmt(specs[1], fmt)) return 2;
+        KernelCache pc(cfg);
+        std::vector<uint32_t> w;
+        if (!pc.insts_for(KernelKey{ fmt, std::atoll(specs[2].c_str()), std::atoi(specs[3].c_str()) }, std::atoll(specs[4].c_str()), w)) {
+            std::fprintf(stderr, "patch failed (kernel not cached or stream not linear in N)\n");
+            return 1;
+        }
+        FILE * f = std::fopen(specs[5].c_str(), "wb");
+        std::fwrite(w.data(), 4, w.size(), f);
+        std::fclose(f);
+        return 0;
+    }
     if (specs.empty()) { std::fprintf(stderr, "usage: see source header\n"); return 2; }
 
     KernelCache cache(cfg);
@@ -73,15 +88,13 @@ int main(int argc, char ** argv) {
         if (c == std::string::npos || x == std::string::npos || !parse_fmt(s.substr(0, c), fmt)) { std::fprintf(stderr, "bad spec %s\n", s.c_str()); return 2; }
         const int64_t k = std::atoll(s.substr(c + 1, x - c - 1).c_str()), n = std::atoll(s.c_str() + x + 1);
         const layout::Geom g = layout::make_geom(fmt, n, k);
-        for (int i = 0; i < g.nchunks; ++i) {
-            KernelKey key{ fmt, g.chunks[i].rows, k, m };
-            const bool sup = KernelCache::generator_supports(key);
-            std::printf("%-18s K=%-6lld N=%-7lld chunk %d/%d: %-26s %s\n", s.substr(0, c).c_str(), (long long) k, (long long) n, i + 1, g.nchunks,
-                        key.name().c_str(), cache.cached(key) ? "cached" : sup ? "missing (buildable)" : "NO GENERATOR");
-            if (sup) keys.insert(key); else ++unsupported;
-        }
+        KernelKey key{ fmt, k, m };
+        const bool sup = KernelCache::generator_supports(key);
+        std::printf("%-18s K=%-6lld N=%-7lld (N_pad %lld, %.1f MB): %-18s %s\n", s.substr(0, c).c_str(), (long long) k, (long long) n,
+                    (long long) g.n_pad, g.bytes / 1e6, key.name().c_str(), cache.cached(key) ? "cached" : sup ? "missing (buildable)" : "NOT SUPPORTED");
+        if (sup) keys.insert(key); else ++unsupported;
     }
-    std::printf("%zu unique kernel(s) to provide, %d chunk(s) without generator\n", keys.size(), unsupported);
+    std::printf("%zu unique kernel(s) to provide, %d shape(s) not supported\n", keys.size(), unsupported);
     if (list_only) return 0;
 
     const auto t0 = std::chrono::steady_clock::now();

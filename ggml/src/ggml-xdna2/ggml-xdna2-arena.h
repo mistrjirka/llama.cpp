@@ -4,10 +4,8 @@
 //
 //   HostArena   anonymous mmap (zero filled, page aligned). Used while there is no NPU executor
 //               (host reference compute path) and for tests.
-//   XrtBoArena  ONE xrt::bo with host mapping (flags host_only, memory group of the kernel it will be used
-//               with). The tensors are sub-BOs of it: xrt::bo(arena.bo(), size, offset_in_arena).
-//               It is created by the NpuExecutor (which owns the xrt::device and knows the kernel's
-//               memory group), see ggml-xdna2-npu.h.
+//   XrtBoArena  ONE host-only xrt::bo (xrt::ext::bo, no kernel needed to allocate it). The tensors are sub-BOs of it:
+//               xrt::bo(arena.bo(), size, offset_in_arena). Created by the NpuExecutor, see ggml-xdna2-npu.h.
 //
 // The arena base is always 4096 aligned and the memory is zero initialised (padding of repacked
 // tensors must have a zero scale).
@@ -24,6 +22,7 @@
 #ifdef GGML_XDNA2_HAVE_XRT
 #include <xrt/xrt_bo.h>
 #include <xrt/xrt_device.h>
+#include <xrt/experimental/xrt_ext.h>
 #include "ggml-xdna2-sync.h"
 #endif
 
@@ -64,23 +63,21 @@ private:
 };
 
 #ifdef GGML_XDNA2_HAVE_XRT
+// Host-only BO allocated without a kernel (xrt::ext::bo); the driver returns zero filled memory. Sub-BOs of it are the
+// per-tensor weight arguments of the kernels.
 class XrtBoArena final : public Arena {
 public:
-    // memory_group: kernel->group_id(<arg index of the weight buffer>)
-    XrtBoArena(const xrt::device & dev, size_t size, xrt::memory_group memory_group)
-        : bo_(dev, (size + ARENA_ALIGN - 1) / ARENA_ALIGN * ARENA_ALIGN, xrt::bo::flags::host_only, memory_group) {
+    XrtBoArena(const xrt::device & dev, size_t size)
+        : bo_(xrt::ext::bo{dev, (size + ARENA_ALIGN - 1) / ARENA_ALIGN * ARENA_ALIGN}) {
         base_ = bo_.map<uint8_t *>();
         size_ = bo_.size();
-        // BO memory is not guaranteed to be zero; padding of repacked tensors needs zero scales
-        std::memset(base_, 0, size_);
-        xdna2::sync_to_device(bo_, size_);
     }
     uint8_t * base() const override { return base_; }
     size_t    size() const override { return size_; }
     void sync_to_device(size_t off, size_t len) override { xdna2::sync_to_device(bo_, len, off); }
     void sync_from_device(size_t off, size_t len) override { xdna2::sync_from_device(bo_, len, off); }
     const char * kind() const override { return "xrt-bo"; }
-    xrt::bo & bo() { return bo_; }
+    const xrt::bo & bo() const { return bo_; }
 private:
     xrt::bo   bo_;
     uint8_t * base_ = nullptr;

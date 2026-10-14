@@ -12,7 +12,9 @@
 #include "ggml-xdna2-layout.h"
 #include "ggml-xdna2-npu.h"
 
+#include <chrono>
 #include <cstdlib>
+#include <deque>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -31,7 +33,6 @@ static bool xdna2_disabled() {
 // ggml quantization types with a device layout (ggml-xdna2-layout.h)
 static bool xdna2_fmt_of(ggml_type type, layout::Fmt & fmt) {
     switch (type) {
-        case GGML_TYPE_Q4_0: fmt = layout::Fmt::Q4_0; return true;
         case GGML_TYPE_Q8_0: fmt = layout::Fmt::Q8_0; return true;
         case GGML_TYPE_Q4_K: fmt = layout::Fmt::Q4_K; return true;
         case GGML_TYPE_Q5_K: fmt = layout::Fmt::Q5_K; return true;
@@ -46,7 +47,7 @@ static bool xdna2_is_repacked(const ggml_tensor * t) {
 }
 
 static layout::Geom xdna2_geom(const ggml_tensor * t) {
-    layout::Fmt f = layout::Fmt::Q4_0;
+    layout::Fmt f = layout::Fmt::Q4_K;
     xdna2_fmt_of(t->type, f);
     return layout::make_geom(f, t->ne[1], t->ne[0]);
 }
@@ -70,6 +71,7 @@ static xdna2_buffer_context * xdna2_ctx(ggml_backend_buffer_t buffer) {
 }
 
 static void ggml_backend_xdna2_buffer_free_buffer(ggml_backend_buffer_t buffer) {
+    npu_executor().release_arena(xdna2_ctx(buffer)->arena.get());
     delete xdna2_ctx(buffer);
 }
 
@@ -229,7 +231,12 @@ ggml_backend_buffer_type_t ggml_backend_xdna2_buffer_type(void) {
 //
 
 struct ggml_backend_xdna2_context {
-    ActQ act; // scratch
+    std::deque<ActQ>       acts;          // activation scratch, one per queued job
+    size_t                 n_acts = 0;
+    std::vector<MulMatJob> pending;       // queued independent jobs
+    std::vector<std::pair<const char *, const char *>> pending_dst;   // [begin, end) of the pending outputs
+    double t_quant = 0, t_graph = 0;      // seconds
+    uint64_t n_graphs = 0, n_mul_mat = 0;
 };
 
 // The host reference path is a test/debug tool (GGML_XDNA2_REFERENCE=1) and never a fallback for the NPU.
@@ -237,6 +244,26 @@ static ComputePath & xdna2_select_path() {
     return reference_mode() ? host_reference_path() : npu_path();
 }
 
+static double xdna2_now() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+static void xdna2_flush(ggml_backend_xdna2_context * ctx) {
+    if (ctx->pending.empty()) {
+        return;
+    }
+    ComputePath & path = xdna2_select_path();
+    if (!path.mul_mat_batch(ctx->pending.data(), ctx->pending.size())) {
+        const layout::Geom & g = ctx->pending[0].geom;
+        GGML_ABORT("%s: %s compute path failed (first job: %s %lld x %lld weight)", __func__, path.name(),
+                   layout::fmt_info(g.fmt).name, (long long) g.n, (long long) g.k);
+    }
+    ctx->pending.clear();
+    ctx->pending_dst.clear();
+    ctx->n_acts = 0;
+}
+
+// Queue the products of a MUL_MAT node. Independent products (the input does not overlap a queued output) are executed together.
 static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
@@ -255,29 +282,45 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
     const int64_t r2 = ne12 / ne02;
     const int64_t r3 = ne13 / ne03;
 
+    // read-after-write: src1 produced by a queued job -> run the queue first
+    {
+        const char * b = static_cast<const char *>(src1->data);
+        const char * e = b + ggml_nbytes(src1);
+        for (const auto & d : ctx->pending_dst) {
+            if (b < d.second && d.first < e) {
+                xdna2_flush(ctx);
+                break;
+            }
+        }
+    }
+
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
         for (int64_t i12 = 0; i12 < ne12; ++i12) {
             const int64_t i02 = i12 / r2, i03 = i13 / r3;
 
-            quantize_acts(ctx->act, geom, reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13),
+            if (ctx->n_acts == ctx->acts.size()) {
+                ctx->acts.emplace_back();
+            }
+            ActQ & act = ctx->acts[ctx->n_acts++];
+            const double t0 = xdna2_now();
+            quantize_acts(act, geom, reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13),
                           ne11, nb11);
+            ctx->t_quant += xdna2_now() - t0;
 
             MulMatJob job;
             job.arena          = arena;
             job.w_off          = base_off + size_t(i03 * ne02 + i02) * geom.bytes;
             job.w              = arena->base() + job.w_off;
             job.geom           = geom;
-            job.act            = &ctx->act;
+            job.act            = &act;
             job.dst            = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i12 * nb2 + i13 * nb3);
             job.dst_row_stride = nb1;
-
-            ComputePath & path = xdna2_select_path();
-            if (!path.mul_mat(job)) {
-                GGML_ABORT("%s: %s compute path failed for a %s %lld x %lld weight", __func__, path.name(),
-                           layout::fmt_info(geom.fmt).name, (long long) geom.n, (long long) geom.k);
-            }
+            ctx->pending.push_back(job);
         }
     }
+    const char * db = static_cast<const char *>(dst->data);
+    ctx->pending_dst.emplace_back(db, db + ggml_nbytes(dst));
+    ctx->n_mul_mat++;
 }
 
 //
@@ -289,12 +332,22 @@ static const char * ggml_backend_xdna2_get_name(ggml_backend_t) {
 }
 
 static void ggml_backend_xdna2_free(ggml_backend_t backend) {
-    delete static_cast<ggml_backend_xdna2_context *>(backend->context);
+    auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
+    if (ctx->n_mul_mat > 0) {
+        const ExecStats st = npu_executor().stats();
+        GGML_LOG_INFO("ggml-xdna2: %llu graph splits, %llu mul_mat; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
+                      "pack act %.3f s, wait %.3f s, unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
+                      (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, ctx->t_quant, ctx->t_graph,
+                      (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, st.t_unpermute, st.t_setup,
+                      st.t_kernel_wait, st.bytes_w / 1e9);
+    }
+    delete ctx;
     delete backend;
 }
 
 static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
     auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
+    const double t_start = xdna2_now();
 
     for (int i = 0; i < cgraph->n_nodes; i++) {
         ggml_tensor * node = cgraph->nodes[i];
@@ -320,6 +373,9 @@ static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend,
         }
     }
 
+    xdna2_flush(ctx);
+    ctx->n_graphs++;
+    ctx->t_graph += xdna2_now() - t_start;
     return GGML_STATUS_SUCCESS;
 }
 
@@ -430,7 +486,7 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             if (src0->view_src != nullptr || !ggml_is_contiguous(src0)) {
                 return false;
             }
-            if (src0->ne[0] % layout::fmt_info(fmt).elems != 0 || src0->ne[0] != src1->ne[0]) {
+            if (!layout::k_supported(src0->ne[0]) || src0->ne[0] != src1->ne[0]) {
                 return false;
             }
             if (src1->nb[0] != sizeof(float) || op->nb[0] != sizeof(float)) {

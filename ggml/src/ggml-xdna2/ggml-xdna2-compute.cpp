@@ -14,7 +14,7 @@ namespace xdna2 {
 using namespace layout;
 
 ActKind act_kind(Fmt fmt) {
-    return (fmt == Fmt::Q4_0 || fmt == Fmt::Q8_0) ? ActKind::Q8_0F : ActKind::Q8_K;
+    return fmt == Fmt::Q8_0 ? ActKind::Q8_0F : ActKind::Q8_K;
 }
 
 void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok, size_t row_stride_bytes) {
@@ -24,19 +24,19 @@ void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok,
 
     if (out.kind == ActKind::Q8_0F) {
         const int64_t kb = k / QK32;
-        out.k_pad = g.kb_pad * QK32;
-        out.nd    = g.kb_pad;
+        out.k_pad = k;
+        out.nd    = kb;
         out.nbs   = 0;
-        out.q.assign(size_t(n_tok) * size_t(out.k_pad), 0);
-        out.d.assign(size_t(n_tok) * size_t(out.nd), 0.0f);
+        out.q.assign(size_t(n_tok) * size_t(k), 0);
+        out.d.assign(size_t(n_tok) * size_t(kb), 0.0f);
         out.bsum.clear();
 #if defined(_OPENMP)
         #pragma omp parallel for schedule(static) if(n_tok * k >= (1 << 16))
 #endif
         for (int64_t t = 0; t < n_tok; ++t) {
             const float * x = reinterpret_cast<const float *>(reinterpret_cast<const char *>(src) + size_t(t) * row_stride_bytes);
-            int8_t * q = out.q.data() + size_t(t) * size_t(out.k_pad);
-            float  * d = out.d.data() + size_t(t) * size_t(out.nd);
+            int8_t * q = out.q.data() + size_t(t) * size_t(k);
+            float  * d = out.d.data() + size_t(t) * size_t(kb);
             for (int64_t b = 0; b < kb; ++b) {
                 float amax = 0.0f;
                 for (int i = 0; i < QK32; ++i) {
@@ -44,7 +44,7 @@ void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok,
                 }
                 const float dd = amax / 127.0f;
                 const float id = dd != 0.0f ? 1.0f / dd : 0.0f;
-                d[b] = dd;
+                d[b] = ggml_fp16_to_fp32(ggml_fp32_to_fp16(dd));      // ggml block_q8_0 stores d as fp16
                 for (int i = 0; i < QK32; ++i) {
                     q[b * QK32 + i] = int8_t(std::roundf(x[b * QK32 + i] * id));
                 }
@@ -87,13 +87,36 @@ void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok,
     }
 }
 
-float fp16_to_f32_q4_0_kernel(uint16_t h) {
-    const uint32_t em = h & 0x7FFFu;
-    uint32_t f = (em << 13) + 0x38000000u;
-    if (em == 0) f = 0;
-    float v;
-    std::memcpy(&v, &f, sizeof(v));
-    return (h & 0x8000u) ? -v : v;
+size_t act_bo_bytes(const Geom & g, int m) {
+    const size_t sv = g.fmt == Fmt::Q8_0 ? size_t(g.k) + size_t(g.k) / 8
+                                         : size_t(g.k) + size_t(g.nbk) * 4 + size_t(g.k) / 8;
+    const size_t bytes = (64 + size_t(m) * sv + 63) & ~size_t(63);
+    const size_t recs = (bytes + g.rec_bytes - 1) / g.rec_bytes;
+    return recs * g.rec_bytes * N_LANES;
+}
+
+void pack_act_bo(const ActQ & act, const Geom & g, int64_t t0, int m, uint8_t * dst) {
+    const size_t total = act_bo_bytes(g, m);
+    const size_t recs = total / (g.rec_bytes * N_LANES);
+    std::vector<uint8_t> a(recs * g.rec_bytes, 0);
+    const int32_t hdr[3] = { int32_t(g.groups), int32_t(g.k), int32_t(m) };
+    std::memcpy(a.data(), hdr, sizeof(hdr));
+    uint8_t * p = a.data() + 64;
+    for (int i = 0; i < m; ++i) {
+        const int64_t t = t0 + i;
+        std::memcpy(p, act.q_row(t), size_t(act.k_pad));
+        p += act.k_pad;
+        std::memcpy(p, act.d_row(t), size_t(act.nd) * sizeof(float));
+        p += act.nd * sizeof(float);
+        if (act.nbs) {
+            std::memcpy(p, act.bs_row(t), size_t(act.nbs) * sizeof(int32_t));
+            p += act.nbs * sizeof(int32_t);
+        }
+    }
+    for (size_t r = 0; r < recs; ++r) {
+        std::memcpy(dst + (r * N_LANES + 0) * g.rec_bytes, a.data() + r * g.rec_bytes, g.rec_bytes);
+        std::memcpy(dst + (r * N_LANES + 1) * g.rec_bytes, a.data() + r * g.rec_bytes, g.rec_bytes);
+    }
 }
 
 float fp16_to_f32_qk_kernel(uint16_t h) {
@@ -118,29 +141,19 @@ struct DecRec {
     int32_t mn[8][16];      // Q4_K/Q5_K
     float   d[16];
     float   dmin[16];
-    float   dw[8][16];      // Q4_0/Q8_0: per-block fp16 scale as f32
+    float   dw[8][16];      // Q8_0: per-block fp16 scale as f32
 };
 
-inline int nib_at(const uint8_t * rec, int tile, int kk, int n) {
+inline int nib_at(const uint8_t * rec, int tile, int kk, int n) {      // Q4_K ("A") tiles
     return (rec[tile * 128 + kk * 8 + (n >> 1)] >> ((n & 1) * 4)) & 15;
 }
 inline uint16_t u16(const uint8_t * p) { uint16_t v; std::memcpy(&v, p, 2); return v; }
 
-void decode_q4_0(const uint8_t * rec, DecRec & r) {
+void decode_q8_0(const uint8_t * rec, DecRec & r) {
     for (int b = 0; b < 8; ++b) {
-        for (int n = 0; n < 16; ++n) r.dw[b][n] = fp16_to_f32_q4_0_kernel(u16(rec + 2048 + (b * 16 + n) * 2));
+        for (int n = 0; n < 16; ++n) r.dw[b][n] = fp16_to_f32_qk_kernel(u16(rec + 4096 + (b * 16 + n) * 2));
         for (int k = 0; k < 32; ++k)
-            for (int n = 0; n < 16; ++n) {
-                const int v = nib_at(rec, 2 * b + k / 16, k % 16, n);
-                r.w[b * 32 + k][n] = int8_t(int8_t(v << 4) >> 4);     // int4 two's complement
-            }
-    }
-}
-void decode_q8_0(const uint8_t * rec, DecRec & r) {    // PROVISIONAL layout
-    for (int b = 0; b < 8; ++b) {
-        for (int n = 0; n < 16; ++n) r.dw[b][n] = fp16_to_f32_q4_0_kernel(u16(rec + 4096 + (b * 16 + n) * 2));
-        for (int k = 0; k < 32; ++k)
-            for (int n = 0; n < 16; ++n) r.w[b * 32 + k][n] = int8_t(rec[b * 512 + k * 16 + n]);
+            for (int n = 0; n < 16; ++n) r.w[b * 32 + k][n] = int8_t(rec[detail::q8_0_off(b, k, n)]);
     }
 }
 void decode_scales_k(const uint8_t * scp, DecRec & r) {   // scp: 12 planes [p][n]; ggml get_scale_min_k4
@@ -166,11 +179,12 @@ void decode_q4_k(const uint8_t * rec, DecRec & r) {
         r.dmin[n] = fp16_to_f32_qk_kernel(u16(rec + 2048 + 224 + 2 * n));
     }
 }
-void decode_q5_k(const uint8_t * rec, DecRec & r) {   // PROVISIONAL layout
+void decode_q5_k(const uint8_t * rec, DecRec & r) {
     for (int i = 0; i < 256; ++i)
         for (int n = 0; n < 16; ++n) {
-            const int hi = (rec[2048 + (i / 16) * 32 + (i % 16) * 2 + (n >> 3)] >> (n & 7)) & 1;
-            r.w[i][n] = int8_t(nib_at(rec, i / 16, i % 16, n) + 16 * hi);
+            size_t lb, hb; int ls, hbit;
+            detail::q5k_pos(i, n, lb, ls, hb, hbit);
+            r.w[i][n] = int8_t(((rec[lb] >> ls) & 15) + 16 * ((rec[hb] >> hbit) & 1));
         }
     decode_scales_k(rec + 2560, r);
     for (int n = 0; n < 16; ++n) {
@@ -182,7 +196,7 @@ void decode_q6_k(const uint8_t * rec, DecRec & r) {
     for (int i = 0; i < 256; ++i) {
         const int t = i >> 4, k = i & 15;
         for (int n = 0; n < 16; ++n) {
-            const int e = (n >> 3) * 128 + k * 8 + (n & 7);
+            const int e = detail::tile_b_e(k, n);
             const int lo = (rec[t * 128 + (e >> 1)] >> ((e & 1) * 4)) & 15;
             const int hi = (rec[2048 + t * 64 + (e & 63)] >> (2 * (e >> 6))) & 3;
             r.w[i][n] = int8_t((lo | (hi << 4)) - 32);
@@ -195,7 +209,7 @@ void decode_q6_k(const uint8_t * rec, DecRec & r) {
 
 // ---- per-token accumulation of one decoded record into y[16] -----------------------------------------------------
 // 32-element blocks (Q4_0, Q8_0): rec holds up to 8 consecutive blocks along K starting at block kb0
-void acc_blocks32(const DecRec & r, int nblk, const ActQ & a, int64_t t, int64_t kb0, float * y) {
+void acc_blocks32(const DecRec & r, int nblk, const ActQ & a, int64_t t, int64_t kb0, float * y) {   // Q8_0
     const int8_t * aq = a.q_row(t);
     const float  * ad = a.d_row(t);
     for (int b = 0; b < nblk; ++b) {
@@ -284,12 +298,11 @@ public:
                 const uint8_t * grp = job.w + g.group_base(row0);
                 std::fill(y.begin(), y.end(), 0.0f);
 
-                for (int64_t r = 0; r < g.recs_per_group; ++r) {
-                    const uint8_t * rec = grp + size_t(r) * g.rec_bytes;
+                for (int64_t r = 0; r < g.nbk; ++r) {
+                    const uint8_t * rec = grp + size_t(r) * g.rec_stride;
                     const int64_t kb0 = r * g.rec_blocks;
-                    int nblk = int(std::min<int64_t>(g.rec_blocks, g.kb - kb0));
+                    const int nblk = g.rec_blocks;
                     switch (g.fmt) {
-                        case Fmt::Q4_0: decode_q4_0(rec, rec_dec); break;
                         case Fmt::Q8_0: decode_q8_0(rec, rec_dec); break;
                         case Fmt::Q4_K: decode_q4_k(rec, rec_dec); break;
                         case Fmt::Q5_K: decode_q5_k(rec, rec_dec); break;
@@ -299,7 +312,6 @@ public:
                     for (int64_t t = 0; t < a.n_tok; ++t) {
                         float * yt = &y[size_t(t) * 16];
                         switch (g.fmt) {
-                            case Fmt::Q4_0:
                             case Fmt::Q8_0: acc_blocks32(rec_dec, nblk, a, t, kb0, yt); break;
                             case Fmt::Q4_K:
                             case Fmt::Q5_K: acc_kmin(rec_dec, a, t, kb0, yt); break;
