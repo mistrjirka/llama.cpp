@@ -119,6 +119,9 @@ bool KernelCache::generator_supports(const KernelKey & key) {
     // gen3.py: K % 256 == 0; validated on the NPU for K = 4096 and 12288; the activation lives in core memory (K * M bounded);
     // Q4_K kernel validated for M = 1, 2, 4; the other kernels are M = 1 only
     if (key.k <= 0 || key.k % 256 != 0 || key.k > 12288) return false;
+    // LAB BUG: the Q6_K kernel returns garbage on every second dispatch for K <= 2560 (checked with repeated identical runs; the
+    // lab's validation read the output after an even number of runs). K >= 3072 (3072, 3328, 3584, 4096, 5120, 9216, 12288) is fine.
+    if (key.fmt == layout::Fmt::Q6_K && key.k < 3072) return false;
     if (key.fmt == layout::Fmt::Q4_K) return key.m >= 1 && key.m <= 4;
     return key.m == 1;
 }
@@ -146,7 +149,8 @@ bool KernelCache::cached(const KernelKey & key) const {
 }
 
 bool KernelCache::available(const KernelKey & key) const {
-    return cached(key) || (generator_supports(key) && toolchain_present());
+    // generator_supports also excludes shapes with known kernel defects, whatever the cache contains
+    return generator_supports(key) && (cached(key) || toolchain_present());
 }
 
 bool KernelCache::patch_insts(const std::vector<uint32_t> & a, int64_t n0, const std::vector<uint32_t> & b, int64_t n1, int64_t n,
