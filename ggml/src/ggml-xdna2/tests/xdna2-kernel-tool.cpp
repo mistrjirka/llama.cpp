@@ -91,8 +91,8 @@ int main(int argc, char ** argv) {
         KernelKey key{ fmt, k, m };
         const bool sup = KernelCache::generator_supports(key);
         std::printf("%-18s K=%-6lld N=%-7lld (N_pad %lld, %.1f MB): %-18s %s\n", s.substr(0, c).c_str(), (long long) k, (long long) n,
-                    (long long) g.n_pad, g.bytes / 1e6, key.name().c_str(), cache.cached(key) ? "cached" : sup ? "missing (buildable)" : "NOT SUPPORTED");
-        if (sup) keys.insert(key); else ++unsupported;
+                    (long long) g.n_pad, g.bytes / 1e6, key.name().c_str(), cache.cached(key) ? "cached" : !sup ? "NOT SUPPORTED" : cache.available(key) ? "missing (buildable)" : "missing, NO TOOLCHAIN: weight would stay on the CPU");
+        if (cache.available(key)) keys.insert(key); else ++unsupported;
     }
     std::printf("%zu unique kernel(s) to provide, %d shape(s) not supported\n", keys.size(), unsupported);
     if (list_only) return 0;

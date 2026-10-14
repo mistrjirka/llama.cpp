@@ -12,6 +12,7 @@
 #include "ggml-xdna2-layout.h"
 #include "ggml-xdna2-npu.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -20,6 +21,10 @@
 #include <vector>
 
 using namespace xdna2;
+
+// copies between the host and our buffers (set_tensor / get_tensor) - part of the per-token breakdown
+static std::atomic<uint64_t> g_set_calls{0}, g_get_calls{0}, g_set_bytes{0}, g_get_bytes{0};
+static std::atomic<uint64_t> g_set_ns{0}, g_get_ns{0};
 
 static bool xdna2_disabled() {
     const char * e = std::getenv("GGML_XDNA2_DISABLE");
@@ -117,6 +122,9 @@ static void ggml_backend_xdna2_buffer_memset_tensor(ggml_backend_buffer_t buffer
 }
 
 static void ggml_backend_xdna2_buffer_set_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
+    const auto t_begin = std::chrono::steady_clock::now();
+    struct Acc { std::chrono::steady_clock::time_point t; size_t n; ~Acc() { g_set_calls++; g_set_bytes += n;
+        g_set_ns += (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t).count(); } } acc{t_begin, size};
     xdna2_check_tensor(tensor);
     Arena * arena = xdna2_ctx(buffer)->arena.get();
     if (xdna2_is_repacked(tensor)) {
@@ -130,6 +138,9 @@ static void ggml_backend_xdna2_buffer_set_tensor(ggml_backend_buffer_t buffer, g
 }
 
 static void ggml_backend_xdna2_buffer_get_tensor(ggml_backend_buffer_t buffer, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    const auto t_begin = std::chrono::steady_clock::now();
+    struct Acc { std::chrono::steady_clock::time_point t; size_t n; ~Acc() { g_get_calls++; g_get_bytes += n;
+        g_get_ns += (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t).count(); } } acc{t_begin, size};
     xdna2_check_tensor(tensor);
     Arena * arena = xdna2_ctx(buffer)->arena.get();
     if (xdna2_is_repacked(tensor)) {
@@ -341,6 +352,9 @@ static void ggml_backend_xdna2_free(ggml_backend_t backend) {
                       (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, (unsigned long long) st.n_switch, st.t_wait_switch, st.t_unpermute, st.t_setup,
                       st.t_kernel_wait, st.bytes_w / 1e9);
     }
+    GGML_LOG_INFO("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",
+                  (unsigned long long) g_set_calls.load(), g_set_bytes.load() / 1e6, g_set_ns.load() / 1e9,
+                  (unsigned long long) g_get_calls.load(), g_get_bytes.load() / 1e6, g_get_ns.load() / 1e9);
     delete ctx;
     delete backend;
 }
