@@ -42,6 +42,7 @@ endif()
 
 # unit test of the device weight layout (header only, no ggml / XRT dependency)
 if (GGML_BUILD_TESTS OR LLAMA_BUILD_TESTS)
+    enable_testing()
     add_executable(test-xdna2-layout tests/test-xdna2-layout.cpp)
     target_compile_features(test-xdna2-layout PRIVATE cxx_std_17)
     target_include_directories(test-xdna2-layout PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
