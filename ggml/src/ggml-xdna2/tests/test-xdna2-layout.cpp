@@ -43,7 +43,11 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed) {
     const size_t payload = size_t(g.n_pad) * size_t(k / 256) * fi.rec_bytes / 16;       // N_pad rows of records, no chunk padding
     CHECK(g.gguf_bytes == size_t(n) * size_t(k / fi.elems) * fi.block_bytes);
     CHECK(g.n_pad % 512 == 0 && g.bytes >= g.gguf_bytes && g.bytes >= payload);
-    CHECK(g.bytes - payload <= size_t(g.nsplit) * size_t(N_CORES) * CHUNK);              // only the tail of each core stream is padded
+    {   // only the tail of each slab (sb, kb) is padded to a whole chunk
+        size_t padmax = 0;
+        for (int64_t sp = 0; sp < g.nsplit; ++sp) padmax += size_t(N_CORES) * size_t(g.nbk) * size_t(g.sp_nsb(sp)) * CHUNK;
+        CHECK(g.bytes - payload <= padmax);
+    }
     {
         size_t sum = 0;
         for (int64_t sp = 0; sp < g.nsplit; ++sp) { CHECK(g.sp_off(sp) == sum); sum += g.sp_bytes(sp); CHECK(g.sp_bytes(sp) % (N_CHAINS * N_LANES * CHUNK) == 0); }
@@ -112,7 +116,8 @@ static void test_slices(Fmt fmt, int64_t k) {
     CHECK(back == src);
 }
 
-// every record of a core stream is reachable; records that straddle a chunk boundary exist and are contiguous after gather
+// every record of a core stream is reachable; records that straddle chunk boundaries exist and are contiguous after gather;
+// records of a slab are back to back, slabs are chunk aligned
 static void test_straddle(Fmt fmt, int64_t n, int64_t k) {
     const Geom g = make_geom(fmt, n, k);
     std::vector<uint8_t> dev(g.bytes, 0);
@@ -121,14 +126,32 @@ static void test_straddle(Fmt fmt, int64_t n, int64_t k) {
         for (int64_t r = 0; r < g.nbk; ++r) {
             const RecPtr p = locate(g, dev.data(), row, r);
             ++total;
-            if (p.n0 < g.rec_bytes) {
+            if (p.straddles(g.rec_bytes)) {
                 ++straddle;
-                CHECK(p.p1 == p.p0 + p.n0 + (N_LANES - 1) * CHUNK);      // continuation = next chunk of the same lane
+                const size_t room = CHUNK - (p.s0 % CHUNK);
+                CHECK(p(room) == p(room - 1) + 1 + (N_LANES - 1) * CHUNK);      // continuation = next chunk of the same lane
             }
-            CHECK(p.p0 >= dev.data() && p.p0 + std::min(p.n0, g.rec_bytes) <= dev.data() + g.bytes);
+            CHECK(p(0) >= dev.data() && p(g.rec_bytes - 1) < dev.data() + g.bytes);
+            const int64_t grp = (row % (GMAX * ROW_GRAN)) % (g.sp_groups(row / (GMAX * ROW_GRAN)) * 16 * 1) / 16;   // group inside the split stream of its core
+            (void) grp;
         }
     }
     CHECK(straddle > 0 || g.rec_bytes * size_t(g.nbk) * size_t(g.groups) < CHUNK);
+    // slab structure: records of one slab consecutive, slab start chunk aligned
+    {
+        const int64_t sp = 0, Gs = g.sp_groups(0);
+        for (int64_t sb = 0; sb < g.sp_nsb(sp); ++sb) {
+            for (int64_t kb = 0; kb < g.nbk; ++kb) {
+                const RecPtr first = locate(g, dev.data(), (sb * GSB) * GROUP_ROWS, kb);
+                CHECK(first.s0 % CHUNK == 0);
+                for (int64_t gl = 1; gl < g.sb_groups(sp, sb); ++gl) {
+                    const RecPtr q = locate(g, dev.data(), (sb * GSB + gl) * GROUP_ROWS, kb);
+                    CHECK(q.s0 == first.s0 + size_t(gl) * g.rec_bytes);
+                }
+            }
+        }
+        (void) Gs;
+    }
     std::printf("  straddle %s N=%ld K=%ld: %zu of %zu records straddle a chunk\n", fmt_info(fmt).name, long(n), long(k), straddle, total);
 }
 
@@ -143,7 +166,7 @@ static void test_splits(Fmt fmt, int64_t n, int64_t k) {
     CHECK(back == src);
     // a row of the last split must live in the last split's region
     const RecPtr p = locate(g, dev.data(), g.n_pad - 1, g.nbk - 1);
-    CHECK(p.p0 >= dev.data() + g.sp_off(g.nsplit - 1));
+    CHECK(p(0) >= dev.data() + g.sp_off(g.nsplit - 1));
     std::printf("  splits %s N=%ld K=%ld: %ld splits, %.2f MB, round trip %s\n", fmt_info(fmt).name, long(n), long(k), long(g.nsplit), g.bytes / 1e6, back == src ? "ok" : "FAILED");
 }
 
@@ -204,11 +227,11 @@ int main(int argc, char ** argv) {
     test_splits(Fmt::Q4_K, 70000, 256);
     test_splits(Fmt::Q6_K, 66000, 256);
     test_splits(Fmt::Q8_0, 65536 + 512, 256);
-    // Ornith output.weight (Q6_K, K=4096, N=248320): 4 splits (GMAX=128 groups = 65536 rows each), < 0.2 % chunk padding
+    // Ornith output.weight (Q6_K, K=4096, N=248320): 4 splits (GMAX=128 groups = 65536 rows each), < 5 % slab padding
     {
         const Geom g = make_geom(Fmt::Q6_K, 248320, 4096);
         CHECK(g.nsplit == 4 && g.sp_groups(3) == g.groups - 3 * GMAX);
-        CHECK(g.bytes >= size_t(248320) * 16 * 210 && g.bytes < size_t(248320) * 16 * 210 * 1002 / 1000);
+        CHECK(g.bytes >= size_t(248320) * 16 * 210 && g.bytes < size_t(248320) * 16 * 210 * 1050 / 1000);
     }
     std::printf("test-xdna2-layout: %d shapes + slices, %s\n", cases, g_fail ? "FAILED" : "PASSED");
     return g_fail ? 1 : 0;

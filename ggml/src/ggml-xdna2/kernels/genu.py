@@ -14,16 +14,17 @@ from aie.dialects import arith
 from aie.extras import types as T
 p = argparse.ArgumentParser()
 p.add_argument("--obj", required=True)
-p.add_argument("--S", type=int, default=4096)            # chunk bytes (must equal -DQK_S)
+p.add_argument("--S", type=int, default=1024)            # chunk bytes (must equal -DQK_S)
 p.add_argument("--kmax", type=int, default=12288)
 p.add_argument("--gmax", type=int, default=128)
-p.add_argument("--depth", type=int, default=3)
+p.add_argument("--depth", type=int, default=8)      # core side
+p.add_argument("--mdepth", type=int, default=2)     # memtile side
 p.add_argument("--stack", type=int, default=9216)
 p.add_argument("--chain_words", type=int, required=True)
 p.add_argument("--a_words", type=int, required=True)
 p.add_argument("--g", type=int, required=True)
 a = p.parse_args()
-C = 8; CHAINS = 2; CPC = 2
+C = 8; CHAINS = 1; CPC = 4
 S = a.S
 SVMAX = a.kmax + a.kmax // 256 * 4 + a.kmax // 8
 ACT_MAX = ((64 + SVMAX + S - 1) // S) * S
@@ -61,7 +62,7 @@ for c in range(C):
     out_conses.append(of_out.cons(tile=t))
     k = 0
     for ch in range(CHAINS):
-        of_in = ObjectFifo(obj_ty, name=f"in{c}_{ch}", depth=a.depth)
+        of_in = ObjectFifo(obj_ty, name=f"in{c}_{ch}", depth=a.mdepth)
         wf = of_in.cons().split([i * S for i in range(CPC)], tile=t, obj_types=[chunk_ty] * CPC,
                                 names=[f"w{c}_{ch}_{i}" for i in range(CPC)], depths=[a.depth] * CPC)
         in_prods.append(of_in.prod(tile=t))

@@ -12,10 +12,10 @@ H=$(cd "$(dirname "$0")" && pwd)
 TOOL=$1; OUT=$2
 . "$H/env.sh" "$TOOL" || exit 10
 mkdir -p "$OUT/work" && cd "$OUT/work" || exit 11
-S=4096
+S=1024
 $PEANOCC -DQK_S=$S -c "$H/qku.cc" -o k.o || { echo CCFAIL; exit 12; }
 build() {   # name chain_words a_words g
-  python "$H/genu.py" --obj k.o --S $S --stack 9216 --chain_words $2 --a_words $3 --g $4 > $1.mlir 2> $1.meta || { echo GENFAIL $1; cat $1.meta; return 13; }
+  python "$H/genu.py" --obj k.o --S $S --stack 9216 --depth 8 --chain_words $2 --a_words $3 --g $4 > $1.mlir 2> $1.meta || { echo GENFAIL $1; cat $1.meta; return 13; }
   if [ $1 = base ]; then XB="--get-xclbin --xclbin-name=$1.xclbin --dump-intermediates"; else XB=""; fi
   aiecc --no-xchesscc --peano=$PEANO_INSTALL_DIR $XB --get-npu-insts --npu-insts-name=$1.insts.bin $1.mlir > $1.log 2>&1 || { echo AIECCFAIL $1; tail -c 2000 $1.log; return 14; }
 }

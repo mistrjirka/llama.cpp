@@ -14,11 +14,15 @@
 #include <aie_api/aie.hpp>
 #include <stdint.h>
 #ifndef QK_S
-#define QK_S 4096
+#define QK_S 1024
 #endif
+#define GSB 5     // groups per superblock (layout v2, see ggml-xdna2-layout.h); must equal layout::GSB
 
-alignas(64) static float yst[16];
-static int blk = 0, recs_done = 0, grp = 0, fill = 0, act_got = 0, fl = 0;
+// LAYOUT v2: the per-core weight stream is the sequence of slabs (sb, kb): gc = min(GSB, G - sb*GSB) records (gl = 0..gc-1), padded to a whole
+// number of QK_S chunks.  yst[gl] holds the running sums of the gc groups of the superblock.
+alignas(64) static float yst[GSB][16];
+static int blk = 0, recs_done = 0, sb = 0, gl = 0, gc = 0, fill = 0, act_got = 0, fl = 0;
+static bool slab_done = false;
 
 static inline void copy_bytes64(int8_t *__restrict dst, const int8_t *__restrict src, int n) {   // n multiple of 64, 64-aligned
   for (int i = 0; i < n; i += 64) aie::store_v(dst + i, aie::load_v<64>(src + i));
@@ -30,7 +34,8 @@ static inline void copy_bytes32(int8_t *__restrict dst, const int8_t *__restrict
 extern "C" void qk_first(const int8_t *__restrict chunk, int8_t *__restrict act, int32_t *__restrict hdr) {
   copy_bytes64(act, chunk, QK_S);
   aie::store_v(hdr, aie::load_v<16>((const int32_t *)chunk));
-  blk = 0; recs_done = 0; grp = 0; fill = 0; fl = 0; act_got = 1;
+  const int G0 = ((const int32_t *)chunk)[0];
+  blk = 0; recs_done = 0; sb = 0; gl = 0; gc = G0 < GSB ? G0 : GSB; fill = 0; fl = 0; act_got = 1; slab_done = false;
 }
 extern "C" void qk_act(const int8_t *__restrict chunk, int8_t *__restrict act) {
   copy_bytes64(act + act_got * QK_S, chunk, QK_S);
@@ -55,9 +60,9 @@ static inline aie::vector<float, 16> h2f(const uint16_t *p) {
 
 // ---- accumulate helper: y(stage) += t * dact
 static inline void fin(float *out, aie::vector<float, 16> t, float da, bool last) {
-  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst);
+  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst[gl]);
   y = aie::add(y, aie::mul(t, aie::broadcast<float, 16>(da)).to_vector<float>());
-  if (last) aie::store_v(out, y); else aie::store_v(yst, y);
+  if (last) aie::store_v(out, y); else aie::store_v(yst[gl], y);
 }
 
 // ================= Q4_K (REC 2304) =================
@@ -209,7 +214,7 @@ static void rec_q6(const int8_t *__restrict rec, float *__restrict out, const in
 static void rec_q8(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_, int K, bool last) {
   const int8_t *aq = act_ + 64;
   const float *dact = (const float *)(aq + K);       // f32 d per 32
-  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst);
+  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst[gl]);
   for (int b = 0; b < 8; b++) {
     aie::mmul<4, 16, 8, int8, int8> m0, m1;
     for (int kc = 0; kc < 2; kc++) {
@@ -226,37 +231,39 @@ static void rec_q8(const int8_t *__restrict rec, float *__restrict out, const in
     aie::vector<float, 16> t1 = aie::mul(aie::to_float(cv), dw).to_vector<float>();
     y = aie::add(y, aie::mul(t1, aie::broadcast<float, 16>(dact[blk * 8 + b])).to_vector<float>());
   }
-  if (last) aie::store_v(out, y); else aie::store_v(yst, y);
+  if (last) aie::store_v(out, y); else aie::store_v(yst[gl], y);
 }
 
 static inline int rec_bytes(int qt) { return qt == 4 ? 2304 : qt == 5 ? 2816 : qt == 6 ? 3360 : 4352; }
 
-static inline void process(const int8_t *rec, const int8_t *act, float *ost, int qt, int K) {
+static inline void process(const int8_t *rec, const int8_t *act, float *ost, int qt, int K, int G) {
   const int NBK = K >> 8;
   const bool last = (blk == NBK - 1);
-  float *out = ost + grp * 16;
+  float *out = ost + (sb * GSB + gl) * 16;
   if (qt == 4) rec_q4(rec, out, act, K, last);
   else if (qt == 5) rec_q5(rec, out, act, K, last);
   else if (qt == 6) rec_q6(rec, out, act, K, last);
   else rec_q8(rec, out, act, K, last);
   recs_done++;
-  if (last) { blk = 0; grp++; } else blk++;
+  if (++gl == gc) {                     // slab complete (the rest of its last chunk is padding)
+    gl = 0; slab_done = true;
+    if (++blk == NBK) { blk = 0; sb++; const int rem = G - sb * GSB; gc = rem < GSB ? rem : GSB; }
+  }
 }
 
 extern "C" void qk_w(const int8_t *__restrict chunk, const int8_t *__restrict act, int8_t *__restrict wrec, float *__restrict ost,
                      const int32_t *__restrict hdr) {
-  const int K = hdr[1], qt = hdr[2], total = hdr[5];
+  const int G = hdr[0], K = hdr[1], qt = hdr[2], total = hdr[5];
   const int REC = rec_bytes(qt);
   int pos = 0;
   while (pos < QK_S && recs_done < total) {
-    if (fill == 0 && (pos & 63) == 0 && pos + REC <= QK_S) {
-      process(chunk + pos, act, ost, qt, K);
-      pos += REC;
-    } else {
-      int n = REC - fill; if (n > QK_S - pos) n = QK_S - pos;
-      copy_bytes32(wrec + fill, chunk + pos, n);
-      fill += n; pos += n;
-      if (fill == REC) { fill = 0; process(wrec, act, ost, qt, K); }
+    int n = REC - fill; if (n > QK_S - pos) n = QK_S - pos;       // records straddle chunks: assemble in wrec
+    if (((fill | pos | n) & 63) == 0) copy_bytes64(wrec + fill, chunk + pos, n); else copy_bytes32(wrec + fill, chunk + pos, n);
+    fill += n; pos += n;
+    if (fill == REC) {
+      fill = 0;
+      process(wrec, act, ost, qt, K, G);
+      if (slab_done) { slab_done = false; break; }                // skip the slab padding
     }
   }
 }

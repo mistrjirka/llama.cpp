@@ -19,15 +19,19 @@
 //   A matrix is cut into SPLITS of at most GMAX groups (GMAX*512 = 65536 rows); every split is an independent kernel dispatch with its
 //   own W region, A BO and Y BO. Almost every weight has ONE split.
 //
-// W region of one split (Gs groups, rows [split*GMAX*512, ...)):  [16 chains][n_w chunks][2 lanes][CHUNK bytes]
-//   core c32 = (col*4 + k) (k = 0..3) owns rows [c32*16*Gs, (c32+1)*16*Gs) of the split; chain = c32/2, lane = c32%2.
-//   The records of one core form a contiguous BYTE STREAM  record(g, kb) at stream offset (g*NBK + kb)*REC  (g = group of the core,
-//   kb = k-block), cut into CHUNK byte chunks (n_w = ceil(Gs*NBK*REC / CHUNK), the tail of the last chunk is zero). Chunk j of the stream
-//   of (chain, lane) is at   chain*chain_bytes + (j*2 + lane)*CHUNK    with  chain_bytes = n_w*2*CHUNK.
-//   A record may straddle two chunks (they are not adjacent in the device layout): RecPtr below resolves that.
-//   Bytes of a split region: 16*chain_bytes (a multiple of 128 KB); the region of a matrix is the concatenation of its splits.
+// LAYOUT v2 (shared by the decode kernel and the prefill kernel, ONE weight copy).
 //
-// The output of a dispatch is f32 [col 8][Gs][core 4][16] ->  row = split_row0 + ((col*4 + k)*Gs + g)*16 + i.
+// W region of one split (Gs groups, rows [split*GMAX*512, ...)):  [8 chains][n_w chunks][4 lanes][CHUNK bytes]
+//   core c32 = (col*4 + k) (k = 0..3) owns rows [c32*16*Gs, (c32+1)*16*Gs) of the split; chain = col, lane = k.
+//   The 16-row groups of a core are cut into SUPERBLOCKS of GSB groups (the last one has gc = Gs - sb*GSB <= GSB groups). The byte stream of
+//   a core is the sequence of SLABS (sb, kb), sb = 0.., kb = 0..NBK-1; a slab holds the gc records (16 rows x 256 k) record(sb*GSB+gl, kb),
+//   gl = 0..gc-1, back to back, and is padded with zero bytes to a multiple of CHUNK. => a slab is an integer number of chunks, the slab
+//   (sb, kb) is the unit that shares one 256-wide activation slice (prefill: activation slab reused for gc records).
+//   Chunk j of the stream of (chain, lane) is at   chain*chain_bytes + (j*4 + lane)*CHUNK    with  chain_bytes = n_w*4*CHUNK.
+//   A record may straddle chunk boundaries (consecutive chunks of a lane are 4*CHUNK apart in the device layout): RecPtr resolves that.
+//   Bytes of a split region: 8*chain_bytes (a multiple of 32 KB); the region of a matrix is the concatenation of its splits.
+//
+// The decode output of a dispatch is f32 [col 8][Gs][core 4][16] ->  row = split_row0 + ((col*4 + k)*Gs + g)*16 + i.
 //
 // A tensor with ne[2]*ne[3] > 1 is stored as consecutive independent matrices (one per 2D slice).
 // Any byte range of the GGUF stream can be written/read independently (needed for chunked set_tensor).
@@ -68,11 +72,12 @@ constexpr int     QK32       = 32;
 constexpr int     N_CORES    = 32;
 constexpr int     GROUP_ROWS = 16;
 constexpr int64_t ROW_GRAN   = int64_t(N_CORES) * GROUP_ROWS; // 512
-constexpr int     N_CHAINS   = 16;
-constexpr int     N_LANES    = 2;
+constexpr int     N_CHAINS   = 8;               // one chain per column
+constexpr int     N_LANES    = 4;               // cores per column (lanes of a chain)
+constexpr int     GSB        = 5;               // groups per superblock (A-slab reuse of the prefill kernel; L1 budget)
 constexpr size_t  MAX_BLOCK_BYTES = 210;
 constexpr size_t  MAX_REC_BYTES   = 4352;
-constexpr size_t  CHUNK      = 4096;          // kernel stream chunk (ObjectFifo object) in bytes: ABI constant, see kernels/qku.cc QK_S
+constexpr size_t  CHUNK      = 1024;          // kernel stream chunk (ObjectFifo object) in bytes: ABI constant, see kernels/qku.cc QK_S
 constexpr int64_t GMAX       = 128;           // groups per dispatch (core staging buffer ost[GMAX][16])
 constexpr int64_t KMAX       = 12288;         // activation buffer of the core (kernels/genu.py --kmax)
 
@@ -96,7 +101,16 @@ struct Geom {
 
     int64_t sp_groups(int64_t s) const { return s + 1 < nsplit ? GMAX : groups - (nsplit - 1) * GMAX; }
     int64_t sp_row0(int64_t s) const { return s * GMAX * ROW_GRAN; }
-    size_t  sp_nw(int64_t s) const { return (size_t(sp_groups(s)) * size_t(nbk) * rec_bytes + CHUNK - 1) / CHUNK; }   // chunks per lane stream
+    // slab = gc records padded to whole chunks; superblocks hold GSB groups (the last one the rest)
+    size_t  slab_bytes(int64_t gc) const { return (size_t(gc) * rec_bytes + CHUNK - 1) / CHUNK * CHUNK; }
+    int64_t sp_nsb(int64_t s) const { return (sp_groups(s) + GSB - 1) / GSB; }
+    int64_t sb_groups(int64_t s, int64_t sb) const { const int64_t r = sp_groups(s) - sb * GSB; return r < GSB ? r : GSB; }
+    size_t  lane_bytes_groups(int64_t gs) const {      // bytes of the lane stream of a core with gs groups
+        const int64_t full = gs / GSB, rem = gs % GSB;
+        return size_t(nbk) * (size_t(full) * slab_bytes(GSB) + (rem ? slab_bytes(rem) : 0));
+    }
+    size_t  sp_lane_bytes(int64_t s) const { return lane_bytes_groups(sp_groups(s)); }
+    size_t  sp_nw(int64_t s) const { return sp_lane_bytes(s) / CHUNK; }   // chunks per lane stream
     size_t  sp_chain_bytes(int64_t s) const { return sp_nw(s) * N_LANES * CHUNK; }
     size_t  sp_bytes(int64_t s) const { return sp_chain_bytes(s) * N_CHAINS; }
     size_t  sp_off(int64_t s) const { return size_t(s) * split_bytes_full; }
@@ -125,7 +139,7 @@ inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     g.rec_bytes = fi.rec_bytes;
     g.block_bytes = fi.block_bytes;
     g.rec_blocks = fi.rec_blocks;
-    g.split_bytes_full = ((size_t(GMAX) * size_t(g.nbk) * fi.rec_bytes + CHUNK - 1) / CHUNK) * N_LANES * CHUNK * N_CHAINS;
+    g.split_bytes_full = g.lane_bytes_groups(GMAX) / CHUNK * N_LANES * CHUNK * N_CHAINS;
     g.bytes = 0;
     for (int64_t s = 0; s < g.nsplit; ++s) g.bytes += g.sp_bytes(s);
     g.row_bytes = size_t(g.kb) * fi.block_bytes;
@@ -133,18 +147,24 @@ inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     return g;
 }
 
-// One 16-row record (REC bytes) of the device layout. A record may straddle a chunk boundary (the next chunk of the same lane is
-// 2*CHUNK further), so bytes are addressed through operator(): offset in the record -> pointer. Chunk boundaries are multiples
+// One 16-row record (REC bytes) of the device layout. A record may straddle chunk boundaries (the next chunk of the same lane is
+// N_LANES*CHUNK further), so bytes are addressed through operator(): offset in the record -> pointer. Chunk boundaries are multiples
 // of 32 and every multi-byte field of a record is 2-byte aligned, so a field never straddles.
 struct RecPtr {
-    uint8_t * p0 = nullptr;
-    size_t    n0 = 0;          // bytes of the record available at p0
-    uint8_t * p1 = nullptr;    // continuation when the record straddles
-    uint8_t * operator()(size_t off) const { return off < n0 ? p0 + off : p1 + (off - n0); }
+    uint8_t * base = nullptr;   // chain base + lane*CHUNK
+    size_t    s0 = 0;           // offset of the record in the lane byte stream
+    uint8_t * operator()(size_t off) const {
+        const size_t o = s0 + off;
+        return base + (o / CHUNK) * (N_LANES * CHUNK) + (o % CHUNK);
+    }
+    bool straddles(size_t rec_bytes) const { return (s0 % CHUNK) + rec_bytes > CHUNK; }
     void gather(uint8_t * dst, size_t rec_bytes) const {
-        const size_t a = n0 < rec_bytes ? n0 : rec_bytes;
-        std::memcpy(dst, p0, a);
-        if (a < rec_bytes) std::memcpy(dst + a, p1, rec_bytes - a);
+        for (size_t done = 0; done < rec_bytes;) {
+            const size_t room = CHUNK - ((s0 + done) % CHUNK);
+            const size_t c = room < rec_bytes - done ? room : rec_bytes - done;
+            std::memcpy(dst + done, (*this)(done), c);
+            done += c;
+        }
     }
 };
 
@@ -156,13 +176,11 @@ inline RecPtr locate(const Geom & g, uint8_t * dev, int64_t row, int64_t r) {
     const int64_t rpc = Gs * GROUP_ROWS;
     const int64_t c32 = rr / rpc, grp = (rr % rpc) / GROUP_ROWS;
     const size_t chain = size_t(c32 / N_LANES), lane = size_t(c32 % N_LANES);
-    const size_t b = (size_t(grp) * size_t(g.nbk) + size_t(r)) * g.rec_bytes;      // offset in the core's byte stream
-    const size_t j = b / CHUNK, in = b % CHUNK;
-    uint8_t * base = dev + g.sp_off(s) + chain * g.sp_chain_bytes(s);
+    const int64_t sb = grp / GSB, gl = grp % GSB;
+    const size_t slab = g.slab_bytes(g.sb_groups(s, sb));
     RecPtr p;
-    p.p0 = base + (j * N_LANES + lane) * CHUNK + in;
-    p.n0 = CHUNK - in;
-    p.p1 = base + ((j + 1) * N_LANES + lane) * CHUNK;     // only dereferenced when the record straddles (the chunk then exists)
+    p.base = dev + g.sp_off(s) + chain * g.sp_chain_bytes(s) + lane * CHUNK;
+    p.s0 = size_t(sb) * size_t(g.nbk) * g.slab_bytes(GSB) + size_t(r) * slab + size_t(gl) * g.rec_bytes;
     return p;
 }
 

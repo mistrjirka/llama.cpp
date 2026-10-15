@@ -109,8 +109,7 @@ void pack_act_bo(const ActQ & act, const Geom & g, int64_t split, int64_t t, uin
         std::memcpy(p, act.bs_row(t), size_t(act.nbs) * sizeof(int32_t));
     }
     for (size_t r = 0; r < nact; ++r) {   // every chunk duplicated per lane (stride-0 DMA repeat is not supported)
-        std::memcpy(dst + (r * N_LANES + 0) * CHUNK, a.data() + r * CHUNK, CHUNK);
-        std::memcpy(dst + (r * N_LANES + 1) * CHUNK, a.data() + r * CHUNK, CHUNK);
+        for (int l = 0; l < N_LANES; ++l) std::memcpy(dst + (r * N_LANES + l) * CHUNK, a.data() + r * CHUNK, CHUNK);
     }
 }
 
