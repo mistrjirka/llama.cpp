@@ -104,14 +104,16 @@ bool placement_ok(const layout::Geom & geom) {
     if (!npu_executor().available()) {
         return false;
     }
-    return kernel_cache().available(KernelKey{ geom.fmt, geom.k, 1 });
+    return KernelCache::supports(geom) && kernel_cache().available();
 }
 
 void request_kernels(const layout::Geom & geom) {
     if (reference_mode() || !npu_executor().available()) {
         return;
     }
-    kernel_cache().request(KernelKey{ geom.fmt, geom.k, 1 });
+    if (KernelCache::supports(geom)) {
+        kernel_cache().request();
+    }
 }
 
 bool npu_device_present() {

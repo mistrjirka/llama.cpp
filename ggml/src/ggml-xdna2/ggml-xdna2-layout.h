@@ -1,11 +1,12 @@
 #pragma once
 
-// Device weight layouts of the ggml-xdna2 backend (stage3 kernel ABI of the lab: xdna-decode-lab-20261014/stage3).
+// Device weight layouts of the ggml-xdna2 backend: UNIFIED decode kernel ABI (lab stage5: qku.cc / genu.py / packu.py).
 //
 // This header is dependency free (no ggml, no XRT) so that the layouts can be unit tested on their own.
 //
-// Every layout is a pure PERMUTATION of the bytes/nibbles/bits of the GGUF tensor: the logical payload has exactly the
-// same size as the GGUF data. Only whole rows are padded (N -> multiple of 512, zero bytes = zero scale).
+// Every layout is a pure PERMUTATION of the bytes/nibbles/bits of the GGUF tensor (the logical payload has exactly the size of
+// the GGUF data); only whole rows are padded (N -> multiple of 512, zero bytes = zero scale) and the stream of every core is padded
+// to whole chunks.
 //
 //   Fmt::Q4_K   record 2304 B = 16 rows x 256 weights  (1 GGUF super-block per row)
 //   Fmt::Q5_K   record 2816 B
@@ -13,18 +14,20 @@
 //   Fmt::Q8_0   record 4352 B = 16 rows x 8 GGUF blocks of 32
 //   (Q4_0 is not supported: its lab kernel uses the older stage0 ABI.)
 //
-// Matrix: N rows (output features) x K columns, K % 256 == 0, NBK = K/256 records per row.
-//   N_pad = roundup(N, 512), G = N_pad/512 groups of 16 rows per core.
+// Matrix: N rows (output features) x K columns, K % 256 == 0, K <= KMAX, NBK = K/256 records per row.
+//   N_pad = roundup(N, 512), G_total = N_pad/512 groups of 16 rows per core.
+//   A matrix is cut into SPLITS of at most GMAX groups (GMAX*512 = 65536 rows); every split is an independent kernel dispatch with its
+//   own W region, A BO and Y BO. Almost every weight has ONE split.
 //
-// W_bo layout (identical to pack3.py with 2 chains per column and 2 lanes per chain):
-//   [16 chains][G*NBK objects][2 lanes][REC]
-//   core c32 = (col*4 + k) (k = 0..3) owns rows [c32*16G, (c32+1)*16G); chain = col*2 + k/2 = c32/2, lane = k%2 = c32%2;
-//   its object index is group*NBK + kb. Hence the record of (row, kb) is at
-//        chain*chain_bytes + ((group*NBK + kb)*2 + lane)*REC,   chain_bytes = G*NBK*2*REC.
-//   The region of one 2D matrix is N_pad*NBK*REC/16 bytes (= GGUF size for N % 512 == 0) and may be used as a
-//   sub-BO at any 64-byte aligned offset.
+// W region of one split (Gs groups, rows [split*GMAX*512, ...)):  [16 chains][n_w chunks][2 lanes][CHUNK bytes]
+//   core c32 = (col*4 + k) (k = 0..3) owns rows [c32*16*Gs, (c32+1)*16*Gs) of the split; chain = c32/2, lane = c32%2.
+//   The records of one core form a contiguous BYTE STREAM  record(g, kb) at stream offset (g*NBK + kb)*REC  (g = group of the core,
+//   kb = k-block), cut into CHUNK byte chunks (n_w = ceil(Gs*NBK*REC / CHUNK), the tail of the last chunk is zero). Chunk j of the stream
+//   of (chain, lane) is at   chain*chain_bytes + (j*2 + lane)*CHUNK    with  chain_bytes = n_w*2*CHUNK.
+//   A record may straddle two chunks (they are not adjacent in the device layout): RecPtr below resolves that.
+//   Bytes of a split region: 16*chain_bytes (a multiple of 128 KB); the region of a matrix is the concatenation of its splits.
 //
-// The output of the kernel is f32 [col 8][G][core 4][m][16] ->  row = ((col*4 + k)*G + g)*16 + i  (m = vector).
+// The output of a dispatch is f32 [col 8][Gs][core 4][16] ->  row = split_row0 + ((col*4 + k)*Gs + g)*16 + i.
 //
 // A tensor with ne[2]*ne[3] > 1 is stored as consecutive independent matrices (one per 2D slice).
 // Any byte range of the GGUF stream can be written/read independently (needed for chunked set_tensor).
@@ -48,7 +51,7 @@ struct FmtInfo {
     size_t       block_bytes;  // sizeof(GGUF block)
     int          rec_blocks;   // GGUF blocks per row per record (record = 256 weights per row)
     size_t       rec_bytes;    // 16 rows * rec_blocks * block_bytes
-    int          qt;           // quantization type id of the lab generator (gen3.py --qt)
+    int          qt;           // quantization type id of the kernel (header field 2)
 };
 
 inline const FmtInfo & fmt_info(Fmt f) {
@@ -68,6 +71,10 @@ constexpr int64_t ROW_GRAN   = int64_t(N_CORES) * GROUP_ROWS; // 512
 constexpr int     N_CHAINS   = 16;
 constexpr int     N_LANES    = 2;
 constexpr size_t  MAX_BLOCK_BYTES = 210;
+constexpr size_t  MAX_REC_BYTES   = 4352;
+constexpr size_t  CHUNK      = 4096;          // kernel stream chunk (ObjectFifo object) in bytes: ABI constant, see kernels/qku.cc QK_S
+constexpr int64_t GMAX       = 128;           // groups per dispatch (core staging buffer ost[GMAX][16])
+constexpr int64_t KMAX       = 12288;         // activation buffer of the core (kernels/genu.py --kmax)
 
 constexpr int64_t roundup(int64_t x, int64_t m) { return (x + m - 1) / m * m; }
 
@@ -75,28 +82,34 @@ struct Geom {
     Fmt     fmt = Fmt::Q4_K;
     int64_t n = 0, k = 0;         // logical rows / columns
     int64_t n_pad = 0;
-    int64_t groups = 0;           // G = n_pad / 512
+    int64_t groups = 0;           // G_total = n_pad / 512
+    int64_t nsplit = 0;           // dispatches per matrix
     int64_t nbk = 0;              // records per row (k / 256)
     int64_t kb = 0;               // GGUF blocks per row
     size_t  rec_bytes = 0;
     size_t  block_bytes = 0;
     int     rec_blocks = 0;
-    size_t  rec_stride = 0;       // distance between consecutive records of one core (lane interleave)
-    size_t  chain_bytes = 0;
-    size_t  bytes = 0;            // bytes of one 2D matrix region (padded)
+    size_t  split_bytes_full = 0; // bytes of a split with GMAX groups (all splits but the last)
+    size_t  bytes = 0;            // bytes of one 2D matrix region (all splits)
     size_t  row_bytes = 0;        // GGUF bytes of one row
     size_t  gguf_bytes = 0;       // GGUF bytes of one 2D matrix
 
-    // byte offset (relative to the matrix start) of the first record of the 16-row group containing `row`
-    size_t group_base(int64_t row) const {
-        const int64_t rpc = groups * GROUP_ROWS;
-        const int64_t c32 = row / rpc, rr = row % rpc;
-        const int64_t g = rr / GROUP_ROWS;
-        return size_t(c32 / N_LANES) * chain_bytes + size_t(g * nbk * N_LANES + c32 % N_LANES) * rec_bytes;
-    }
+    int64_t sp_groups(int64_t s) const { return s + 1 < nsplit ? GMAX : groups - (nsplit - 1) * GMAX; }
+    int64_t sp_row0(int64_t s) const { return s * GMAX * ROW_GRAN; }
+    size_t  sp_nw(int64_t s) const { return (size_t(sp_groups(s)) * size_t(nbk) * rec_bytes + CHUNK - 1) / CHUNK; }   // chunks per lane stream
+    size_t  sp_chain_bytes(int64_t s) const { return sp_nw(s) * N_LANES * CHUNK; }
+    size_t  sp_bytes(int64_t s) const { return sp_chain_bytes(s) * N_CHAINS; }
+    size_t  sp_off(int64_t s) const { return size_t(s) * split_bytes_full; }
+    size_t  sp_chain_words(int64_t s) const { return sp_chain_bytes(s) / 4; }   // instruction stream parameter
 };
 
-inline bool k_supported(int64_t k) { return k > 0 && k % 256 == 0; }
+// Activation chunks of one dispatch (64 B header + the quantized vector), see compute.h
+inline size_t act_chunks(Fmt fmt, int64_t k) {
+    const size_t sv = fmt == Fmt::Q8_0 ? size_t(k) + size_t(k) / 8 : size_t(k) + size_t(k / 256) * 4 + size_t(k) / 8;
+    return (64 + sv + CHUNK - 1) / CHUNK;
+}
+
+inline bool k_supported(int64_t k) { return k > 0 && k % 256 == 0 && k <= KMAX; }
 
 inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     const FmtInfo & fi = fmt_info(fmt);
@@ -106,17 +119,51 @@ inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     g.k = k;
     g.n_pad = roundup(n, ROW_GRAN);
     g.groups = g.n_pad / ROW_GRAN;
+    g.nsplit = (g.groups + GMAX - 1) / GMAX;
     g.nbk = k / 256;
     g.kb = k / fi.elems;
     g.rec_bytes = fi.rec_bytes;
     g.block_bytes = fi.block_bytes;
     g.rec_blocks = fi.rec_blocks;
-    g.rec_stride = size_t(N_LANES) * fi.rec_bytes;
-    g.chain_bytes = size_t(g.groups) * size_t(g.nbk) * N_LANES * fi.rec_bytes;
-    g.bytes = g.chain_bytes * N_CHAINS;
+    g.split_bytes_full = ((size_t(GMAX) * size_t(g.nbk) * fi.rec_bytes + CHUNK - 1) / CHUNK) * N_LANES * CHUNK * N_CHAINS;
+    g.bytes = 0;
+    for (int64_t s = 0; s < g.nsplit; ++s) g.bytes += g.sp_bytes(s);
     g.row_bytes = size_t(g.kb) * fi.block_bytes;
     g.gguf_bytes = size_t(n) * g.row_bytes;
     return g;
+}
+
+// One 16-row record (REC bytes) of the device layout. A record may straddle a chunk boundary (the next chunk of the same lane is
+// 2*CHUNK further), so bytes are addressed through operator(): offset in the record -> pointer. Chunk boundaries are multiples
+// of 32 and every multi-byte field of a record is 2-byte aligned, so a field never straddles.
+struct RecPtr {
+    uint8_t * p0 = nullptr;
+    size_t    n0 = 0;          // bytes of the record available at p0
+    uint8_t * p1 = nullptr;    // continuation when the record straddles
+    uint8_t * operator()(size_t off) const { return off < n0 ? p0 + off : p1 + (off - n0); }
+    void gather(uint8_t * dst, size_t rec_bytes) const {
+        const size_t a = n0 < rec_bytes ? n0 : rec_bytes;
+        std::memcpy(dst, p0, a);
+        if (a < rec_bytes) std::memcpy(dst + a, p1, rec_bytes - a);
+    }
+};
+
+// Record `r` (index along K) of the 16-row group that contains global row `row`; dev = start of the matrix region.
+inline RecPtr locate(const Geom & g, uint8_t * dev, int64_t row, int64_t r) {
+    const int64_t s = row / (GMAX * ROW_GRAN);
+    const int64_t Gs = g.sp_groups(s);
+    const int64_t rr = row - g.sp_row0(s);
+    const int64_t rpc = Gs * GROUP_ROWS;
+    const int64_t c32 = rr / rpc, grp = (rr % rpc) / GROUP_ROWS;
+    const size_t chain = size_t(c32 / N_LANES), lane = size_t(c32 % N_LANES);
+    const size_t b = (size_t(grp) * size_t(g.nbk) + size_t(r)) * g.rec_bytes;      // offset in the core's byte stream
+    const size_t j = b / CHUNK, in = b % CHUNK;
+    uint8_t * base = dev + g.sp_off(s) + chain * g.sp_chain_bytes(s);
+    RecPtr p;
+    p.p0 = base + (j * N_LANES + lane) * CHUNK + in;
+    p.n0 = CHUNK - in;
+    p.p1 = base + ((j + 1) * N_LANES + lane) * CHUNK;     // only dereferenced when the record straddles (the chunk then exists)
+    return p;
 }
 
 namespace detail {
@@ -128,19 +175,19 @@ inline uint8_t get_nib(const uint8_t * p, int shift) { return uint8_t((*p >> shi
 
 // ---- tile addressing -------------------------------------------------------------------------------------------
 // "A" tiles (Q4_K): 16 weights (k) x 16 rows (n) = 128 B:  byte  tile*128 + k*8 + n/2, low nibble = even row.
-inline uint8_t * tile_a(uint8_t * rec, int tile, int kk, int n) { return rec + size_t(tile) * 128 + size_t(kk) * 8 + size_t(n >> 1); }
-// "B" tiles (Q5_K, Q6_K): element e = (n/8)*128 + k*8 + n%8 of the 256-element tile; nibble at byte tile*128 + e/2, shift 4*(e&1)
+inline uint8_t * tile_a(const RecPtr & rec, int tile, int kk, int n) { return rec(size_t(tile) * 128 + size_t(kk) * 8 + size_t(n >> 1)); }
+// "B" tiles (Q5_K), Q6_K): element e = (n/8)*128 + k*8 + n%8 of the 256-element tile; nibble at byte tile*128 + e/2, shift 4*(e&1)
 inline int tile_b_e(int kk, int n) { return (n >> 3) * 128 + kk * 8 + (n & 7); }
 
 // ---- Q4_K (kernel qk3.cc QK_T=4): block = d, dmin (fp16), scales[12], qs[128]
 //   [0,2048)  nibble tiles (A addressing; tile = w/16, w = weight 0..255: chunk c = w/64, r = w%64, l = r%32,
 //             nibble = r < 32 ? qs[c*32+l] & 15 : qs[c*32+l] >> 4, unsigned 0..15)
 //   [2048,2240) the 12 packed 6-bit scale/min bytes as planes [p][n] | [2240,2272) d fp16 [n] | [2272,2304) dmin fp16 [n]
-inline void q4k_pack(uint8_t * rec, int n, const uint8_t * blk) {
+inline void q4k_pack(const RecPtr & rec, int n, const uint8_t * blk) {
     const int shift = (n & 1) * 4;
-    std::memcpy(rec + 2048 + 192 + 2 * n, blk + 0, 2);
-    std::memcpy(rec + 2048 + 224 + 2 * n, blk + 2, 2);
-    for (int p = 0; p < 12; ++p) rec[2048 + p * 16 + n] = blk[4 + p];
+    std::memcpy(rec(2048 + 192 + 2 * n), blk + 0, 2);
+    std::memcpy(rec(2048 + 224 + 2 * n), blk + 2, 2);
+    for (int p = 0; p < 12; ++p) (*rec(2048 + p * 16 + n)) = blk[4 + p];
     const uint8_t * qs = blk + 16;
     for (int c = 0; c < 4; ++c) {
         for (int l = 0; l < 32; ++l) {
@@ -151,17 +198,17 @@ inline void q4k_pack(uint8_t * rec, int n, const uint8_t * blk) {
         }
     }
 }
-inline void q4k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
+inline void q4k_unpack(const RecPtr & rec, int n, uint8_t * blk) {
     const int shift = (n & 1) * 4;
-    std::memcpy(blk + 0, rec + 2048 + 192 + 2 * n, 2);
-    std::memcpy(blk + 2, rec + 2048 + 224 + 2 * n, 2);
-    for (int p = 0; p < 12; ++p) blk[4 + p] = rec[2048 + p * 16 + n];
+    std::memcpy(blk + 0, rec(2048 + 192 + 2 * n), 2);
+    std::memcpy(blk + 2, rec(2048 + 224 + 2 * n), 2);
+    for (int p = 0; p < 12; ++p) blk[4 + p] = (*rec(2048 + p * 16 + n));
     uint8_t * qs = blk + 16;
     for (int c = 0; c < 4; ++c) {
         for (int l = 0; l < 32; ++l) {
             const int wl = c * 64 + l, wh = c * 64 + 32 + l;
-            const uint8_t a = get_nib(tile_a(const_cast<uint8_t *>(rec), wl / 16, wl % 16, n), shift);
-            const uint8_t b = get_nib(tile_a(const_cast<uint8_t *>(rec), wh / 16, wh % 16, n), shift);
+            const uint8_t a = get_nib(tile_a(rec, wl / 16, wl % 16, n), shift);
+            const uint8_t b = get_nib(tile_a(rec, wh / 16, wh % 16, n), shift);
             qs[c * 32 + l] = uint8_t(a | (b << 4));
         }
     }
@@ -180,10 +227,10 @@ inline void q5k_pos(int w, int n, size_t & lo_byte, int & lo_shift, size_t & hi_
     hi_byte = 2048 + size_t(t >> 1) * 64 + size_t(e & 63);
     hi_bit = (e >> 6) + 4 * (t & 1);
 }
-inline void q5k_pack(uint8_t * rec, int n, const uint8_t * blk) {
-    std::memcpy(rec + 2752 + 2 * n, blk + 0, 2);
-    std::memcpy(rec + 2784 + 2 * n, blk + 2, 2);
-    for (int p = 0; p < 12; ++p) rec[2560 + p * 16 + n] = blk[4 + p];
+inline void q5k_pack(const RecPtr & rec, int n, const uint8_t * blk) {
+    std::memcpy(rec(2752 + 2 * n), blk + 0, 2);
+    std::memcpy(rec(2784 + 2 * n), blk + 2, 2);
+    for (int p = 0; p < 12; ++p) (*rec(2560 + p * 16 + n)) = blk[4 + p];
     const uint8_t * qh = blk + 16, * qs = blk + 48;
     for (int w = 0; w < 256; ++w) {
         const int c = w >> 6, r = w & 63, l = r & 31;
@@ -191,22 +238,22 @@ inline void q5k_pack(uint8_t * rec, int n, const uint8_t * blk) {
         const uint8_t hi = (qh[w & 31] >> (w >> 5)) & 1;
         size_t lb, hb; int ls, hbit;
         q5k_pos(w, n, lb, ls, hb, hbit);
-        put_nib(rec + lb, ls, lo);
-        rec[hb] = uint8_t((rec[hb] & ~(1 << hbit)) | (hi << hbit));
+        put_nib(rec(lb), ls, lo);
+        (*rec(hb)) = uint8_t(((*rec(hb)) & ~(1 << hbit)) | (hi << hbit));
     }
 }
-inline void q5k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
-    std::memcpy(blk + 0, rec + 2752 + 2 * n, 2);
-    std::memcpy(blk + 2, rec + 2784 + 2 * n, 2);
-    for (int p = 0; p < 12; ++p) blk[4 + p] = rec[2560 + p * 16 + n];
+inline void q5k_unpack(const RecPtr & rec, int n, uint8_t * blk) {
+    std::memcpy(blk + 0, rec(2752 + 2 * n), 2);
+    std::memcpy(blk + 2, rec(2784 + 2 * n), 2);
+    for (int p = 0; p < 12; ++p) blk[4 + p] = (*rec(2560 + p * 16 + n));
     uint8_t * qh = blk + 16, * qs = blk + 48;
     std::memset(qh, 0, 32 + 128);
     for (int w = 0; w < 256; ++w) {
         const int c = w >> 6, r = w & 63, l = r & 31;
         size_t lb, hb; int ls, hbit;
         q5k_pos(w, n, lb, ls, hb, hbit);
-        const uint8_t lo = get_nib(rec + lb, ls);
-        const uint8_t hi = uint8_t((rec[hb] >> hbit) & 1);
+        const uint8_t lo = get_nib(rec(lb), ls);
+        const uint8_t hi = uint8_t(((*rec(hb)) >> hbit) & 1);
         qs[c * 32 + l] |= r < 32 ? lo : uint8_t(lo << 4);
         qh[w & 31] |= uint8_t(hi << (w >> 5));
     }
@@ -226,7 +273,7 @@ inline void q6k_pos(int w, int n, size_t & lo_byte, int & lo_shift, size_t & hi_
     hi_byte = 2048 + size_t(t) * 64 + size_t(e & 63);
     hi_shift = 2 * (e >> 6);
 }
-inline void q6k_pack(uint8_t * rec, int n, const uint8_t * blk) {
+inline void q6k_pack(const RecPtr & rec, int n, const uint8_t * blk) {
     const uint8_t * ql = blk, * qh = blk + 128;
     for (int w = 0; w < 256; ++w) {
         const int h = w >> 7, r = w & 127, qq = r >> 5, l = r & 31;
@@ -235,26 +282,26 @@ inline void q6k_pack(uint8_t * rec, int n, const uint8_t * blk) {
         const uint8_t hi = (qh[h * 32 + l] >> (2 * qq)) & 3;
         size_t lb, hb; int ls, hs;
         q6k_pos(w, n, lb, ls, hb, hs);
-        put_nib(rec + lb, ls, lo);
-        rec[hb] = uint8_t((rec[hb] & ~(3 << hs)) | (hi << hs));
+        put_nib(rec(lb), ls, lo);
+        (*rec(hb)) = uint8_t(((*rec(hb)) & ~(3 << hs)) | (hi << hs));
     }
-    for (int s = 0; s < 16; ++s) rec[3072 + s * 16 + n] = blk[192 + s];
-    std::memcpy(rec + 3328 + 2 * n, blk + 208, 2);
+    for (int s = 0; s < 16; ++s) (*rec(3072 + s * 16 + n)) = blk[192 + s];
+    std::memcpy(rec(3328 + 2 * n), blk + 208, 2);
 }
-inline void q6k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
+inline void q6k_unpack(const RecPtr & rec, int n, uint8_t * blk) {
     uint8_t * ql = blk, * qh = blk + 128;
     std::memset(blk, 0, 192);
     for (int w = 0; w < 256; ++w) {
         const int h = w >> 7, r = w & 127, qq = r >> 5, l = r & 31;
         size_t lb, hb; int ls, hs;
         q6k_pos(w, n, lb, ls, hb, hs);
-        const uint8_t lo = get_nib(rec + lb, ls);
-        const uint8_t hi = uint8_t((rec[hb] >> hs) & 3);
+        const uint8_t lo = get_nib(rec(lb), ls);
+        const uint8_t hi = uint8_t(((*rec(hb)) >> hs) & 3);
         ql[h * 64 + (qq & 1) * 32 + l] |= qq < 2 ? lo : uint8_t(lo << 4);
         qh[h * 32 + l] |= uint8_t(hi << (2 * qq));
     }
-    for (int s = 0; s < 16; ++s) blk[192 + s] = rec[3072 + s * 16 + n];
-    std::memcpy(blk + 208, rec + 3328 + 2 * n, 2);
+    for (int s = 0; s < 16; ++s) blk[192 + s] = (*rec(3072 + s * 16 + n));
+    std::memcpy(blk + 208, rec(3328 + 2 * n), 2);
 }
 
 // ---- Q8_0 (QK_T=8): record = 8 GGUF blocks (fp16 d, int8 qs[32]) per row
@@ -263,16 +310,16 @@ inline void q6k_unpack(const uint8_t * rec, int n, uint8_t * blk) {
 inline size_t q8_0_off(int b, int k32, int n) {
     return size_t(b) * 512 + size_t(k32 >> 4) * 256 + size_t(n >> 3) * 128 + size_t(k32 & 15) * 8 + size_t(n & 7);
 }
-inline void q8_0_pack(uint8_t * rec, int b, int n, const uint8_t * blk) {
-    std::memcpy(rec + 4096 + (size_t(b) * 16 + size_t(n)) * 2, blk, 2);
-    for (int k = 0; k < 32; ++k) rec[q8_0_off(b, k, n)] = blk[2 + k];
+inline void q8_0_pack(const RecPtr & rec, int b, int n, const uint8_t * blk) {
+    std::memcpy(rec(4096 + (size_t(b) * 16 + size_t(n)) * 2), blk, 2);
+    for (int k = 0; k < 32; ++k) (*rec(q8_0_off(b, k, n))) = blk[2 + k];
 }
-inline void q8_0_unpack(const uint8_t * rec, int b, int n, uint8_t * blk) {
-    std::memcpy(blk, rec + 4096 + (size_t(b) * 16 + size_t(n)) * 2, 2);
-    for (int k = 0; k < 32; ++k) blk[2 + k] = rec[q8_0_off(b, k, n)];
+inline void q8_0_unpack(const RecPtr & rec, int b, int n, uint8_t * blk) {
+    std::memcpy(blk, rec(4096 + (size_t(b) * 16 + size_t(n)) * 2), 2);
+    for (int k = 0; k < 32; ++k) blk[2 + k] = (*rec(q8_0_off(b, k, n)));
 }
 
-inline void pack_block(Fmt f, uint8_t * rec, int b, int n, const uint8_t * blk) {
+inline void pack_block(Fmt f, const RecPtr & rec, int b, int n, const uint8_t * blk) {
     switch (f) {
         case Fmt::Q8_0: q8_0_pack(rec, b, n, blk); break;
         case Fmt::Q4_K: q4k_pack(rec, n, blk); break;
@@ -281,7 +328,7 @@ inline void pack_block(Fmt f, uint8_t * rec, int b, int n, const uint8_t * blk) 
         default: break;
     }
 }
-inline void unpack_block(Fmt f, const uint8_t * rec, int b, int n, uint8_t * blk) {
+inline void unpack_block(Fmt f, const RecPtr & rec, int b, int n, uint8_t * blk) {
     switch (f) {
         case Fmt::Q8_0: q8_0_unpack(rec, b, n, blk); break;
         case Fmt::Q4_K: q4k_unpack(rec, n, blk); break;
@@ -293,7 +340,7 @@ inline void unpack_block(Fmt f, const uint8_t * rec, int b, int n, uint8_t * blk
 
 // Visit the bytes [off, off + size) of the GGUF stream of one 2D matrix, 16-row group by group.
 // Different groups touch disjoint device bytes, so groups can run in parallel.
-// op(group_base, row_in_group, kb_idx, lo, hi, offset_of_byte_lo_relative_to_stream_byte_off)
+// op(first_row_of_group, row_in_group, kb_idx, lo, hi, offset_of_byte_lo_relative_to_stream_byte_off)
 template <typename Op>
 inline void for_range(const Geom & g, size_t off, size_t size, Op op) {
     if (size == 0) return;
@@ -308,7 +355,7 @@ inline void for_range(const Geom & g, size_t off, size_t size, Op op) {
     for (int64_t gi = grp0; gi <= grp1; ++gi) {
         const int64_t r_lo = gi * GROUP_ROWS > row0 ? gi * GROUP_ROWS : row0;
         const int64_t r_hi = (gi + 1) * GROUP_ROWS - 1 < row1 ? (gi + 1) * GROUP_ROWS - 1 : row1;
-        const size_t gbase = g.group_base(gi * GROUP_ROWS);
+        const int64_t gbase = gi * GROUP_ROWS;
         for (int64_t row = r_lo; row <= r_hi; ++row) {
             const size_t rs = size_t(row) * g.row_bytes;
             const size_t a  = off > rs ? off - rs : 0;                               // first byte inside the row
@@ -330,8 +377,8 @@ inline void for_range(const Geom & g, size_t off, size_t size, Op op) {
 // Write bytes [off, off+size) of the GGUF stream of ONE 2D matrix (src points at stream byte `off`)
 // into the matrix region `dev` (g.bytes bytes). Padding is not modified.
 inline void pack_range(const Geom & g, uint8_t * dev, const uint8_t * src, size_t off, size_t size) {
-    detail::for_range(g, off, size, [&](size_t gbase, int n, int64_t kb, int lo, int hi, size_t src_off) {
-        uint8_t * rec = dev + gbase + size_t(kb / g.rec_blocks) * g.rec_stride;
+    detail::for_range(g, off, size, [&](int64_t grow, int n, int64_t kb, int lo, int hi, size_t src_off) {
+        const RecPtr rec = locate(g, dev, grow, kb / g.rec_blocks);
         const int b = int(kb % g.rec_blocks);
         if (lo == 0 && hi == int(g.block_bytes)) {
             detail::pack_block(g.fmt, rec, b, n, src + src_off);
@@ -347,8 +394,8 @@ inline void pack_range(const Geom & g, uint8_t * dev, const uint8_t * src, size_
 
 // Inverse of pack_range: bit exact.
 inline void unpack_range(const Geom & g, const uint8_t * dev, uint8_t * dst, size_t off, size_t size) {
-    detail::for_range(g, off, size, [&](size_t gbase, int n, int64_t kb, int lo, int hi, size_t dst_off) {
-        const uint8_t * rec = dev + gbase + size_t(kb / g.rec_blocks) * g.rec_stride;
+    detail::for_range(g, off, size, [&](int64_t grow, int n, int64_t kb, int lo, int hi, size_t dst_off) {
+        const RecPtr rec = locate(g, const_cast<uint8_t *>(dev), grow, kb / g.rec_blocks);
         const int b = int(kb % g.rec_blocks);
         if (lo == 0 && hi == int(g.block_bytes)) {
             detail::unpack_block(g.fmt, rec, b, n, dst + dst_off);

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "ggml-xdna2-sync.h"
+#include "ggml-xdna2-kernels.h"
 
 namespace xdna2 {
 
@@ -31,30 +32,28 @@ double now_s() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-constexpr size_t kMaxContexts = 8;     // resident xclbins (hw contexts); least recently used are evicted
+constexpr size_t kMaxRunlist = 128;     // dispatches per xrt::runlist
 
-struct Job;
+struct SJob;
 
-// One loaded xclbin (hw context + kernel) for a KernelKey and the per-N instruction BOs derived from it.
+// The ONE hw context of the process: unified decode kernel (all qtypes, all K, all N). Instruction BOs are per (chain, act, g) words.
 struct Ctx {
-    KernelKey                         key;
     xrt::xclbin                       xb;
     xrt::hw_context                   hw;
     xrt::kernel                       kern;
-    std::map<int64_t, xrt::bo>        instr;        // n_pad -> instruction BO
-    std::map<int64_t, uint32_t>       instr_words;
-    std::list<Job *>                  jobs;         // jobs with a run bound to this context
-    std::map<std::vector<Job *>, xrt::runlist> runlists;
-    uint64_t                          last_use = 0;
+    std::map<std::tuple<int64_t, int64_t, int64_t>, xrt::bo> instr;
+    std::map<std::tuple<int64_t, int64_t, int64_t>, uint32_t> instr_words;
+    std::map<std::vector<SJob *>, xrt::runlist> runlists;
 };
 
-struct Job {
+// One dispatch: one split of one 2D weight matrix.
+struct SJob {
     layout::Geom  geom;
+    int64_t       split = 0;
     const Arena * arena = nullptr;
     size_t        w_off = 0;
     xrt::bo       w, a, y;
     size_t        a_bytes = 0;
-    Ctx *         ctx = nullptr;
     xrt::run      run;
 };
 
@@ -71,8 +70,9 @@ public:
 
     ~XrtExecutor() override {
         std::lock_guard<std::mutex> lk(mu_);
+        if (ctx_) ctx_->runlists.clear();
         jobs_.clear();
-        ctxs_.clear();
+        ctx_.reset();
     }
 
     bool available() const override { return ok_; }
@@ -84,8 +84,8 @@ public:
     void release_arena(const Arena * arena) override {
         std::lock_guard<std::mutex> lk(mu_);
         for (auto it = jobs_.begin(); it != jobs_.end();) {
-            if (it->second->arena == arena) {
-                unbind(*it->second);
+            if (std::get<0>(it->first) == arena) {
+                unbind(it->second);
                 it = jobs_.erase(it);
             } else {
                 ++it;
@@ -108,219 +108,187 @@ public:
 
 private:
     using JobKey = std::tuple<const Arena *, size_t, int, int64_t, int64_t>;
+    using Splits = std::vector<std::unique_ptr<SJob>>;
 
-    void unbind(Job & j) {
-        if (j.ctx) {
-            for (auto it = j.ctx->runlists.begin(); it != j.ctx->runlists.end();) {
+    void unbind(Splits & sj) {
+        for (auto & j : sj) {
+            if (!ctx_) continue;
+            for (auto it = ctx_->runlists.begin(); it != ctx_->runlists.end();) {
                 bool uses = false;
-                for (Job * x : it->first) uses |= x == &j;
-                it = uses ? j.ctx->runlists.erase(it) : std::next(it);
+                for (SJob * x : it->first) uses |= x == j.get();
+                it = uses ? ctx_->runlists.erase(it) : std::next(it);
             }
-            j.ctx->jobs.remove(&j);
-            j.run = xrt::run();
-            j.ctx = nullptr;
+            j->run = xrt::run();
         }
     }
 
-    Ctx & get_ctx(const KernelKey & key) {
-        auto it = ctxs_.find(key);
-        if (it != ctxs_.end()) {
-            it->second->last_use = ++tick_;
-            return *it->second;
-        }
+    Ctx & get_ctx() {
+        if (ctx_) return *ctx_;
         const double t0 = now_s();
         KernelCache & kc = kernel_cache();
-        kc.request(key);
+        kc.request();
         const double tw = now_s();
-        if (!kc.wait(key)) {
-            throw std::runtime_error("NPU kernel " + key.name() + " is not available (build failed, see the kernel cache)");
+        if (!kc.wait()) {
+            throw std::runtime_error("the NPU decode kernel is not available (build failed, see the kernel cache)");
         }
         st_.t_kernel_wait += now_s() - tw;
-        while (ctxs_.size() >= kMaxContexts) {
-            evict_lru();
-        }
         auto c = std::make_unique<Ctx>();
-        c->key = key;
-        for (int attempt = 0;; ++attempt) {
-            try {
-                c->xb = xrt::xclbin(kc.xclbin_path(key));
-                dev_.register_xclbin(c->xb);
-                c->hw = xrt::hw_context(dev_, c->xb.get_uuid());
-                break;
-            } catch (const std::exception & e) {
-                if (attempt > 0 || ctxs_.empty()) throw;
-                GGML_LOG_WARN("ggml-xdna2: hw context creation failed (%s), evicting an idle context\n", e.what());
-                evict_lru();
-            }
-        }
+        c->xb = xrt::xclbin(kc.xclbin_path());
+        dev_.register_xclbin(c->xb);
+        c->hw = xrt::hw_context(dev_, c->xb.get_uuid());
         std::string kn;
         for (auto & k : c->xb.get_kernels()) {
             if (k.get_name().rfind("MLIR_AIE", 0) == 0) { kn = k.get_name(); break; }
         }
-        if (kn.empty()) throw std::runtime_error("no MLIR_AIE kernel in " + kc.xclbin_path(key));
+        if (kn.empty()) throw std::runtime_error("no MLIR_AIE kernel in " + kc.xclbin_path());
         c->kern = xrt::kernel(c->hw, kn);
-        c->last_use = ++tick_;
-        Ctx & ref = *c;
-        ctxs_[key] = std::move(c);
+        ctx_ = std::move(c);
         st_.t_setup += now_s() - t0;
-        return ref;
+        return *ctx_;
     }
 
-    void evict_lru() {
-        auto victim = ctxs_.begin();
-        for (auto it = ctxs_.begin(); it != ctxs_.end(); ++it) {
-            if (it->second->last_use < victim->second->last_use) victim = it;
-        }
-        GGML_LOG_DEBUG("ggml-xdna2: evicting NPU context %s\n", victim->first.name().c_str());
-        if (last_ctx_ == victim->second.get()) last_ctx_ = nullptr;
-        std::list<Job *> js = victim->second->jobs;
-        for (Job * j : js) unbind(*j);
-        ctxs_.erase(victim);
-    }
-
-    const xrt::bo & get_instr(Ctx & c, int64_t n_pad) {
-        auto it = c.instr.find(n_pad);
+    const xrt::bo & get_instr(Ctx & c, const layout::Geom & g, int64_t s, size_t a_bytes) {
+        const auto key = std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(a_bytes / 4), g.sp_groups(s));
+        auto it = c.instr.find(key);
         if (it != c.instr.end()) return it->second;
         std::vector<uint32_t> w;
-        if (!kernel_cache().insts_for(c.key, n_pad, w)) {
-            throw std::runtime_error("cannot derive the instruction stream of " + c.key.name() + " for N=" + std::to_string(n_pad));
+        if (!kernel_cache().insts_for(std::get<0>(key), std::get<1>(key), std::get<2>(key), w)) {
+            throw std::runtime_error("cannot derive the instruction stream of the decode kernel for chain_words=" +
+                                     std::to_string(std::get<0>(key)));
         }
         xrt::bo bi(dev_, w.size() * 4, xrt::bo::flags::cacheable, c.kern.group_id(1));
         std::memcpy(bi.map<char *>(), w.data(), w.size() * 4);
         bi.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        c.instr_words[n_pad] = uint32_t(w.size());
-        return c.instr.emplace(n_pad, std::move(bi)).first->second;
+        c.instr_words[key] = uint32_t(w.size());
+        return c.instr.emplace(key, std::move(bi)).first->second;
     }
 
-    Job & get_job(const MulMatJob & mj, Ctx & c) {
+    Splits & get_job(const MulMatJob & mj, Ctx & c) {
         const layout::Geom & g = mj.geom;
         const JobKey key{ mj.arena, mj.w_off, int(g.fmt), g.n, g.k };
         auto it = jobs_.find(key);
-        Job * j;
-        if (it == jobs_.end()) {
-            const double t0 = now_s();
-            auto nj = std::make_unique<Job>();
-            nj->geom = g;
-            nj->arena = mj.arena;
-            nj->w_off = mj.w_off;
-            const XrtBoArena * xa = dynamic_cast<const XrtBoArena *>(mj.arena);
-            if (!xa) throw std::runtime_error("weights are not in an NPU buffer");
-            nj->w = xrt::bo(xa->bo(), g.bytes, mj.w_off);
-            nj->a_bytes = act_bo_bytes(g, 1);
-            nj->a = xrt::ext::bo{dev_, nj->a_bytes};
-            nj->y = xrt::ext::bo{dev_, size_t(g.n_pad) * sizeof(float)};
-            std::memset(nj->a.map<char *>(), 0, nj->a_bytes);
-            nj->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            std::memset(nj->y.map<char *>(), 0, size_t(g.n_pad) * sizeof(float));
-            nj->y.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            j = nj.get();
-            jobs_[key] = std::move(nj);
-            st_.t_setup += now_s() - t0;
-        } else {
-            j = it->second.get();
-        }
-        if (!j->ctx) {
-            const double t0 = now_s();
-            const xrt::bo & bi = get_instr(c, g.n_pad);
+        if (it != jobs_.end()) return it->second;
+        const double t0 = now_s();
+        const XrtBoArena * xa = dynamic_cast<const XrtBoArena *>(mj.arena);
+        if (!xa) throw std::runtime_error("weights are not in an NPU buffer");
+        Splits sj;
+        for (int64_t s = 0; s < g.nsplit; ++s) {
+            auto j = std::make_unique<SJob>();
+            j->geom = g;
+            j->split = s;
+            j->arena = mj.arena;
+            j->w_off = mj.w_off;
+            j->w = xrt::bo(xa->bo(), g.sp_bytes(s), mj.w_off + g.sp_off(s));
+            j->a_bytes = act_bo_bytes(g, 1);
+            j->a = xrt::ext::bo{dev_, j->a_bytes};
+            const size_t yb = size_t(g.sp_groups(s)) * layout::ROW_GRAN * sizeof(float);
+            j->y = xrt::ext::bo{dev_, yb};
+            std::memset(j->a.map<char *>(), 0, j->a_bytes);
+            j->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            std::memset(j->y.map<char *>(), 0, yb);
+            j->y.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            const xrt::bo & bi = get_instr(c, g, s, j->a_bytes);
             xrt::run r(c.kern);
             r.set_arg(0, 3);
             r.set_arg(1, bi);
-            r.set_arg(2, c.instr_words[g.n_pad]);
+            r.set_arg(2, c.instr_words[std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(j->a_bytes / 4), g.sp_groups(s))]);
             r.set_arg(3, j->w);
             r.set_arg(4, j->a);
             r.set_arg(5, j->y);
             j->run = std::move(r);
-            j->ctx = &c;
-            c.jobs.push_back(j);
-            st_.t_setup += now_s() - t0;
+            sj.push_back(std::move(j));
         }
-        return *j;
+        st_.t_setup += now_s() - t0;
+        return jobs_.emplace(key, std::move(sj)).first->second;
+    }
+
+    void execute(Ctx & c, const std::vector<SJob *> & key) {
+        if (key.size() == 1) {
+            key[0]->run.start();
+            key[0]->run.wait2();
+            return;
+        }
+        auto it = c.runlists.find(key);
+        if (it == c.runlists.end()) {
+            xrt::runlist rl(c.hw);
+            for (SJob * j : key) rl.add(j->run);
+            it = c.runlists.emplace(key, std::move(rl)).first;
+        }
+        it->second.execute();
+        it->second.wait();
     }
 
     bool run_locked(const MulMatJob * jobs, size_t n_jobs) {
-        // group by kernel (hw context): contexts are time shared, runlists need one context
-        std::map<KernelKey, std::vector<size_t>> groups;
-        for (size_t i = 0; i < n_jobs; ++i) {
-            groups[KernelKey{ jobs[i].geom.fmt, jobs[i].geom.k, 1 }].push_back(i);
-        }
-        for (auto & kv : groups) {
-            Ctx & c = get_ctx(kv.first);
-            std::vector<Job *> js;
-            int64_t max_tok = 0;
-            for (size_t i : kv.second) {
+        Ctx & c = get_ctx();
+        // all matmuls of the batch are independent: ONE runlist per token in one hw context (no context switch ever)
+        std::vector<Splits *> js;
+        int64_t max_tok = 0;
+        {
+            std::set<Splits *> seen;
+            bool dup = false;
+            for (size_t i = 0; i < n_jobs; ++i) {
                 js.push_back(&get_job(jobs[i], c));
+                dup |= !seen.insert(js.back()).second;
                 max_tok = std::max(max_tok, jobs[i].act->n_tok);
             }
-            if (std::set<Job *>(js.begin(), js.end()).size() != js.size()) {
+            if (dup) {
                 // the same weights used twice in one batch share their A/Y BOs: run the jobs one after the other
-                for (size_t i : kv.second) {
+                for (size_t i = 0; i < n_jobs; ++i) {
                     if (!run_locked(&jobs[i], 1)) return false;
                 }
-                continue;
+                return true;
             }
-            for (int64_t t = 0; t < max_tok; ++t) {
-                std::vector<size_t> act;     // indices into kv.second that still have token t
-                for (size_t q = 0; q < kv.second.size(); ++q) {
-                    if (jobs[kv.second[q]].act->n_tok > t) act.push_back(q);
+        }
+        for (int64_t t = 0; t < max_tok; ++t) {
+            std::vector<size_t> act;     // matmuls that still have token t
+            for (size_t q = 0; q < n_jobs; ++q) {
+                if (jobs[q].act->n_tok > t) act.push_back(q);
+            }
+            // 1. activations
+            double t0 = now_s();
+            std::vector<SJob *> disp;
+            for (size_t q : act) {
+                const MulMatJob & mj = jobs[q];
+                for (auto & sj : *js[q]) {
+                    pack_act_bo(*mj.act, mj.geom, sj->split, t, sj->a.map<uint8_t *>());
+                    sj->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+                    disp.push_back(sj.get());
                 }
-                // 1. activations
-                double t0 = now_s();
-                for (size_t q : act) {
-                    const MulMatJob & mj = jobs[kv.second[q]];
-                    Job & j = *js[q];
-                    pack_act_bo(*mj.act, mj.geom, t, 1, j.a.map<uint8_t *>());
-                    j.a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-                    st_.bytes_w += double(mj.geom.bytes);
-                }
-                st_.t_pack_a += now_s() - t0;
-                // 2. execute
-                const bool switched = last_ctx_ != &c;
-                last_ctx_ = &c;
-                t0 = now_s();
-                if (act.size() == 1) {
-                    Job & j = *js[act[0]];
-                    j.run.start();
-                    j.run.wait2();
-                } else {
-                    std::vector<Job *> key;
-                    for (size_t q : act) key.push_back(js[q]);
-                    auto it = c.runlists.find(key);
-                    if (it == c.runlists.end()) {
-                        xrt::runlist rl(c.hw);
-                        for (Job * j : key) rl.add(j->run);
-                        it = c.runlists.emplace(key, std::move(rl)).first;
-                    }
-                    it->second.execute();
-                    it->second.wait();
-                }
-                st_.t_wait += now_s() - t0;
-                if (switched) { st_.n_switch++; st_.t_wait_switch += now_s() - t0; }
-                st_.runs += act.size();
+                st_.bytes_w += double(mj.geom.bytes);
+            }
+            st_.t_pack_a += now_s() - t0;
+            // 2. execute
+            t0 = now_s();
+            for (size_t b = 0; b < disp.size(); b += kMaxRunlist) {
+                const size_t e = std::min(disp.size(), b + kMaxRunlist);
+                execute(c, std::vector<SJob *>(disp.begin() + b, disp.begin() + e));
                 st_.batches += 1;
-                // 3. results
-                t0 = now_s();
-                for (size_t q : act) {
-                    const MulMatJob & mj = jobs[kv.second[q]];
-                    Job & j = *js[q];
-                    sync_from_device(j.y);
-                    unpermute(mj, j, t);
-                }
-                st_.t_unpermute += now_s() - t0;
             }
+            st_.t_wait += now_s() - t0;
+            st_.runs += disp.size();
+            // 3. results
+            t0 = now_s();
+            for (size_t q : act) {
+                for (auto & sj : *js[q]) {
+                    sync_from_device(sj->y);
+                    unpermute(jobs[q], *sj, t);
+                }
+            }
+            st_.t_unpermute += now_s() - t0;
         }
         return true;
     }
 
-    // Y: f32 [col 8][G][core 4][16]  ->  row = ((col*4 + k)*G + g)*16 + i
-    static void unpermute(const MulMatJob & mj, Job & j, int64_t t) {
+    // Y of a split: f32 [col 8][Gs][core 4][16]  ->  row = split_row0 + ((col*4 + k)*Gs + g)*16 + i
+    static void unpermute(const MulMatJob & mj, SJob & j, int64_t t) {
         const layout::Geom & g = mj.geom;
         const float * y = j.y.map<const float *>();
         float * dst = reinterpret_cast<float *>(reinterpret_cast<char *>(mj.dst) + size_t(t) * mj.dst_row_stride);
-        const int64_t G = g.groups;
+        const int64_t G = g.sp_groups(j.split), row_base = g.sp_row0(j.split);
         for (int64_t c = 0; c < 8; ++c) {
             for (int64_t gg = 0; gg < G; ++gg) {
                 for (int64_t k = 0; k < 4; ++k) {
-                    const int64_t row0 = ((c * 4 + k) * G + gg) * 16;
+                    const int64_t row0 = row_base + ((c * 4 + k) * G + gg) * 16;
                     if (row0 >= g.n) continue;
                     const int64_t cnt = std::min<int64_t>(16, g.n - row0);
                     std::memcpy(dst + row0, y + ((c * G + gg) * 4 + k) * 16, size_t(cnt) * sizeof(float));
@@ -332,10 +300,8 @@ private:
     std::mutex mu_;
     xrt::device dev_;
     bool ok_ = false;
-    uint64_t tick_ = 0;
-    const Ctx * last_ctx_ = nullptr;
-    std::map<KernelKey, std::unique_ptr<Ctx>> ctxs_;
-    std::map<JobKey, std::unique_ptr<Job>> jobs_;
+    std::unique_ptr<Ctx> ctx_;
+    std::map<JobKey, Splits> jobs_;
     ExecStats st_;
 };
 

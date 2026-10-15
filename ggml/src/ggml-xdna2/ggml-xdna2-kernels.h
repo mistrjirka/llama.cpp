@@ -1,32 +1,31 @@
 #pragma once
 
-// NPU kernel cache with build-at-load. Dependency free (std only) so it is shared by the backend and the
-// xdna2-kernel-tool.
+// NPU kernel cache with build-at-load. Dependency free (std only) so it is shared by the backend and the xdna2-kernel-tool.
 //
-// A kernel (xclbin + instruction stream) is specific to (qtype, K, M activation vectors) and serves ANY N % 512 == 0: only the
-// instruction stream depends on N, and its 68 N dependent words are linear in N (stage3 RESULTS.md). The build step therefore
-// produces the xclbin plus the instruction streams for two reference sizes (kRefN0, kRefN1) and the backend derives the stream
-// for the actual N by scaling the words that differ (bit identical to a native build, checked by `xdna2-kernel-tool patch`).
+// There is exactly ONE decode kernel (xclbin): kernels/qku.cc + genu.py. The qtype (Q4_K/Q5_K/Q6_K/Q8_0), K (<= layout::KMAX),
+// and the number of groups are RUNTIME values (activation header, see qku.cc), so all weights of a model run in ONE hw context.
+// Only the instruction stream depends on three host values, each linear (zero intercept) in exactly one 32-bit word set:
+//     chain_words   weight words per chain of a dispatch  (layout::Geom::sp_chain_words)
+//     a_words       words of the activation BO
+//     g             16-row groups per core                (output words)
+// The build step produces the xclbin plus the base stream (kRefChain, kRefA, kRefG) and one stream per varied parameter; the backend
+// derives the stream of a dispatch by scaling the words that differ (insts_for; checked bit identical against native builds).
 //
-// It is produced by the external build step kernels/build_kernel.sh (IRON generator gen3.py + kernel qk3.cc + peano + aiecc, the
-// lab's stage3 toolchain) and stored in the cache directory:
+// Build step: kernels/build_kernel.sh (IRON generator genu.py + kernel qku.cc + peano + aiecc, lab stage5), stored in the cache dir:
 //
-//   <cache_dir>/<src_hash>/<qtype>_k<K>_m<M>/kernel.xclbin
-//                                              insts_n1024.bin insts_n2048.bin     (reference instruction streams)
-//                                              meta.txt                            (generator META line)
-//   <cache_dir>/<src_hash>/<qtype>_k<K>_m<M>.failed.log                            (only after a failed build)
+//   <cache_dir>/<src_hash>/unified/kernel.xclbin
+//                                  insts_base.bin insts_cw.bin insts_aw.bin insts_g.bin     (reference instruction streams)
+//   <cache_dir>/<src_hash>/unified.failed.log                                               (only after a failed build)
 //
-//   src_hash = 64-bit FNV-1a of the build step's sources (qk3.cc, gen3.py, build_kernel.sh, env.sh), so editing a kernel or
+//   src_hash = 64-bit FNV-1a of the build step's sources (qku.cc, genu.py, build_kernel.sh, env.sh), so editing a kernel or
 //   the generator never reuses stale binaries. (The toolchain version is not part of the key.)
 //
-// Atomicity: a build runs in <cache_dir>/<src_hash>/.tmp.<pid>.<n>.<name>/ and the finished directory is rename()d into
-// place, so a kernel directory is either absent or complete, also with several processes sharing the cache.
-// Two processes may still build the same kernel at the same time (wasted work, not a correctness issue).
+// Atomicity: a build runs in <cache_dir>/<src_hash>/.tmp.<pid>.<n>.unified/ and the finished directory is rename()d into
+// place, so the kernel directory is either absent or complete, also with several processes sharing the cache.
 
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -36,25 +35,17 @@
 
 namespace xdna2 {
 
-constexpr int64_t kRefN0 = 1024;
-constexpr int64_t kRefN1 = 2048;
-
-struct KernelKey {
-    layout::Fmt fmt = layout::Fmt::Q4_K;
-    int64_t     k = 0;
-    int         m = 1;          // activation vectors per dispatch
-
-    std::string name() const;   // e.g. Q4_K_k4096_m1
-    bool operator<(const KernelKey & o) const;
-};
+constexpr int64_t kRefChain = 2048;   // reference values of the instruction stream parameters (genu.py --chain_words/--a_words/--g)
+constexpr int64_t kRefA     = 2048;
+constexpr int64_t kRefG     = 2;
 
 class KernelCache {
 public:
     struct Config {
         std::string cache_dir;
-        std::string kernel_src_dir;   // directory with build_kernel.sh, qk.cc, gen_qk.py, env.sh
+        std::string kernel_src_dir;   // directory with build_kernel.sh, qku.cc, genu.py, env.sh
         std::string toolchain_env;    // mlir-aie python environment (bin/aiecc, bin/python, lib/python*/site-packages/llvm-aie)
-        int         max_jobs = 4;
+        int         max_jobs = 4;     // unused (one kernel), kept for tools
         std::function<void(int level /*0 info, 1 warn, 2 error*/, const std::string &)> log;
     };
 
@@ -63,53 +54,49 @@ public:
 
     // external toolchain + build scripts are installed
     bool toolchain_present() const;
-    // the generator can produce this kernel (K % 256 == 0 and K <= 12288 (validated range), Q4_K M <= 4, others M == 1)
-    static bool generator_supports(const KernelKey & key);
-    // already in the cache
-    bool cached(const KernelKey & key) const;
+    // the unified kernel can run this weight geometry (K % 256 == 0, K <= layout::KMAX; any N: larger matrices are split)
+    static bool supports(const layout::Geom & geom);
+    // the kernel is in the cache
+    bool cached() const;
     // cached, or buildable with the installed toolchain
-    bool available(const KernelKey & key) const;
+    bool available() const;
 
-    std::string dir_of(const KernelKey & key) const;
-    std::string xclbin_path(const KernelKey & key) const { return dir_of(key) + "/kernel.xclbin"; }
+    std::string dir() const;
+    std::string xclbin_path() const { return dir() + "/kernel.xclbin"; }
 
-    // Instruction stream (words) of a cached kernel for n_pad rows (n_pad % 512 == 0), derived from the two reference streams.
-    bool insts_for(const KernelKey & key, int64_t n_pad, std::vector<uint32_t> & out);
-    // the pure patching rule (also used by the tool/tests): w(N) = w0 * N / N0 for the words where a and b differ
-    static bool patch_insts(const std::vector<uint32_t> & a, int64_t n0, const std::vector<uint32_t> & b, int64_t n1, int64_t n,
-                            std::vector<uint32_t> & out);
+    // Instruction stream (words) of a dispatch, derived from the reference streams.
+    bool insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out);
+    // the pure patching rule (also used by the tool/tests): the words where base and var differ are linear in the parameter
+    // (zero intercept): w(p) = base * p / p0. Applied on top of `inout`.
+    static bool patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
+                            std::vector<uint32_t> & inout);
     std::string src_hash() const { return hash_; }
 
-    // queue a background build if the kernel is not cached (no-op otherwise); at most max_jobs run at a time
-    void request(const KernelKey & key);
+    // queue a background build if the kernel is not cached (no-op otherwise)
+    void request();
     // block until the kernel is cached or its build failed; true = usable
-    bool wait(const KernelKey & key);
-    // block until all queued builds finished; returns the number of failures
+    bool wait();
+    // block until the queued build finished; returns the number of failures
     int wait_all();
 
     struct Stats { int built = 0, failed = 0; double sum_seconds = 0, wall_seconds = 0; };
     Stats stats() const;
 
 private:
-    enum class State { Queued, Building, Done, Failed };
+    enum class State { None, Building, Done, Failed };
     void worker();
-    bool run_build(const KernelKey & key, double & seconds);
+    bool run_build(double & seconds);
     void say(int level, const std::string & msg) const;
 
     Config                       cfg_;
     std::string                  hash_;
     mutable std::mutex           mu_;
-    mutable std::map<KernelKey, bool> known_cached_;   // positive cache of the stat()s
-    std::map<KernelKey, std::pair<std::vector<uint32_t>, std::vector<uint32_t>>> refs_;
+    mutable bool                 known_cached_ = false;
+    std::vector<std::vector<uint32_t>> refs_;     // base, cw, aw, g
     std::condition_variable      cv_;
-    std::map<KernelKey, State>   state_;
-    std::vector<KernelKey>       queue_;
-    std::vector<std::thread>     threads_;
-    int                          active_workers_ = 0;
-    int                          pending_ = 0;
+    State                        state_ = State::None;
+    std::thread                  thread_;
     Stats                        stats_;
-    double                       batch_t0_ = 0;
-    Stats                        batch_;
     int                          tmp_counter_ = 0;
 };
 

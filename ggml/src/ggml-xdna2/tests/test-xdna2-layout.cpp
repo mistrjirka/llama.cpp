@@ -1,10 +1,10 @@
 // Unit test of the device weight layouts (ggml-xdna2-layout.h) for Q8_0, Q4_K, Q5_K, Q6_K:
-// round trip, chunked/unaligned writes, padding. Bit equality with the lab packer (stage3 pack3.py) is checked
-// with --compare (see tests/check-layout-vs-lab.sh).
+// round trip, chunked/unaligned writes, padding, record straddling over chunk boundaries, multi-split matrices.
+// Bit equality with the lab packer (stage5 packu.py) is checked with --compare (see tests/check-layout-vs-lab.py).
 //
 //   test-xdna2-layout                         run all tests
 //   test-xdna2-layout --compare FMT N K blk.bin expected.bin
-//        pack the GGUF-format blocks in blk.bin and compare with expected.bin (W_bo as written by pack3.py)
+//        pack the GGUF-format blocks in blk.bin and compare with expected.bin (W_bo as written by packu.py)
 
 #include "ggml-xdna2-layout.h"
 
@@ -40,10 +40,15 @@ static void scale_field(Fmt f, size_t & off, size_t & len) {
 static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed) {
     const FmtInfo & fi = fmt_info(fmt);
     const Geom g = make_geom(fmt, n, k);
-    CHECK(g.bytes == size_t(g.n_pad) * size_t(k / 256) * fi.rec_bytes / 16);
+    const size_t payload = size_t(g.n_pad) * size_t(k / 256) * fi.rec_bytes / 16;       // N_pad rows of records, no chunk padding
     CHECK(g.gguf_bytes == size_t(n) * size_t(k / fi.elems) * fi.block_bytes);
-    CHECK(g.n_pad % 512 == 0 && g.bytes >= g.gguf_bytes);
-    if (n % 512 == 0) CHECK(g.bytes == g.gguf_bytes);                       // weight records are exactly GGUF sized
+    CHECK(g.n_pad % 512 == 0 && g.bytes >= g.gguf_bytes && g.bytes >= payload);
+    CHECK(g.bytes - payload <= size_t(g.nsplit) * size_t(N_CORES) * CHUNK);              // only the tail of each core stream is padded
+    {
+        size_t sum = 0;
+        for (int64_t sp = 0; sp < g.nsplit; ++sp) { CHECK(g.sp_off(sp) == sum); sum += g.sp_bytes(sp); CHECK(g.sp_bytes(sp) % (N_CHAINS * N_LANES * CHUNK) == 0); }
+        CHECK(sum == g.bytes);
+    }
     CHECK(fi.rec_bytes == 16 * size_t(fi.rec_blocks) * fi.block_bytes);
 
     const std::vector<uint8_t> src = random_bytes(g.gguf_bytes, seed);
@@ -66,7 +71,7 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed) {
     for (int64_t r = g.n; r < g.n_pad; ++r) {
         for (int64_t b = 0; b < g.kb; ++b) {
             uint8_t blk[MAX_BLOCK_BYTES];
-            const uint8_t * rec = dev.data() + g.group_base(r) + size_t(b / g.rec_blocks) * g.rec_stride;
+            const RecPtr rec = locate(g, dev.data(), r, b / g.rec_blocks);
             detail::unpack_block(fmt, rec, int(b % g.rec_blocks), int(r % 16), blk);
             for (size_t i = 0; i < sl; ++i) bad += blk[so + i] != 0;
         }
@@ -105,6 +110,41 @@ static void test_slices(Fmt fmt, int64_t k) {
     }
     tensor_unpack_range(g, dev.data(), back.data(), 0, back.size());
     CHECK(back == src);
+}
+
+// every record of a core stream is reachable; records that straddle a chunk boundary exist and are contiguous after gather
+static void test_straddle(Fmt fmt, int64_t n, int64_t k) {
+    const Geom g = make_geom(fmt, n, k);
+    std::vector<uint8_t> dev(g.bytes, 0);
+    size_t straddle = 0, total = 0;
+    for (int64_t row = 0; row < g.n_pad; row += GROUP_ROWS) {
+        for (int64_t r = 0; r < g.nbk; ++r) {
+            const RecPtr p = locate(g, dev.data(), row, r);
+            ++total;
+            if (p.n0 < g.rec_bytes) {
+                ++straddle;
+                CHECK(p.p1 == p.p0 + p.n0 + (N_LANES - 1) * CHUNK);      // continuation = next chunk of the same lane
+            }
+            CHECK(p.p0 >= dev.data() && p.p0 + std::min(p.n0, g.rec_bytes) <= dev.data() + g.bytes);
+        }
+    }
+    CHECK(straddle > 0 || g.rec_bytes * size_t(g.nbk) * size_t(g.groups) < CHUNK);
+    std::printf("  straddle %s N=%ld K=%ld: %zu of %zu records straddle a chunk\n", fmt_info(fmt).name, long(n), long(k), straddle, total);
+}
+
+// a matrix with several splits: round trip, and the split regions are disjoint and in order
+static void test_splits(Fmt fmt, int64_t n, int64_t k) {
+    const Geom g = make_geom(fmt, n, k);
+    CHECK(g.nsplit >= 2);
+    const std::vector<uint8_t> src = random_bytes(g.gguf_bytes, 77);
+    std::vector<uint8_t> dev(g.bytes, 0), back(g.gguf_bytes, 0x5C);
+    pack(g, dev.data(), src.data());
+    unpack(g, dev.data(), back.data());
+    CHECK(back == src);
+    // a row of the last split must live in the last split's region
+    const RecPtr p = locate(g, dev.data(), g.n_pad - 1, g.nbk - 1);
+    CHECK(p.p0 >= dev.data() + g.sp_off(g.nsplit - 1));
+    std::printf("  splits %s N=%ld K=%ld: %ld splits, %.2f MB, round trip %s\n", fmt_info(fmt).name, long(n), long(k), long(g.nsplit), g.bytes / 1e6, back == src ? "ok" : "FAILED");
 }
 
 static int compare(const std::string & fname, int64_t n, int64_t k, const char * blk, const char * exp) {
@@ -157,10 +197,18 @@ int main(int argc, char ** argv) {
         test_slices(fmt, 512);
         std::printf("  %s: ok so far (%d failures)\n", fmt_info(fmt).name, g_fail);
     }
-    // Ornith output.weight (Q6_K, K=4096, N=248320): one dispatch, no padding
+    for (int f = 0; f < int(Fmt::COUNT); ++f) {
+        test_straddle(Fmt(f), 1024, 2560);
+        test_straddle(Fmt(f), 512, 256);
+    }
+    test_splits(Fmt::Q4_K, 70000, 256);
+    test_splits(Fmt::Q6_K, 66000, 256);
+    test_splits(Fmt::Q8_0, 65536 + 512, 256);
+    // Ornith output.weight (Q6_K, K=4096, N=248320): 4 splits (GMAX=128 groups = 65536 rows each), < 0.2 % chunk padding
     {
         const Geom g = make_geom(Fmt::Q6_K, 248320, 4096);
-        CHECK(g.bytes == g.gguf_bytes && g.bytes == size_t(248320) * 16 * 210);
+        CHECK(g.nsplit == 4 && g.sp_groups(3) == g.groups - 3 * GMAX);
+        CHECK(g.bytes >= size_t(248320) * 16 * 210 && g.bytes < size_t(248320) * 16 * 210 * 1002 / 1000);
     }
     std::printf("test-xdna2-layout: %d shapes + slices, %s\n", cases, g_fail ? "FAILED" : "PASSED");
     return g_fail ? 1 : 0;

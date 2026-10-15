@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Check that the C++ weight layout (test-xdna2-layout --compare) is bit identical to the lab packer stage3/pack3.py.
-usage: check-layout-vs-lab.py <test-xdna2-layout binary> <lab stage3 dir> [workdir]"""
+"""Check that the C++ weight layout (test-xdna2-layout --compare) is bit identical to the lab packer stage5/packu.py.
+usage: check-layout-vs-lab.py <test-xdna2-layout binary> <lab stage5 dir> [workdir]"""
 import os, subprocess, sys, tempfile
 import numpy as np
 
@@ -19,7 +19,7 @@ for qt in (4, 5, 6, 8):
         # dummy activation file (content irrelevant for the weight layout)
         asz = K // 32 * 34 if qt == 8 else nbk * 292
         np.zeros(asz, np.uint8).tofile(pre + ".act.bin")
-        subprocess.run([sys.executable, "-I", os.path.join(lab, "pack3.py"), str(qt), pre + ".blk.bin", pre + ".act.bin",
+        subprocess.run([sys.executable, "-I", os.path.join(lab, "packu.py"), str(qt), pre + ".blk.bin", pre + ".act.bin",
                         str(N), str(K), "1", "2", pre], check=True, stdout=subprocess.DEVNULL)
         r = subprocess.run([exe, "--compare", NAME[qt], str(N), str(K), pre + ".blk.bin", pre + ".w.bin"])
         bad += r.returncode != 0

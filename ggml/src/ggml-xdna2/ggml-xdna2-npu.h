@@ -3,16 +3,16 @@
 // NpuExecutor: the real NPU compute path of the ggml-xdna2 backend (ggml-xdna2-xrt.cpp, needs XRT) and a stub used when
 // XRT is not available or the host reference mode is selected.
 //
-// Kernel ABI (lab stage3, final): kernel(opcode=3, instr_bo, instr_words, W_bo, A_bo, Y_bo)
-//   W_bo   sub-BO of the weight arena covering one 2D weight matrix (layout: ggml-xdna2-layout.h, GGUF sized, any 64 B aligned offset)
-//   A_bo   64 B header (i32 G, K, M) + M activation vectors, records duplicated per lane (act_bo_bytes / pack_act_bo in compute.h)
-//   Y_bo   f32 [col 8][G][core 4][m][16] -> row = ((col*4 + k)*G + g)*16 + i
-//   one xclbin per (qtype, K, M) serves any N % 512 == 0; the instruction stream is derived from two reference streams by
-//   KernelCache::insts_for (N dependent words are linear in N).
+// Kernel ABI (lab stage5, UNIFIED decode kernel): kernel(opcode=3, instr_bo, instr_words, W_bo, A_bo, Y_bo)
+//   W_bo   sub-BO of the weight arena covering one SPLIT of a 2D weight matrix (layout: ggml-xdna2-layout.h; chunk stream, GGUF sized + chunk padding)
+//   A_bo   [n_act chunks][2 lanes][4096 B]: 64 B header (i32 G, K, qtype, n_act-1, n_w, G*K/256) + one activation vector (pack_act_bo in compute.h)
+//   Y_bo   f32 [col 8][Gs][core 4][16] -> row = ((col*4 + k)*Gs + g)*16 + i (+ split row base)
+//   ONE xclbin serves every qtype, every K <= 12288 and every N; the qtype/K/G are read by the cores from the A_bo header and only 3 values of
+//   the instruction stream (weight words per chain, act words, groups) are patched by KernelCache::insts_for.
 //
-// Execution model: per MUL_MAT tensor a persistent Job (W sub-BO, A BO, Y BO, xrt::run with all arguments set once). Per token the
-// activation is quantized on the host, written to A_bo, the run started and waited, and Y_bo unpermuted into dst. Independent
-// MUL_MATs of one graph split that use the same kernel (hw context) are submitted as ONE xrt::runlist.
+// Execution model: ONE hw context for the whole process. Per MUL_MAT tensor a persistent Job (per split: W sub-BO, A BO, Y BO, xrt::run with all
+// arguments set once). Per token the activation is quantized on the host, written to A_bo, the run started and waited, and Y_bo unpermuted into dst.
+// Independent MUL_MATs of one graph split (any qtype/K/N) are submitted as ONE xrt::runlist.
 //
 // No silent fallback: a weight is only placed in our buffer if placement_ok() (executor available and the kernel for its
 // (qtype, K) cached or buildable); a failing run() aborts. The host reference path exists only for GGML_XDNA2_REFERENCE=1.

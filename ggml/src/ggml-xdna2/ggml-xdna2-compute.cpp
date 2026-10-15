@@ -88,34 +88,29 @@ void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok,
 }
 
 size_t act_bo_bytes(const Geom & g, int m) {
-    const size_t sv = g.fmt == Fmt::Q8_0 ? size_t(g.k) + size_t(g.k) / 8
-                                         : size_t(g.k) + size_t(g.nbk) * 4 + size_t(g.k) / 8;
-    const size_t bytes = (64 + size_t(m) * sv + 63) & ~size_t(63);
-    const size_t recs = (bytes + g.rec_bytes - 1) / g.rec_bytes;
-    return recs * g.rec_bytes * N_LANES;
+    (void) m;   // the unified kernel takes ONE activation vector per dispatch
+    return act_chunks(g.fmt, g.k) * N_LANES * CHUNK;
 }
 
-void pack_act_bo(const ActQ & act, const Geom & g, int64_t t0, int m, uint8_t * dst) {
-    const size_t total = act_bo_bytes(g, m);
-    const size_t recs = total / (g.rec_bytes * N_LANES);
-    std::vector<uint8_t> a(recs * g.rec_bytes, 0);
-    const int32_t hdr[3] = { int32_t(g.groups), int32_t(g.k), int32_t(m) };
+// header i32: 0 G, 1 K, 2 qtype, 3 n_act-1, 4 n_w, 5 total records (see kernels/qku.cc);  `gs` = groups / chunks of the split
+void pack_act_bo(const ActQ & act, const Geom & g, int64_t split, int64_t t, uint8_t * dst) {
+    const size_t nact = act_chunks(g.fmt, g.k);
+    std::vector<uint8_t> a(nact * CHUNK, 0);
+    const int64_t Gs = g.sp_groups(split);
+    const int32_t hdr[6] = { int32_t(Gs), int32_t(g.k), int32_t(fmt_info(g.fmt).qt), int32_t(nact - 1), int32_t(g.sp_nw(split)),
+                             int32_t(Gs * g.nbk) };
     std::memcpy(a.data(), hdr, sizeof(hdr));
     uint8_t * p = a.data() + 64;
-    for (int i = 0; i < m; ++i) {
-        const int64_t t = t0 + i;
-        std::memcpy(p, act.q_row(t), size_t(act.k_pad));
-        p += act.k_pad;
-        std::memcpy(p, act.d_row(t), size_t(act.nd) * sizeof(float));
-        p += act.nd * sizeof(float);
-        if (act.nbs) {
-            std::memcpy(p, act.bs_row(t), size_t(act.nbs) * sizeof(int32_t));
-            p += act.nbs * sizeof(int32_t);
-        }
+    std::memcpy(p, act.q_row(t), size_t(act.k_pad));
+    p += act.k_pad;
+    std::memcpy(p, act.d_row(t), size_t(act.nd) * sizeof(float));
+    p += act.nd * sizeof(float);
+    if (act.nbs) {
+        std::memcpy(p, act.bs_row(t), size_t(act.nbs) * sizeof(int32_t));
     }
-    for (size_t r = 0; r < recs; ++r) {
-        std::memcpy(dst + (r * N_LANES + 0) * g.rec_bytes, a.data() + r * g.rec_bytes, g.rec_bytes);
-        std::memcpy(dst + (r * N_LANES + 1) * g.rec_bytes, a.data() + r * g.rec_bytes, g.rec_bytes);
+    for (size_t r = 0; r < nact; ++r) {   // every chunk duplicated per lane (stride-0 DMA repeat is not supported)
+        std::memcpy(dst + (r * N_LANES + 0) * CHUNK, a.data() + r * CHUNK, CHUNK);
+        std::memcpy(dst + (r * N_LANES + 1) * CHUNK, a.data() + r * CHUNK, CHUNK);
     }
 }
 
@@ -295,11 +290,12 @@ public:
                 if (row0 >= g.n) {
                     continue; // padding group
                 }
-                const uint8_t * grp = job.w + g.group_base(row0);
                 std::fill(y.begin(), y.end(), 0.0f);
 
                 for (int64_t r = 0; r < g.nbk; ++r) {
-                    const uint8_t * rec = grp + size_t(r) * g.rec_stride;
+                    uint8_t rec_buf[MAX_REC_BYTES];
+                    locate(g, const_cast<uint8_t *>(job.w), row0, r).gather(rec_buf, g.rec_bytes);
+                    const uint8_t * rec = rec_buf;
                     const int64_t kb0 = r * g.rec_blocks;
                     const int nblk = g.rec_blocks;
                     switch (g.fmt) {

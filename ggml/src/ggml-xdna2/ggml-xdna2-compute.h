@@ -55,11 +55,11 @@ void quantize_acts(ActQ & out, const layout::Geom & g, const float * src, int64_
 // fp16 -> f32 exactly as done by the NPU kernels with integer ops (normal numbers, zero and subnormals).
 float fp16_to_f32_qk_kernel(uint16_t h);
 
-// Activation BO of the stage3 ABI for M consecutive tokens t0 .. t0+M-1 of `act`:
-//   [64 B header: i32 G, K, M][M vectors: Q8_0F: qs K | f32 d K/32;  Q8_K: qs K | f32 d K/256 | i32 bsum K/32]
-//   padded to ACT_RECS records and every record duplicated per lane (2x), see act_bo_bytes().
-size_t act_bo_bytes(const layout::Geom & g, int m);
-void   pack_act_bo(const ActQ & act, const layout::Geom & g, int64_t t0, int m, uint8_t * dst);
+// Activation BO of one dispatch of the unified kernel ABI (one vector, token t of `act`; `split` = index of the matrix split):
+//   [n_act chunks][2 lanes][CHUNK B], each chunk duplicated per lane;  logical content (see kernels/qku.cc):
+//   [64 B header: i32 G, K, qtype, n_act-1, n_w, G*K/256][Q8_0F: qs K | f32 d K/32;  Q8_K: qs K | f32 d K/256 | i32 bsum K/32]
+size_t act_bo_bytes(const layout::Geom & g, int m = 1);
+void   pack_act_bo(const ActQ & act, const layout::Geom & g, int64_t split, int64_t t, uint8_t * dst);
 
 // One product for one 2D weight matrix: dst[j][i] = sum_k W[i][k] * act[j][k]
 struct MulMatJob {

@@ -63,7 +63,7 @@ std::string read_file(const std::string & p) {
     return ss.str();
 }
 
-const char * const kBuildFiles[] = { "build_kernel.sh", "env.sh", "qk3.cc", "gen3.py" };
+const char * const kBuildFiles[] = { "build_kernel.sh", "env.sh", "qku.cc", "genu.py" };
 
 std::string compute_hash(const std::string & dir) {
     uint64_t h = 1469598103934665603ull;
@@ -81,26 +81,12 @@ std::string compute_hash(const std::string & dir) {
 
 } // namespace
 
-std::string KernelKey::name() const {
-    return std::string(layout::fmt_info(fmt).name) + "_k" + std::to_string(k) + "_m" + std::to_string(m);
-}
-
-bool KernelKey::operator<(const KernelKey & o) const {
-    if (fmt != o.fmt) return int(fmt) < int(o.fmt);
-    if (k != o.k) return k < o.k;
-    return m < o.m;
-}
-
 KernelCache::KernelCache(Config cfg) : cfg_(std::move(cfg)) {
-    if (cfg_.max_jobs < 1) cfg_.max_jobs = 1;
     hash_ = compute_hash(cfg_.kernel_src_dir);
 }
 
 KernelCache::~KernelCache() {
-    wait_all();
-    for (auto & t : threads_) {
-        if (t.joinable()) t.join();
-    }
+    if (thread_.joinable()) thread_.join();
 }
 
 void KernelCache::say(int level, const std::string & msg) const {
@@ -115,55 +101,43 @@ bool KernelCache::toolchain_present() const {
     return executable(cfg_.toolchain_env + "/bin/aiecc") && executable(cfg_.toolchain_env + "/bin/python") && executable("/bin/bash");
 }
 
-bool KernelCache::generator_supports(const KernelKey & key) {
-    // gen3.py: K % 256 == 0; validated on the NPU for K = 4096 and 12288; the activation lives in core memory (K * M bounded);
-    // Q4_K kernel validated for M = 1, 2, 4; the other kernels are M = 1 only
-    if (key.k <= 0 || key.k % 256 != 0 || key.k > 12288) return false;
-    // LAB BUG: the Q6_K kernel returns garbage on every second dispatch for K <= 2560 (checked with repeated identical runs; the
-    // lab's validation read the output after an even number of runs). K >= 3072 (3072, 3328, 3584, 4096, 5120, 9216, 12288) is fine.
-    if (key.fmt == layout::Fmt::Q6_K && key.k < 3072) return false;
-    if (key.fmt == layout::Fmt::Q4_K) return key.m >= 1 && key.m <= 4;
-    return key.m == 1;
+bool KernelCache::supports(const layout::Geom & g) {
+    return layout::k_supported(g.k) && g.n > 0;
 }
 
-static std::string KernelKey_dir(const std::string & cache_dir, const std::string & hash, const KernelKey & key) {
-    return cache_dir + "/" + hash + "/" + key.name();
-}
+std::string KernelCache::dir() const { return cfg_.cache_dir + "/" + hash_ + "/unified"; }
 
-std::string KernelCache::dir_of(const KernelKey & key) const { return KernelKey_dir(cfg_.cache_dir, hash_, key); }
+static const char * const kInstFiles[] = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin" };
 
-bool KernelCache::cached(const KernelKey & key) const {
+bool KernelCache::cached() const {
     {
         std::lock_guard<std::mutex> lk(mu_);
-        auto it = known_cached_.find(key);
-        if (it != known_cached_.end()) return true;
+        if (known_cached_) return true;
     }
-    const std::string d = dir_of(key);
-    const bool ok = exists(d + "/kernel.xclbin") && exists(d + "/insts_n" + std::to_string(kRefN0) + ".bin") &&
-                    exists(d + "/insts_n" + std::to_string(kRefN1) + ".bin");
+    bool ok = exists(dir() + "/kernel.xclbin");
+    for (const char * f : kInstFiles) ok = ok && exists(dir() + "/" + f);
     if (ok) {
         std::lock_guard<std::mutex> lk(mu_);
-        known_cached_[key] = true;
+        known_cached_ = true;
     }
     return ok;
 }
 
-bool KernelCache::available(const KernelKey & key) const {
-    // generator_supports also excludes shapes with known kernel defects, whatever the cache contains
-    return generator_supports(key) && (cached(key) || toolchain_present());
+bool KernelCache::available() const {
+    return cached() || toolchain_present();
 }
 
-bool KernelCache::patch_insts(const std::vector<uint32_t> & a, int64_t n0, const std::vector<uint32_t> & b, int64_t n1, int64_t n,
-                              std::vector<uint32_t> & out) {
-    if (a.size() != b.size() || n <= 0 || n0 <= 0 || n1 <= 0) return false;
-    out = a;
-    for (size_t i = 0; i < a.size(); ++i) {
-        if (a[i] == b[i]) continue;
-        // BD lengths/offsets in bytes: linear in N with zero intercept
-        if (int64_t(a[i]) * n1 != int64_t(b[i]) * n0) return false;
-        const int64_t v = int64_t(a[i]) * n;
-        if (v % n0 != 0) return false;
-        out[i] = uint32_t(v / n0);
+bool KernelCache::patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
+                              std::vector<uint32_t> & inout) {
+    if (base.size() != var.size() || inout.size() != base.size() || p0 <= 0 || p1 <= 0 || p <= 0) return false;
+    for (size_t i = 0; i < base.size(); ++i) {
+        if (base[i] == var[i]) continue;
+        // BD lengths/offsets in words/bytes: linear in the parameter with zero intercept
+        if (int64_t(base[i]) * p1 != int64_t(var[i]) * p0) return false;
+        if (inout[i] != base[i]) return false;            // a word must depend on ONE parameter only
+        const int64_t v = int64_t(base[i]) * p;
+        if (v % p0 != 0 || v / p0 > int64_t(UINT32_MAX)) return false;
+        inout[i] = uint32_t(v / p0);
     }
     return true;
 }
@@ -176,78 +150,49 @@ static bool read_words(const std::string & path, std::vector<uint32_t> & w) {
     return true;
 }
 
-bool KernelCache::insts_for(const KernelKey & key, int64_t n_pad, std::vector<uint32_t> & out) {
-    if (!cached(key)) return false;
+bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out) {
+    if (!cached()) return false;
     std::lock_guard<std::mutex> lk(mu_);
-    auto it = refs_.find(key);
-    if (it == refs_.end()) {
-        std::pair<std::vector<uint32_t>, std::vector<uint32_t>> p;
-        const std::string d = dir_of(key);
-        if (!read_words(d + "/insts_n" + std::to_string(kRefN0) + ".bin", p.first) ||
-            !read_words(d + "/insts_n" + std::to_string(kRefN1) + ".bin", p.second)) return false;
-        it = refs_.emplace(key, std::move(p)).first;
+    if (refs_.empty()) {
+        std::vector<std::vector<uint32_t>> r(4);
+        for (int i = 0; i < 4; ++i) {
+            if (!read_words(dir() + "/" + kInstFiles[i], r[i])) return false;
+        }
+        refs_ = std::move(r);
     }
-    return patch_insts(it->second.first, kRefN0, it->second.second, kRefN1, n_pad, out);
+    out = refs_[0];
+    return patch_param(refs_[0], refs_[1], kRefChain, 2 * kRefChain, chain_words, out) &&
+           patch_param(refs_[0], refs_[2], kRefA, 2 * kRefA, a_words, out) &&
+           patch_param(refs_[0], refs_[3], kRefG, 2 * kRefG, g, out);
 }
 
-void KernelCache::request(const KernelKey & key) {
-    if (cached(key)) return;
+void KernelCache::request() {
+    if (cached()) return;
     std::lock_guard<std::mutex> lk(mu_);
-    auto it = state_.find(key);
-    if (it != state_.end() && it->second != State::Failed) return;   // queued/building/done
-    if (!generator_supports(key) || !toolchain_present()) {
-        state_[key] = State::Failed;
+    if (state_ == State::Building || state_ == State::Done) return;
+    if (!toolchain_present()) {
+        state_ = State::Failed;
         return;
     }
-    state_[key] = State::Queued;
-    queue_.push_back(key);
-    if (pending_ == 0) {
-        batch_t0_ = now_s();
-        batch_ = Stats();
-    }
-    ++pending_;
-    if (active_workers_ < cfg_.max_jobs) {
-        ++active_workers_;
-        threads_.emplace_back([this] { worker(); });
-    }
+    state_ = State::Building;
+    if (thread_.joinable()) thread_.join();
+    thread_ = std::thread([this] { worker(); });
 }
 
 void KernelCache::worker() {
-    for (;;) {
-        KernelKey key;
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            if (queue_.empty()) {
-                --active_workers_;
-                return;
-            }
-            key = queue_.front();
-            queue_.erase(queue_.begin());
-            state_[key] = State::Building;
-        }
-        double secs = 0;
-        const bool ok = run_build(key, secs);
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            state_[key] = ok ? State::Done : State::Failed;
-            (ok ? stats_.built : stats_.failed) += 1;
-            (ok ? batch_.built : batch_.failed) += 1;
-            stats_.sum_seconds += secs;
-            batch_.sum_seconds += secs;
-            if (--pending_ == 0) {
-                batch_.wall_seconds = now_s() - batch_t0_;
-                stats_.wall_seconds += batch_.wall_seconds;
-                char buf[256];
-                std::snprintf(buf, sizeof(buf), "built %d kernel(s), %d failed, %.1f s wall (%.1f s of build work, up to %d parallel)",
-                              batch_.built, batch_.failed, batch_.wall_seconds, batch_.sum_seconds, cfg_.max_jobs);
-                say(batch_.failed ? 1 : 0, buf);
-            }
-        }
-        cv_.notify_all();
+    double secs = 0;
+    const bool ok = run_build(secs);
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        state_ = ok ? State::Done : State::Failed;
+        (ok ? stats_.built : stats_.failed) += 1;
+        stats_.sum_seconds += secs;
+        stats_.wall_seconds += secs;
     }
+    cv_.notify_all();
 }
 
-bool KernelCache::run_build(const KernelKey & key, double & seconds) {
+bool KernelCache::run_build(double & seconds) {
     const double t0 = now_s();
     const std::string root = cfg_.cache_dir + "/" + hash_;
     mkdirs(root);
@@ -256,16 +201,12 @@ bool KernelCache::run_build(const KernelKey & key, double & seconds) {
         std::lock_guard<std::mutex> lk(mu_);
         serial = tmp_counter_++;
     }
-    const std::string name = key.name();
-    const std::string tmp = root + "/.tmp." + std::to_string(getpid()) + "." + std::to_string(serial) + "." + name;
-    const std::string fin = root + "/" + name;
+    const std::string tmp = root + "/.tmp." + std::to_string(getpid()) + "." + std::to_string(serial) + ".unified";
+    const std::string fin = dir();
     mkdirs(tmp);
 
     const std::string script = cfg_.kernel_src_dir + "/build_kernel.sh";
-    const std::string qt = std::to_string(layout::fmt_info(key.fmt).qt);
-    const std::string n0 = std::to_string(kRefN0), n1 = std::to_string(kRefN1), k = std::to_string(key.k), m = std::to_string(key.m);
-    const char * argv[] = { "bash", script.c_str(), cfg_.toolchain_env.c_str(), tmp.c_str(), qt.c_str(), k.c_str(), m.c_str(),
-                            n0.c_str(), n1.c_str(), nullptr };
+    const char * argv[] = { "bash", script.c_str(), cfg_.toolchain_env.c_str(), tmp.c_str(), nullptr };
 
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
@@ -273,15 +214,15 @@ bool KernelCache::run_build(const KernelKey & key, double & seconds) {
     posix_spawn_file_actions_addopen(&fa, 1, log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     posix_spawn_file_actions_adddup2(&fa, 1, 2);
     pid_t pid = 0;
-    say(0, "building " + name);
+    say(0, "building the unified decode kernel");
     int rc = posix_spawn(&pid, "/bin/bash", &fa, nullptr, const_cast<char * const *>(argv), environ);
     posix_spawn_file_actions_destroy(&fa);
     bool ok = false;
     if (rc == 0) {
         int status = 0;
         while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
-        ok = WIFEXITED(status) && WEXITSTATUS(status) == 0 && exists(tmp + "/kernel.xclbin") &&
-             exists(tmp + "/insts_n" + n0 + ".bin") && exists(tmp + "/insts_n" + n1 + ".bin");
+        ok = WIFEXITED(status) && WEXITSTATUS(status) == 0 && exists(tmp + "/kernel.xclbin");
+        for (const char * f : kInstFiles) ok = ok && exists(tmp + "/" + f);
     }
     seconds = now_s() - t0;
     char tbuf[64];
@@ -293,35 +234,30 @@ bool KernelCache::run_build(const KernelKey & key, double & seconds) {
             ok = exists(fin + "/kernel.xclbin");
             rmtree(tmp);
         }
-        if (ok) say(0, "built " + name + " in " + tbuf);
+        if (ok) say(0, std::string("built the unified decode kernel in ") + tbuf);
     } else {
         const std::string failed = fin + ".failed.log";
         std::string txt = read_file(log);
         if (txt.size() > 4000) txt = txt.substr(txt.size() - 4000);
         std::ofstream(failed) << txt;
         rmtree(tmp);
-        say(2, "build of " + name + " FAILED after " + tbuf + " (see " + failed + ")");
+        say(2, std::string("build of the unified decode kernel FAILED after ") + tbuf + " (see " + failed + ")");
     }
     return ok;
 }
 
-bool KernelCache::wait(const KernelKey & key) {
-    if (cached(key)) return true;
+bool KernelCache::wait() {
+    if (cached()) return true;
     std::unique_lock<std::mutex> lk(mu_);
-    cv_.wait(lk, [&] {
-        auto it = state_.find(key);
-        return it == state_.end() || it->second == State::Done || it->second == State::Failed;
-    });
+    cv_.wait(lk, [&] { return state_ != State::Building; });
     lk.unlock();
-    return cached(key);
+    return cached();
 }
 
 int KernelCache::wait_all() {
     std::unique_lock<std::mutex> lk(mu_);
-    cv_.wait(lk, [&] { return pending_ == 0; });
-    int failed = 0;
-    for (auto & kv : state_) failed += kv.second == State::Failed;
-    return failed;
+    cv_.wait(lk, [&] { return state_ != State::Building; });
+    return state_ == State::Failed ? 1 : 0;
 }
 
 KernelCache::Stats KernelCache::stats() const {
