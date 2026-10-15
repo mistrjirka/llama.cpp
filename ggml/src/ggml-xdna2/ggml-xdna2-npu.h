@@ -27,6 +27,18 @@
 
 namespace xdna2 {
 
+// One product on the PREFILL kernel (64-token tiles): activations are the raw f32 rows (encoded to bfp16ebs8 by the executor)
+struct PrefillJob {
+    const Arena *   arena = nullptr;
+    size_t          w_off = 0;
+    layout::Geom    geom;
+    const float *   x = nullptr;         // n_tok rows of geom.k floats
+    size_t          x_stride = 0;        // bytes between rows
+    int64_t         n_tok = 0;
+    float *         dst = nullptr;       // dst row j at (char *) dst + j * dst_row_stride, geom.n floats each
+    size_t          dst_row_stride = 0;
+};
+
 struct ExecStats {
     uint64_t runs = 0;            // xrt runs (tokens x matmuls)
     uint64_t batches = 0;         // runlist / single submissions
@@ -38,6 +50,15 @@ struct ExecStats {
     uint64_t n_switch = 0;        // submissions whose hw context differs from the previous one
     double   t_wait_switch = 0;   // wait time of those submissions (s)
     double   bytes_w = 0;         // weight bytes streamed
+    // prefill path
+    uint64_t pf_jobs = 0, pf_dispatches = 0, pf_waves = 0;
+    double   pf_t_encode = 0;     // f32 -> bfp16ebs8 (host, threaded)
+    double   pf_t_abo = 0;        // A BO fill (replicated slabs) + sync
+    double   pf_t_npu = 0;        // start .. wait of the dispatches
+    double   pf_t_unperm = 0;     // sync Y + unpermute into dst
+    double   pf_t_setup = 0;
+    double   pf_bytes_w = 0;      // weight bytes streamed by the prefill kernel (all tiles)
+    uint64_t pf_switches = 0;     // hw context switches (decode <-> prefill)
 };
 
 class NpuExecutor {
@@ -56,6 +77,11 @@ public:
     // run n independent jobs (each act->n_tok tokens), blocking. false = failure.
     virtual bool run(const MulMatJob * jobs, size_t n_jobs) = 0;
 
+    // prefill kernel available (built or buildable)
+    virtual bool prefill_available() { return false; }
+    // run n independent prefill jobs, blocking. false = failure.
+    virtual bool run_prefill(const PrefillJob * jobs, size_t n_jobs) { (void) jobs; (void) n_jobs; return false; }
+
     virtual ExecStats stats() const = 0;
     virtual void reset_stats() = 0;
 };
@@ -67,11 +93,16 @@ NpuExecutor & npu_executor();
 // ComputePath that forwards to npu_executor().
 ComputePath & npu_path();
 
-// Global kernel cache (honours GGML_XDNA2_CACHE_DIR). Never null.
-KernelCache & kernel_cache();
+// Global kernel caches (honour GGML_XDNA2_CACHE_DIR). Never null.
+KernelCache & kernel_cache();            // decode kernel
+KernelCache & prefill_kernel_cache();    // prefill kernel
 
 // GGML_XDNA2_REFERENCE=1: run the host reference emulation instead of the NPU (tests/debug only).
 bool reference_mode();
+
+// Prefill kernel policy: GGML_XDNA2_PF_DISABLE=1 turns it off; MUL_MATs with at least prefill_min_tokens() activation rows (GGML_XDNA2_PF_MIN, default 32) use it.
+bool prefill_enabled();
+int  prefill_min_tokens();
 
 // Placement policy: may a weight of this geometry live in our buffer (supports_op)?
 //   reference mode: always. Otherwise only if the NPU executor is usable and the kernel for (qtype, K) is cached or can be

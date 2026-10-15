@@ -13,8 +13,8 @@
 //
 // Build step: kernels/build_kernel.sh (IRON generator genu.py + kernel qku.cc + peano + aiecc, lab stage5), stored in the cache dir:
 //
-//   <cache_dir>/<src_hash>/unified/kernel.xclbin
-//                                  insts_base.bin insts_cw.bin insts_aw.bin insts_g.bin     (reference instruction streams)
+//   <cache_dir>/<src_hash>/unified/kernel.xclbin   (decode)   or   <cache_dir>/<src_hash>/prefill/kernel.xclbin
+//                                  insts_base.bin insts_cw.bin insts_aw.bin insts_g.bin|insts_ow.bin     (reference instruction streams)
 //   <cache_dir>/<src_hash>/unified.failed.log                                               (only after a failed build)
 //
 //   src_hash = 64-bit FNV-1a of the build step's sources (qku.cc, genu.py, build_kernel.sh, env.sh), so editing a kernel or
@@ -37,13 +37,20 @@ namespace xdna2 {
 
 constexpr int64_t kRefChain = 2048;   // reference values of the instruction stream parameters (genu.py --chain_words/--a_words/--g)
 constexpr int64_t kRefA     = 2048;
-constexpr int64_t kRefG     = 2;
+constexpr int64_t kRefG     = 2;          // decode: groups per core
+constexpr int64_t kRefO     = 2048;       // prefill (genp.py --o_words): f32 words drained per column
+
+// The two NPU kernels (two xclbins, two hw contexts; switching costs ~2.5 ms, so only at the prefill/decode boundary):
+//   Decode   M = 1 GEMV kernel (qku.cc + genu.py): third stream parameter = groups per core
+//   Prefill  64-token tile GEMM kernel (pf.cc + genp.py): third stream parameter = output words per column
+enum class Product { Decode, Prefill };
 
 class KernelCache {
 public:
     struct Config {
         std::string cache_dir;
-        std::string kernel_src_dir;   // directory with build_kernel.sh, qku.cc, genu.py, env.sh
+        std::string kernel_src_dir;   // directory with the build scripts and kernel sources (kernels/)
+        Product     product = Product::Decode;
         std::string toolchain_env;    // mlir-aie python environment (bin/aiecc, bin/python, lib/python*/site-packages/llvm-aie)
         int         max_jobs = 4;     // unused (one kernel), kept for tools
         std::function<void(int level /*0 info, 1 warn, 2 error*/, const std::string &)> log;
@@ -64,8 +71,8 @@ public:
     std::string dir() const;
     std::string xclbin_path() const { return dir() + "/kernel.xclbin"; }
 
-    // Instruction stream (words) of a dispatch, derived from the reference streams.
-    bool insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out);
+    // Instruction stream (words) of a dispatch, derived from the reference streams. third = groups per core (decode) / output words per column (prefill).
+    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out);
     // the pure patching rule (also used by the tool/tests): the words where base and var differ are linear in the parameter
     // (zero intercept): w(p) = base * p / p0. Applied on top of `inout`.
     static bool patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,

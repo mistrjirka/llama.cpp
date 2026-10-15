@@ -23,6 +23,7 @@
 
 #include "ggml-xdna2-sync.h"
 #include "ggml-xdna2-kernels.h"
+#include "ggml-xdna2-bfp.h"
 
 namespace xdna2 {
 
@@ -46,6 +47,30 @@ struct Ctx {
     std::map<std::vector<SJob *>, xrt::runlist> runlists;
 };
 
+// The PREFILL hw context (second xclbin): instruction BOs are per (chain, a, o) words.
+struct PfCtx {
+    xrt::xclbin                       xb;
+    xrt::hw_context                   hw;
+    xrt::kernel                       kern;
+    std::map<std::tuple<int64_t, int64_t, int64_t>, xrt::bo> instr;
+};
+
+// Activation + output BOs shared by all prefill dispatches of one shape (a dispatch is a tile; PF_MAX_TILES tiles per wave).
+struct PfPool {
+    size_t  a_tile = 0, a_stride = 0, y_tile = 0;
+    xrt::bo a, y;
+    std::vector<xrt::bo> a_sub, y_sub;      // per tile
+};
+
+// One prefill job split: the weight sub-BO and one xrt::run per tile slot (arguments set once).
+struct PfSplit {
+    layout::Geom geom;
+    int64_t      split = 0;
+    xrt::bo      w;
+    PfPool *     pool = nullptr;
+    std::vector<xrt::run> runs;             // per tile slot, created lazily
+};
+
 // One dispatch: one split of one 2D weight matrix.
 struct SJob {
     layout::Geom  geom;
@@ -54,7 +79,9 @@ struct SJob {
     size_t        w_off = 0;
     xrt::bo       w, a, y;
     size_t        a_bytes = 0;
-    xrt::run      run;
+    xrt::run      run;        // member of runlists (cannot be started on its own)
+    xrt::run      run_solo;   // same arguments, started on its own
+    uint32_t      nwords = 0;
 };
 
 class XrtExecutor final : public NpuExecutor {
@@ -71,6 +98,9 @@ public:
     ~XrtExecutor() override {
         std::lock_guard<std::mutex> lk(mu_);
         if (ctx_) ctx_->runlists.clear();
+        pf_jobs_.clear();
+        pf_pools_.clear();
+        pf_ctx_.reset();
         jobs_.clear();
         ctx_.reset();
     }
@@ -83,6 +113,9 @@ public:
 
     void release_arena(const Arena * arena) override {
         std::lock_guard<std::mutex> lk(mu_);
+        for (auto it = pf_jobs_.begin(); it != pf_jobs_.end();) {
+            if (std::get<0>(it->first) == arena) it = pf_jobs_.erase(it); else ++it;
+        }
         for (auto it = jobs_.begin(); it != jobs_.end();) {
             if (std::get<0>(it->first) == arena) {
                 unbind(it->second);
@@ -119,6 +152,7 @@ private:
                 it = uses ? ctx_->runlists.erase(it) : std::next(it);
             }
             j->run = xrt::run();
+            j->run_solo = xrt::run();
         }
     }
 
@@ -196,6 +230,16 @@ private:
             r.set_arg(4, j->a);
             r.set_arg(5, j->y);
             j->run = std::move(r);
+            {
+                xrt::run r2(c.kern);
+                r2.set_arg(0, 3);
+                r2.set_arg(1, bi);
+                r2.set_arg(2, c.instr_words[std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(j->a_bytes / 4), g.sp_groups(s))]);
+                r2.set_arg(3, j->w);
+                r2.set_arg(4, j->a);
+                r2.set_arg(5, j->y);
+                j->run_solo = std::move(r2);
+            }
             sj.push_back(std::move(j));
         }
         st_.t_setup += now_s() - t0;
@@ -204,8 +248,8 @@ private:
 
     void execute(Ctx & c, const std::vector<SJob *> & key) {
         if (key.size() == 1) {
-            key[0]->run.start();
-            key[0]->run.wait2();
+            key[0]->run_solo.start();
+            key[0]->run_solo.wait2();
             return;
         }
         auto it = c.runlists.find(key);
@@ -220,6 +264,7 @@ private:
 
     bool run_locked(const MulMatJob * jobs, size_t n_jobs) {
         Ctx & c = get_ctx();
+        if (last_ctx_ != 1) { if (last_ctx_ != 0) st_.pf_switches++; last_ctx_ = 1; }
         // all matmuls of the batch are independent: ONE runlist per token in one hw context (no context switch ever)
         std::vector<Splits *> js;
         int64_t max_tok = 0;
@@ -297,11 +342,203 @@ private:
         }
     }
 
+    // ---------------------------------------------------------------- prefill path
+    PfCtx & get_pf_ctx() {
+        if (pf_ctx_) return *pf_ctx_;
+        const double t0 = now_s();
+        KernelCache & kc = prefill_kernel_cache();
+        kc.request();
+        const double tw = now_s();
+        if (!kc.wait()) {
+            throw std::runtime_error("the NPU prefill kernel is not available (build failed, see the kernel cache)");
+        }
+        st_.t_kernel_wait += now_s() - tw;
+        auto c = std::make_unique<PfCtx>();
+        c->xb = xrt::xclbin(kc.xclbin_path());
+        dev_.register_xclbin(c->xb);
+        c->hw = xrt::hw_context(dev_, c->xb.get_uuid());
+        std::string kn;
+        for (auto & k : c->xb.get_kernels()) {
+            if (k.get_name().rfind("MLIR_AIE", 0) == 0) { kn = k.get_name(); break; }
+        }
+        if (kn.empty()) throw std::runtime_error("no MLIR_AIE kernel in " + kc.xclbin_path());
+        c->kern = xrt::kernel(c->hw, kn);
+        pf_ctx_ = std::move(c);
+        st_.pf_t_setup += now_s() - t0;
+        return *pf_ctx_;
+    }
+
+    PfPool & get_pf_pool(PfCtx & c, size_t a_tile, size_t y_tile) {
+        const auto key = std::make_pair(a_tile, y_tile);
+        auto it = pf_pools_.find(key);
+        if (it != pf_pools_.end()) return *it->second;
+        auto p = std::make_unique<PfPool>();
+        p->a_tile = a_tile;
+        p->a_stride = (a_tile + 4095) / 4096 * 4096;
+        p->y_tile = y_tile;
+        p->a = xrt::ext::bo{dev_, p->a_stride * PF_MAX_TILES};
+        p->y = xrt::ext::bo{dev_, y_tile * PF_MAX_TILES};
+        std::memset(p->a.map<char *>(), 0, p->a_stride * PF_MAX_TILES);
+        p->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        std::memset(p->y.map<char *>(), 0, y_tile * PF_MAX_TILES);
+        p->y.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        for (int t = 0; t < PF_MAX_TILES; ++t) {
+            p->a_sub.emplace_back(p->a, a_tile, p->a_stride * t);
+            p->y_sub.emplace_back(p->y, y_tile, y_tile * t);
+        }
+        (void) c;
+        return *pf_pools_.emplace(key, std::move(p)).first->second;
+    }
+
+    const xrt::bo & get_pf_instr(PfCtx & c, int64_t chain_words, int64_t a_words, int64_t o_words, uint32_t & nwords) {
+        const auto key = std::make_tuple(chain_words, a_words, o_words);
+        auto it = c.instr.find(key);
+        if (it == c.instr.end()) {
+            std::vector<uint32_t> w;
+            if (!prefill_kernel_cache().insts_for(chain_words, a_words, o_words, w)) {
+                throw std::runtime_error("cannot derive the instruction stream of the prefill kernel for chain_words=" + std::to_string(chain_words));
+            }
+            xrt::bo bi(dev_, w.size() * 4, xrt::bo::flags::cacheable, c.kern.group_id(1));
+            std::memcpy(bi.map<char *>(), w.data(), w.size() * 4);
+            bi.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            pf_instr_words_[key] = uint32_t(w.size());
+            it = c.instr.emplace(key, std::move(bi)).first;
+        }
+        nwords = pf_instr_words_[key];
+        return it->second;
+    }
+
+    using PfSplits = std::vector<std::unique_ptr<PfSplit>>;
+    PfSplits & get_pf_job(const PrefillJob & pj, PfCtx & c) {
+        const layout::Geom & g = pj.geom;
+        const JobKey key{ pj.arena, pj.w_off, int(g.fmt), g.n, g.k };
+        auto it = pf_jobs_.find(key);
+        if (it != pf_jobs_.end()) return it->second;
+        const double t0 = now_s();
+        const XrtBoArena * xa = dynamic_cast<const XrtBoArena *>(pj.arena);
+        if (!xa) throw std::runtime_error("weights are not in an NPU buffer");
+        PfSplits sj;
+        for (int64_t s = 0; s < g.nsplit; ++s) {
+            auto j = std::make_unique<PfSplit>();
+            j->geom = g;
+            j->split = s;
+            j->w = xrt::bo(xa->bo(), g.sp_bytes(s), pj.w_off + g.sp_off(s));
+            const int64_t nsb = g.sp_nsb(s);
+            j->pool = &get_pf_pool(c, pf_a_tile_bytes(g.nbk, nsb), pf_y_tile_bytes(nsb));
+            j->runs.resize(PF_MAX_TILES);
+            sj.push_back(std::move(j));
+        }
+        st_.pf_t_setup += now_s() - t0;
+        return pf_jobs_.emplace(key, std::move(sj)).first->second;
+    }
+
+    xrt::run & get_pf_run(PfCtx & c, PfSplit & j, int t) {
+        if (j.runs[t]) return j.runs[t];
+        const layout::Geom & g = j.geom;
+        const int64_t nsb = g.sp_nsb(j.split);
+        uint32_t nw = 0;
+        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(j.pool->a_tile / 4), nsb * 4 * layout::GSB * 1024, nw);
+        xrt::run r(c.kern);
+        r.set_arg(0, 3);
+        r.set_arg(1, bi);
+        r.set_arg(2, nw);
+        r.set_arg(3, j.w);
+        r.set_arg(4, j.pool->a_sub[t]);
+        r.set_arg(5, j.pool->y_sub[t]);
+        j.runs[t] = std::move(r);
+        return j.runs[t];
+    }
+
+    bool prefill_available() override {
+        if (!prefill_enabled()) return false;
+        return prefill_kernel_cache().available();
+    }
+
+    bool run_prefill(const PrefillJob * jobs, size_t n_jobs) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        try {
+            return run_prefill_locked(jobs, n_jobs);
+        } catch (const std::exception & e) {
+            GGML_LOG_ERROR("ggml-xdna2: NPU prefill run failed: %s\n", e.what());
+            return false;
+        }
+    }
+
+    bool run_prefill_locked(const PrefillJob * jobs, size_t n_jobs) {
+        PfCtx & c = get_pf_ctx();
+        if (last_ctx_ != 2) { if (last_ctx_ != 0) st_.pf_switches++; last_ctx_ = 2; }
+        std::vector<PfSplits *> js;
+        for (size_t i = 0; i < n_jobs; ++i) js.push_back(&get_pf_job(jobs[i], c));
+        // jobs sharing the same input rows share the encoded slabs
+        std::vector<std::vector<uint8_t>> enc(n_jobs);
+        std::vector<int> enc_of(n_jobs, -1);
+        int64_t max_tiles = 0;
+        for (size_t i = 0; i < n_jobs; ++i) max_tiles = std::max(max_tiles, (jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK);
+        for (int64_t w0 = 0; w0 < max_tiles; w0 += PF_MAX_TILES) {
+            st_.pf_waves++;
+            for (size_t i = 0; i < n_jobs; ++i) {
+                const PrefillJob & pj = jobs[i];
+                const int64_t ntiles_all = (pj.n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK;
+                if (w0 >= ntiles_all) continue;
+                const int T = int(std::min<int64_t>(PF_MAX_TILES, ntiles_all - w0));
+                const layout::Geom & g = pj.geom;
+                // 1. encode (shared with an earlier job of this call that has the same input)
+                double t0 = now_s();
+                int src = -1;
+                for (size_t q = 0; q < i; ++q) {
+                    if (jobs[q].x == pj.x && jobs[q].x_stride == pj.x_stride && jobs[q].n_tok == pj.n_tok && jobs[q].geom.k == g.k) { src = int(q); break; }
+                }
+                if (src >= 0 && enc_of[src] >= 0) {
+                    enc_of[i] = enc_of[src];
+                } else {
+                    enc[i].resize(size_t(T) * size_t(g.nbk) * PF_SLAB_BYTES);
+                    pf_encode_acts(enc[i].data(), pj.x, pj.x_stride, pj.n_tok, g.k, int(w0), T);
+                    enc_of[i] = int(i);
+                }
+                // (the cache entry of the sharing job may belong to a previous wave: re-encode when the wave changed)
+                st_.pf_t_encode += now_s() - t0;
+                const std::vector<uint8_t> & slabs = enc[enc_of[i]];
+                for (auto & sp : *js[i]) {
+                    PfSplit & j = *sp;
+                    const int64_t nsb = g.sp_nsb(j.split);
+                    // 2. A BO
+                    t0 = now_s();
+                    uint8_t * abo = j.pool->a.map<uint8_t *>();
+                    pf_build_a_bo(abo, j.pool->a_stride, slabs.data(), T, g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(j.split));
+                    j.pool->a.sync(XCL_BO_SYNC_BO_TO_DEVICE, j.pool->a_stride * (T - 1) + j.pool->a_tile, 0);
+                    st_.pf_t_abo += now_s() - t0;
+                    // 3. dispatch the T tiles
+                    t0 = now_s();
+                    for (int t = 0; t < T; ++t) get_pf_run(c, j, t).start();
+                    for (int t = 0; t < T; ++t) j.runs[t].wait2();
+                    st_.pf_t_npu += now_s() - t0;
+                    st_.pf_dispatches += T;
+                    st_.pf_bytes_w += double(g.sp_bytes(j.split)) * T;
+                    // 4. results
+                    t0 = now_s();
+                    sync_from_device(j.pool->y, j.pool->y_tile * T);
+                    pf_unpermute(j.pool->y.map<const float *>(), T, int(w0), pj.n_tok, g, j.split, pj.dst, pj.dst_row_stride);
+                    st_.pf_t_unperm += now_s() - t0;
+                }
+                st_.pf_jobs++;
+            }
+            // encoded slabs belong to one wave
+            for (auto & e : enc) e.clear();
+            std::fill(enc_of.begin(), enc_of.end(), -1);
+        }
+        return true;
+    }
+
     std::mutex mu_;
     xrt::device dev_;
     bool ok_ = false;
     std::unique_ptr<Ctx> ctx_;
     std::map<JobKey, Splits> jobs_;
+    std::unique_ptr<PfCtx> pf_ctx_;
+    std::map<std::pair<size_t, size_t>, std::unique_ptr<PfPool>> pf_pools_;
+    std::map<JobKey, PfSplits> pf_jobs_;
+    std::map<std::tuple<int64_t, int64_t, int64_t>, uint32_t> pf_instr_words_;
+    int last_ctx_ = 0;      // 0 none, 1 decode, 2 prefill
     ExecStats st_;
 };
 

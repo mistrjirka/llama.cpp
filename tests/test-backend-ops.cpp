@@ -1536,6 +1536,9 @@ struct test_case {
             }
 
             double err = ud->tc->err(f1.data(), f2.data(), f1.size());
+            if (std::getenv("GGML_TEST_PRINT_ERR")) {
+                printf("[%s] ERR = %.3e (max %.1e) ", ggml_op_desc(t1), err, ud->tc->max_err(ud->backend1));
+            }
             if (err > ud->tc->max_err(ud->backend1)) {
                 printf("[%s] ERR = %.9f > %.9f ", ggml_op_desc(t1), err, ud->tc->max_err(ud->backend1));
                 //for (int i = 0; i < (int) f1.size(); i++) {
@@ -10933,6 +10936,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 6, 4096, 5120, {1, 1}, {1, 1}));
+
+    // large-batch products: n >= 32 activation rows select the prefill kernel of accelerator backends (e.g. XDNA2: bfp16 tiles of 64 tokens);
+    // partial tiles (n % 64), several superblocks, N that is not a multiple of 512 and batched/broadcast weights
+    for (ggml_type type_a : {GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0}) {
+        for (int64_t n : {32, 64, 100, 512}) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 512,  n,  256, {1, 1}, {1, 1}));
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 3072, n, 1024, {1, 1}, {1, 1}));   // 6 groups per core: superblocks of 5 + 1
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 1000, n, 2560, {1, 1}, {1, 1}));   // N not a multiple of 512 or 16
+        }
+        test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 1536, 1000, 4096, {1, 1}, {1, 1}));    // two waves of tiles
+        test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 1024, 64, 12288, {1, 1}, {1, 1}));      // K = KMAX
+        test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 512, 70, 512, {3, 2}, {1, 1}));
+        test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 512, 70, 512, {3, 2}, {2, 1}));
+    }
 
     // SIMD K boundaries, including tails shorter than one vector.
     for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_BF16}) {

@@ -3,6 +3,7 @@
 #include "ggml.h"
 #include "ggml-impl.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <cstring>
@@ -92,9 +93,35 @@ KernelCache & kernel_cache() {
     return c;
 }
 
+KernelCache & prefill_kernel_cache() {
+    static KernelCache c([] {
+        KernelCache::Config cfg;
+        cfg.cache_dir      = default_cache_dir();
+        cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
+        cfg.toolchain_env  = GGML_XDNA2_MLIR_AIE_ENV;
+        cfg.product        = Product::Prefill;
+        cfg.max_jobs       = 4;
+        cfg.log            = kernel_log;
+        return cfg;
+    }());
+    return c;
+}
+
 bool reference_mode() {
     const char * e = std::getenv("GGML_XDNA2_REFERENCE");
     return e && *e && std::strcmp(e, "0") != 0;
+}
+
+bool prefill_enabled() {
+    const char * e = std::getenv("GGML_XDNA2_PF_DISABLE");
+    return !(e && *e && std::strcmp(e, "0") != 0);
+}
+
+int prefill_min_tokens() {
+    if (const char * e = std::getenv("GGML_XDNA2_PF_MIN")) {
+        if (*e) return std::max(1, std::atoi(e));
+    }
+    return 32;
 }
 
 bool placement_ok(const layout::Geom & geom) {
@@ -113,6 +140,7 @@ void request_kernels(const layout::Geom & geom) {
     }
     if (KernelCache::supports(geom)) {
         kernel_cache().request();
+        if (prefill_enabled()) prefill_kernel_cache().request();
     }
 }
 

@@ -63,6 +63,12 @@ static size_t xdna2_slices(const ggml_tensor * t) {
 
 static ggml_backend_buffer_type_t xdna2_buft();
 
+// weight formats the prefill kernel handles (others run on the decode kernel, token by token)
+static bool xdna2_pf_supports(layout::Fmt fmt) {
+    (void) fmt;
+    return true;   // Q4_K, Q5_K, Q6_K, Q8_0
+}
+
 //
 // buffer
 //
@@ -245,8 +251,10 @@ struct ggml_backend_xdna2_context {
     std::deque<ActQ>       acts;          // activation scratch, one per queued job
     size_t                 n_acts = 0;
     std::vector<MulMatJob> pending;       // queued independent jobs
+    std::vector<PrefillJob> pf_pending;   // queued independent prefill-kernel jobs
     std::vector<std::pair<const char *, const char *>> pending_dst;   // [begin, end) of the pending outputs
     double t_quant = 0, t_graph = 0;      // seconds
+    double t_last_end = 0, t_between = 0; // time between two graph computes of this backend (CPU splits + copies)
     uint64_t n_graphs = 0, n_mul_mat = 0;
 };
 
@@ -260,6 +268,16 @@ static double xdna2_now() {
 }
 
 static void xdna2_flush(ggml_backend_xdna2_context * ctx) {
+    if (!ctx->pf_pending.empty()) {
+        if (!npu_executor().run_prefill(ctx->pf_pending.data(), ctx->pf_pending.size())) {
+            const layout::Geom & g = ctx->pf_pending[0].geom;
+            GGML_ABORT("%s: NPU prefill path failed (first job: %s %lld x %lld weight)", __func__, layout::fmt_info(g.fmt).name, (long long) g.n, (long long) g.k);
+        }
+        ctx->pf_pending.clear();
+        if (ctx->pending.empty()) {
+            ctx->pending_dst.clear();
+        }
+    }
     if (ctx->pending.empty()) {
         return;
     }
@@ -305,9 +323,25 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
         }
     }
 
+    const bool use_pf = !reference_mode() && ne11 >= prefill_min_tokens() && xdna2_pf_supports(geom.fmt) && npu_executor().prefill_available();
+
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
         for (int64_t i12 = 0; i12 < ne12; ++i12) {
             const int64_t i02 = i12 / r2, i03 = i13 / r3;
+
+            if (use_pf) {
+                PrefillJob pj;
+                pj.arena          = arena;
+                pj.w_off          = base_off + size_t(i03 * ne02 + i02) * geom.bytes;
+                pj.geom           = geom;
+                pj.x              = reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13);
+                pj.x_stride       = nb11;
+                pj.n_tok          = ne11;
+                pj.dst            = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i12 * nb2 + i13 * nb3);
+                pj.dst_row_stride = nb1;
+                ctx->pf_pending.push_back(pj);
+                continue;
+            }
 
             if (ctx->n_acts == ctx->acts.size()) {
                 ctx->acts.emplace_back();
@@ -346,11 +380,21 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
 #define XLOG(...) do { if (to_stderr) { fprintf(stderr, __VA_ARGS__); } else { GGML_LOG_INFO(__VA_ARGS__); } } while (0)
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();
+        XLOG("ggml-xdna2: time between backend graph computes (CPU splits + tensor copies) %.3f s\n", ctx->t_between);
         XLOG("ggml-xdna2: %llu graph splits, %llu mul_mat; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
                       "pack act %.3f s, wait %.3f s (%llu hw context switches: %.3f s), unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
                       (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, ctx->t_quant, ctx->t_graph,
                       (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, (unsigned long long) st.n_switch, st.t_wait_switch, st.t_unpermute, st.t_setup,
                       st.t_kernel_wait, st.bytes_w / 1e9);
+    }
+    {
+        const ExecStats st = npu_executor().stats();
+        if (st.pf_jobs > 0) {
+            XLOG("ggml-xdna2: prefill: %llu jobs, %llu waves, %llu tile dispatches; encode %.3f s, A-BO fill+sync %.3f s, NPU %.3f s, Y sync+unpermute %.3f s, setup %.3f s, "
+                 "weights streamed %.2f GB (%.1f GB/s while on the NPU), %llu hw context switches\n",
+                 (unsigned long long) st.pf_jobs, (unsigned long long) st.pf_waves, (unsigned long long) st.pf_dispatches, st.pf_t_encode, st.pf_t_abo, st.pf_t_npu,
+                 st.pf_t_unperm, st.pf_t_setup, st.pf_bytes_w / 1e9, st.pf_t_npu > 0 ? st.pf_bytes_w / 1e9 / st.pf_t_npu : 0.0, (unsigned long long) st.pf_switches);
+        }
     }
     XLOG("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",
                   (unsigned long long) g_set_calls.load(), g_set_bytes.load() / 1e6, g_set_ns.load() / 1e9,
@@ -372,7 +416,10 @@ static struct StatsAtExit {
 
 static void ggml_backend_xdna2_free(ggml_backend_t backend) {
     auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
-    xdna2_print_stats(ctx);
+    {
+        const char * e = std::getenv("GGML_XDNA2_STATS");
+        xdna2_print_stats(ctx, e && *e && std::strcmp(e, "0") != 0);
+    }
     if (g_last_ctx == ctx) g_last_ctx = nullptr;
     delete ctx;
     delete backend;
@@ -381,6 +428,7 @@ static void ggml_backend_xdna2_free(ggml_backend_t backend) {
 static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
     auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
     const double t_start = xdna2_now();
+    if (ctx->t_last_end > 0) ctx->t_between += t_start - ctx->t_last_end;
 
     for (int i = 0; i < cgraph->n_nodes; i++) {
         ggml_tensor * node = cgraph->nodes[i];
@@ -408,7 +456,8 @@ static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend,
 
     xdna2_flush(ctx);
     ctx->n_graphs++;
-    ctx->t_graph += xdna2_now() - t_start;
+    ctx->t_last_end = xdna2_now();
+    ctx->t_graph += ctx->t_last_end - t_start;
     return GGML_STATUS_SUCCESS;
 }
 

@@ -200,7 +200,28 @@ static int compare(const std::string & fname, int64_t n, int64_t k, const char *
     return ok ? 0 : 1;
 }
 
+// --pack FMT N K blk.bin out.bin: write the device layout of the GGUF blocks (lab tooling)
+static int pack_file(const std::string & fname, int64_t n, int64_t k, const char * blk, const char * out) {
+    Fmt fmt = Fmt::Q4_K;
+    for (int i = 0; i < int(Fmt::COUNT); ++i) if (fname == fmt_info(Fmt(i)).name) fmt = Fmt(i);
+    const Geom g = make_geom(fmt, n, k);
+    std::vector<uint8_t> src(g.gguf_bytes), dev(g.bytes, 0);
+    FILE * f = std::fopen(blk, "rb");
+    if (!f || std::fread(src.data(), 1, src.size(), f) != src.size()) { std::printf("cannot read %zu bytes from %s\n", src.size(), blk); return 2; }
+    std::fclose(f);
+    pack(g, dev.data(), src.data());
+    f = std::fopen(out, "wb");
+    std::fwrite(dev.data(), 1, dev.size(), f);
+    std::fclose(f);
+    std::printf("packed %s N=%ld K=%ld: %zu -> %zu bytes, nsplit=%ld Gs=%ld sp_nw=%zu chain_words=%zu nsb=%ld\n", fname.c_str(), long(n), long(k), src.size(), dev.size(),
+                long(g.nsplit), long(g.sp_groups(0)), g.sp_nw(0), g.sp_chain_words(0), long(g.sp_nsb(0)));
+    return 0;
+}
+
 int main(int argc, char ** argv) {
+    if (argc == 7 && std::string(argv[1]) == "--pack") {
+        return pack_file(argv[2], std::atoll(argv[3]), std::atoll(argv[4]), argv[5], argv[6]);
+    }
     if (argc == 7 && std::string(argv[1]) == "--compare") {
         return compare(argv[2], std::atoll(argv[3]), std::atoll(argv[4]), argv[5], argv[6]);
     }
