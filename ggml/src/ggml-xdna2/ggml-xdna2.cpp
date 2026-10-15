@@ -122,8 +122,8 @@ static void ggml_backend_xdna2_buffer_memset_tensor(ggml_backend_buffer_t buffer
         layout::tensor_pack_range(xdna2_geom(tensor), static_cast<uint8_t *>(tensor->data), tmp.data(), offset, size);
         xdna2_ctx(buffer)->arena->sync_to_device(xdna2_arena_off(buffer, tensor), xdna2_tensor_dev_bytes(tensor));
     } else {
+        // plain tensors (activations) are only ever read and written by the host: no cache maintenance needed
         std::memset(static_cast<uint8_t *>(tensor->data) + offset, value, size);
-        xdna2_ctx(buffer)->arena->sync_to_device(xdna2_arena_off(buffer, tensor) + offset, size);
     }
 }
 
@@ -139,7 +139,6 @@ static void ggml_backend_xdna2_buffer_set_tensor(ggml_backend_buffer_t buffer, g
         arena->sync_to_device(xdna2_arena_off(buffer, tensor), xdna2_tensor_dev_bytes(tensor));
     } else {
         std::memcpy(static_cast<uint8_t *>(tensor->data) + offset, data, size);
-        arena->sync_to_device(xdna2_arena_off(buffer, tensor) + offset, size);
     }
 }
 
@@ -154,7 +153,6 @@ static void ggml_backend_xdna2_buffer_get_tensor(ggml_backend_buffer_t buffer, c
         layout::tensor_unpack_range(xdna2_geom(tensor), static_cast<const uint8_t *>(tensor->data),
                                          static_cast<uint8_t *>(data), offset, size);
     } else {
-        arena->sync_from_device(xdna2_arena_off(buffer, tensor) + offset, size);
         std::memcpy(data, static_cast<const uint8_t *>(tensor->data) + offset, size);
     }
 }
@@ -390,10 +388,10 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
     {
         const ExecStats st = npu_executor().stats();
         if (st.pf_jobs > 0) {
-            XLOG("ggml-xdna2: prefill: %llu jobs, %llu waves, %llu tile dispatches; encode %.3f s, A-BO fill+sync %.3f s, NPU %.3f s, Y sync+unpermute %.3f s, setup %.3f s, "
+            XLOG("ggml-xdna2: prefill: %llu jobs, %llu waves, %llu tile dispatches; encode %.3f s, A-BO fill %.3f s + sync %.3f s, NPU wait %.3f s, Y sync %.3f s + unpermute %.3f s, setup %.3f s, "
                  "weights streamed %.2f GB (%.1f GB/s while on the NPU), %llu hw context switches\n",
-                 (unsigned long long) st.pf_jobs, (unsigned long long) st.pf_waves, (unsigned long long) st.pf_dispatches, st.pf_t_encode, st.pf_t_abo, st.pf_t_npu,
-                 st.pf_t_unperm, st.pf_t_setup, st.pf_bytes_w / 1e9, st.pf_t_npu > 0 ? st.pf_bytes_w / 1e9 / st.pf_t_npu : 0.0, (unsigned long long) st.pf_switches);
+                 (unsigned long long) st.pf_jobs, (unsigned long long) st.pf_waves, (unsigned long long) st.pf_dispatches, st.pf_t_encode, st.pf_t_abuild, st.pf_t_abo - st.pf_t_abuild, st.pf_t_npu,
+                 st.pf_t_ysync, st.pf_t_unperm - st.pf_t_ysync, st.pf_t_setup, st.pf_bytes_w / 1e9, st.pf_t_npu > 0 ? st.pf_bytes_w / 1e9 / st.pf_t_npu : 0.0, (unsigned long long) st.pf_switches);
         }
     }
     XLOG("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",
@@ -593,7 +591,9 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
 }
 
 static bool ggml_backend_xdna2_device_supports_buft(ggml_backend_dev_t, ggml_backend_buffer_type_t buft) {
-    return buft == xdna2_buft();
+    // our own buffers (weights in the device layout) and plain host memory: the activations of a MUL_MAT are read in place from the CPU
+    // buffers instead of being copied into one of our buffers first (the scheduler copies split inputs the backend does not support)
+    return buft == xdna2_buft() || ggml_backend_buft_is_host(buft);
 }
 
 static const ggml_backend_device_i ggml_backend_xdna2_device_i = {

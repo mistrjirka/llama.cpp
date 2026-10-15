@@ -57,6 +57,8 @@ struct ExecStats {
     double   pf_t_npu = 0;        // start .. wait of the dispatches
     double   pf_t_unperm = 0;     // sync Y + unpermute into dst
     double   pf_t_setup = 0;
+    double   pf_t_abuild = 0;     // part of pf_t_abo: host replication of the slabs (without the BO sync)
+    double   pf_t_ysync = 0;      // part of pf_t_unperm: BO sync of the result
     double   pf_bytes_w = 0;      // weight bytes streamed by the prefill kernel (all tiles)
     uint64_t pf_switches = 0;     // hw context switches (decode <-> prefill)
 };

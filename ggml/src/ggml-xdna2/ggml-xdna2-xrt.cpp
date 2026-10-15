@@ -58,6 +58,7 @@ struct PfCtx {
 // Activation + output BOs shared by all prefill dispatches of one shape (a dispatch is a tile; PF_MAX_TILES tiles per wave).
 struct PfPool {
     size_t  a_tile = 0, a_stride = 0, y_tile = 0;
+    int     next_slot = 0;                  // round robin over the PF_MAX_TILES tile slots (at most 2 dispatches in flight)
     xrt::bo a, y;
     std::vector<xrt::bo> a_sub, y_sub;      // per tile
 };
@@ -464,68 +465,82 @@ private:
         }
     }
 
+    // One dispatch = one 64-token tile of one split of one job. The units of a call are software pipelined: while the NPU runs unit u-1 the host
+    // encodes/replicates the activations of unit u and unpermutes the result of unit u-2 (at most two dispatches are in flight).
+    struct PfUnit { size_t job; PfSplit * sp; int tile; int slot; };
+
     bool run_prefill_locked(const PrefillJob * jobs, size_t n_jobs) {
         PfCtx & c = get_pf_ctx();
         if (last_ctx_ != 2) { if (last_ctx_ != 0) st_.pf_switches++; last_ctx_ = 2; }
         std::vector<PfSplits *> js;
         for (size_t i = 0; i < n_jobs; ++i) js.push_back(&get_pf_job(jobs[i], c));
-        // jobs sharing the same input rows share the encoded slabs
-        std::vector<std::vector<uint8_t>> enc(n_jobs);
-        std::vector<int> enc_of(n_jobs, -1);
-        int64_t max_tiles = 0;
-        for (size_t i = 0; i < n_jobs; ++i) max_tiles = std::max(max_tiles, (jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK);
-        for (int64_t w0 = 0; w0 < max_tiles; w0 += PF_MAX_TILES) {
-            st_.pf_waves++;
-            for (size_t i = 0; i < n_jobs; ++i) {
-                const PrefillJob & pj = jobs[i];
-                const int64_t ntiles_all = (pj.n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK;
-                if (w0 >= ntiles_all) continue;
-                const int T = int(std::min<int64_t>(PF_MAX_TILES, ntiles_all - w0));
-                const layout::Geom & g = pj.geom;
-                // 1. encode (shared with an earlier job of this call that has the same input)
-                double t0 = now_s();
-                int src = -1;
-                for (size_t q = 0; q < i; ++q) {
-                    if (jobs[q].x == pj.x && jobs[q].x_stride == pj.x_stride && jobs[q].n_tok == pj.n_tok && jobs[q].geom.k == g.k) { src = int(q); break; }
-                }
-                if (src >= 0 && enc_of[src] >= 0) {
-                    enc_of[i] = enc_of[src];
-                } else {
-                    enc[i].resize(size_t(T) * size_t(g.nbk) * PF_SLAB_BYTES);
-                    pf_encode_acts(enc[i].data(), pj.x, pj.x_stride, pj.n_tok, g.k, int(w0), T);
-                    enc_of[i] = int(i);
-                }
-                // (the cache entry of the sharing job may belong to a previous wave: re-encode when the wave changed)
-                st_.pf_t_encode += now_s() - t0;
-                const std::vector<uint8_t> & slabs = enc[enc_of[i]];
-                for (auto & sp : *js[i]) {
-                    PfSplit & j = *sp;
-                    const int64_t nsb = g.sp_nsb(j.split);
-                    // 2. A BO
-                    t0 = now_s();
-                    uint8_t * abo = j.pool->a.map<uint8_t *>();
-                    pf_build_a_bo(abo, j.pool->a_stride, slabs.data(), T, g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(j.split));
-                    j.pool->a.sync(XCL_BO_SYNC_BO_TO_DEVICE, j.pool->a_stride * (T - 1) + j.pool->a_tile, 0);
-                    st_.pf_t_abo += now_s() - t0;
-                    // 3. dispatch the T tiles
-                    t0 = now_s();
-                    for (int t = 0; t < T; ++t) get_pf_run(c, j, t).start();
-                    for (int t = 0; t < T; ++t) j.runs[t].wait2();
-                    st_.pf_t_npu += now_s() - t0;
-                    st_.pf_dispatches += T;
-                    st_.pf_bytes_w += double(g.sp_bytes(j.split)) * T;
-                    // 4. results
-                    t0 = now_s();
-                    sync_from_device(j.pool->y, j.pool->y_tile * T);
-                    pf_unpermute(j.pool->y.map<const float *>(), T, int(w0), pj.n_tok, g, j.split, pj.dst, pj.dst_row_stride);
-                    st_.pf_t_unperm += now_s() - t0;
-                }
-                st_.pf_jobs++;
+        // jobs sharing the same input rows share the encoded slabs (per tile, encoded on first use)
+        struct Enc { const float * x; size_t stride; int64_t n_tok, k; std::vector<std::vector<uint8_t>> tiles; std::vector<char> done; };
+        std::vector<Enc> encs;
+        std::vector<size_t> enc_of(n_jobs);
+        for (size_t i = 0; i < n_jobs; ++i) {
+            size_t e = encs.size();
+            for (size_t q = 0; q < encs.size(); ++q) {
+                if (encs[q].x == jobs[i].x && encs[q].stride == jobs[i].x_stride && encs[q].n_tok == jobs[i].n_tok && encs[q].k == jobs[i].geom.k) { e = q; break; }
             }
-            // encoded slabs belong to one wave
-            for (auto & e : enc) e.clear();
-            std::fill(enc_of.begin(), enc_of.end(), -1);
+            if (e == encs.size()) {
+                const int64_t nt = (jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK;
+                encs.push_back(Enc{ jobs[i].x, jobs[i].x_stride, jobs[i].n_tok, jobs[i].geom.k, std::vector<std::vector<uint8_t>>(nt), std::vector<char>(nt, 0) });
+            }
+            enc_of[i] = e;
         }
+        std::vector<PfUnit> units;
+        for (size_t i = 0; i < n_jobs; ++i) {
+            const int64_t nt = (jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK;
+            for (auto & sp : *js[i]) for (int64_t t = 0; t < nt; ++t) units.push_back(PfUnit{ i, sp.get(), int(t), -1 });
+        }
+        auto finish = [&](PfUnit & u) {
+            double t0 = now_s();
+            u.sp->runs[u.slot].wait2();
+            st_.pf_t_npu += now_s() - t0;      // blocked on the NPU (the host work of the next unit already ran during the dispatch)
+            t0 = now_s();
+            PfPool & pool = *u.sp->pool;
+            sync_from_device(pool.y, pool.y_tile, pool.y_tile * u.slot);
+            st_.pf_t_ysync += now_s() - t0;
+            const PrefillJob & pj = jobs[u.job];
+            pf_unpermute_tile(pool.y.map<const float *>() + (pool.y_tile / sizeof(float)) * u.slot, u.tile, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride);
+            st_.pf_t_unperm += now_s() - t0;
+        };
+        PfUnit * prev = nullptr;
+        for (size_t ui = 0; ui < units.size(); ++ui) {
+            PfUnit & u = units[ui];
+            const PrefillJob & pj = jobs[u.job];
+            const layout::Geom & g = pj.geom;
+            PfPool & pool = *u.sp->pool;
+            const int64_t nsb = g.sp_nsb(u.sp->split);
+            // 1. encode (once per input and tile)
+            double t0 = now_s();
+            Enc & en = encs[enc_of[u.job]];
+            if (!en.done[u.tile]) {
+                en.tiles[u.tile].resize(size_t(g.nbk) * PF_SLAB_BYTES);
+                pf_encode_tile(en.tiles[u.tile].data(), pj.x, pj.x_stride, pj.n_tok, g.k, u.tile);
+                en.done[u.tile] = 1;
+            }
+            st_.pf_t_encode += now_s() - t0;
+            // 2. A BO tile slot
+            t0 = now_s();
+            u.slot = pool.next_slot;
+            pool.next_slot = (pool.next_slot + 1) % PF_MAX_TILES;
+            pf_build_a_tile(pool.a.map<uint8_t *>() + pool.a_stride * u.slot, en.tiles[u.tile].data(), g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(u.sp->split));
+            st_.pf_t_abuild += now_s() - t0;
+            pool.a.sync(XCL_BO_SYNC_BO_TO_DEVICE, pool.a_tile, pool.a_stride * u.slot);
+            st_.pf_t_abo += now_s() - t0;
+            // 3. dispatch
+            get_pf_run(c, *u.sp, u.slot).start();
+            st_.pf_dispatches++;
+            st_.pf_bytes_w += double(g.sp_bytes(u.sp->split));
+            // 4. finish the previous dispatch while this one runs
+            if (prev) finish(*prev);
+            prev = &u;
+        }
+        if (prev) finish(*prev);
+        for (size_t i = 0; i < n_jobs; ++i) st_.pf_jobs++;
+        st_.pf_waves++;
         return true;
     }
 

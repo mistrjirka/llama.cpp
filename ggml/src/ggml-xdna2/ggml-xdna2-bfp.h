@@ -28,15 +28,19 @@ inline size_t pf_a_tile_bytes(int64_t nbk, int64_t nsb) { return (1 + size_t(nsb
 // Y bytes of one tile of a split: [col 8][nsb][core 4][GSB groups][1024 f32]
 inline size_t pf_y_tile_bytes(int64_t nsb) { return size_t(8) * size_t(nsb) * 4 * layout::GSB * 1024 * sizeof(float); }
 
-// Encode `ntiles` tiles (tokens [tile0*64, ...)) of n_tok rows of K floats (row t at x + t*row_stride_bytes) into `slabs`:
-// layout [ntiles][nbk][PF_SLAB_BYTES] (one pass; tokens >= n_tok are zero).
-void pf_encode_acts(uint8_t * slabs, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile0, int ntiles);
+// one block of 8 floats -> 9 bytes [E][8 x int8]; reference (scalar, 64-bit) and the vectorized version used by the encoder (bit identical)
+void pf_enc8_ref(const float * x, uint8_t * out);
+void pf_enc8_fast(const float * x, uint8_t * out);
 
-// Fill the A BO of `ntiles` tiles (tile t at a_bo + t*tile_stride, pf_a_tile_bytes used) from one-pass slabs: header object + nsb copies of the slabs.
+// Encode ONE tile (tokens [tile*64, +64) of n_tok rows of K floats; row t at x + t*row_stride_bytes) into `slabs`: [nbk][PF_SLAB_BYTES]
+// (one pass; tokens >= n_tok are zero). Threaded over the k slabs.
+void pf_encode_tile(uint8_t * slabs, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile);
+
+// Fill the A BO region of one tile (pf_a_tile_bytes) from its one-pass slabs: header object + nsb copies of the slabs.
 // hdr: i32 [nsb, nbk, qtype, G (groups per core)].
-void pf_build_a_bo(uint8_t * a_bo, size_t tile_stride, const uint8_t * slabs, int ntiles, int64_t nbk, int64_t nsb, int qtype, int64_t groups);
+void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups);
 
-// Copy the fp32 outputs of `ntiles` tiles (tile index t0.. of the token axis) of one split into dst (row j at dst + j*dst_row_stride bytes, n floats per row).
-void pf_unpermute(const float * y, int ntiles, int tile0, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride);
+// Copy the fp32 outputs of one tile of one split into dst (row j at dst + j*dst_row_stride bytes, g.n floats per row).
+void pf_unpermute_tile(const float * y_tile, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride);
 
 } // namespace xdna2
