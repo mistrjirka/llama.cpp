@@ -342,19 +342,38 @@ static const char * ggml_backend_xdna2_get_name(ggml_backend_t) {
     return GGML_XDNA2_NAME;
 }
 
-static void ggml_backend_xdna2_free(ggml_backend_t backend) {
-    auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
+static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_stderr = false) {
+#define XLOG(...) do { if (to_stderr) { fprintf(stderr, __VA_ARGS__); } else { GGML_LOG_INFO(__VA_ARGS__); } } while (0)
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();
-        GGML_LOG_INFO("ggml-xdna2: %llu graph splits, %llu mul_mat; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
+        XLOG("ggml-xdna2: %llu graph splits, %llu mul_mat; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
                       "pack act %.3f s, wait %.3f s (%llu hw context switches: %.3f s), unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
                       (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, ctx->t_quant, ctx->t_graph,
                       (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, (unsigned long long) st.n_switch, st.t_wait_switch, st.t_unpermute, st.t_setup,
                       st.t_kernel_wait, st.bytes_w / 1e9);
     }
-    GGML_LOG_INFO("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",
+    XLOG("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",
                   (unsigned long long) g_set_calls.load(), g_set_bytes.load() / 1e6, g_set_ns.load() / 1e9,
                   (unsigned long long) g_get_calls.load(), g_get_bytes.load() / 1e6, g_get_ns.load() / 1e9);
+}
+
+#undef XLOG
+// the stats of the last backend instance, printed at process exit when GGML_XDNA2_STATS=1 (tools that never free the backend)
+static ggml_backend_xdna2_context * g_last_ctx = nullptr;
+static struct StatsAtExit {
+    StatsAtExit() { (void) &npu_executor(); }   // construct first => destroyed after this object
+    ~StatsAtExit() {
+        const char * e = std::getenv("GGML_XDNA2_STATS");
+        if (g_last_ctx && e && *e && std::strcmp(e, "0") != 0) {
+            xdna2_print_stats(g_last_ctx, true);
+        }
+    }
+} g_stats_at_exit;
+
+static void ggml_backend_xdna2_free(ggml_backend_t backend) {
+    auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
+    xdna2_print_stats(ctx);
+    if (g_last_ctx == ctx) g_last_ctx = nullptr;
     delete ctx;
     delete backend;
 }
@@ -422,7 +441,7 @@ ggml_backend_t ggml_backend_xdna2_init(void) {
         /* .guid    = */ ggml_backend_xdna2_guid(),
         /* .iface   = */ xdna2_backend_i,
         /* .device  = */ ggml_backend_reg_dev_get(ggml_backend_xdna2_reg(), 0),
-        /* .context = */ new ggml_backend_xdna2_context,
+        /* .context = */ (g_last_ctx = new ggml_backend_xdna2_context),
     };
 }
 
@@ -474,6 +493,11 @@ static ggml_backend_buffer_type_t ggml_backend_xdna2_device_get_buffer_type(ggml
     return xdna2_buft();
 }
 
+static bool xdna2_reject(int why) {
+    if (std::getenv("GGML_XDNA2_DEBUG")) fprintf(stderr, "ggml-xdna2: supports_op rejected (%d)\n", why);
+    return false;
+}
+
 static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml_tensor * op) {
     switch (op->op) {
         case GGML_OP_NONE:
@@ -490,32 +514,32 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
 
             layout::Fmt fmt;
             if (!xdna2_fmt_of(src0->type, fmt) || src1->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) {
-                return false;
+                return xdna2_reject(1);
             }
             // the weights must be (or, when not allocated yet, will be) in our buffer type; weights in any
             // other buffer cannot be read directly and a per-run copy is never wanted
             if (src0->buffer && src0->buffer->buft != xdna2_buft()) {
-                return false;
+                return xdna2_reject(2);
             }
             if (src0->view_src != nullptr || !ggml_is_contiguous(src0)) {
-                return false;
+                return xdna2_reject(3);
             }
             if (!layout::k_supported(src0->ne[0]) || src0->ne[0] != src1->ne[0]) {
-                return false;
+                return xdna2_reject(4);
             }
             if (src1->nb[0] != sizeof(float) || op->nb[0] != sizeof(float)) {
-                return false;
+                return xdna2_reject(5);
             }
             if (src1->ne[2] % src0->ne[2] != 0 || src1->ne[3] % src0->ne[3] != 0) {
-                return false;
+                return xdna2_reject(6);
             }
             // placement policy: only weights that can really run on the NPU (a kernel exists or can be built)
             // may live in our buffer; everything else must stay in CPU buffers
-            return placement_ok(layout::make_geom(fmt, src0->ne[1], src0->ne[0]));
+            return placement_ok(layout::make_geom(fmt, src0->ne[1], src0->ne[0])) || xdna2_reject(99);
         }
 
         default:
-            return false;
+            return xdna2_reject(7);
     }
 }
 
