@@ -2057,21 +2057,31 @@ static void ggml_compute_forward_concat_f32(
 
     const float * x;
 
-    // TODO: smarter multi-theading
-    for (int i3 = 0; i3 < ne3; i3++) {
-        for (int i2 = ith; i2 < ne2; i2 += nth) {
-            for (int i1 = 0; i1 < ne1; i1++) {
-                for (int i0 = 0; i0 < ne0; i0++) {
-                    if (i0 < ne00 && i1 < ne01 && i2 < ne02 && i3 < ne03) {
-                        x = (const float *) ((const char *)src0->data + (i0       )*nb00 + (i1       )*nb01 + (i2       )*nb02 + (i3       )*nb03);
-                    } else {
-                        x = (const float *) ((const char *)src1->data + (i0 - o[0])*nb10 + (i1 - o[1])*nb11 + (i2 - o[2])*nb12 + (i3 - o[3])*nb13);
-                    }
+    // split the rows (i1, i2, i3) over the threads in blocks of 16 rows: with a single sequence (ne2 == ne3 == 1) the previous split over i2 left all
+    // the work to thread 0. Inside a block the rows are walked together (i0 outer) so that a transposed src1 (nb10 > nb11) is read cache-line wise.
+    constexpr int64_t RB = 16;
+    const int64_t nblk_i1 = (ne1 + RB - 1)/RB;
+    const int64_t nb_tot  = nblk_i1*ne2*ne3;
+    const int64_t db  = (nb_tot + nth - 1)/nth;
+    const int64_t ib0 = db*ith;
+    const int64_t ib1 = MIN(ib0 + db, nb_tot);
 
-                    float * y = (float *)((char *)dst->data + i0*nb0 + i1*nb1 + i2*nb2 + i3*nb3);
-
-                    *y = *x;
+    for (int64_t ib = ib0; ib < ib1; ib++) {
+        const int64_t i3 = ib/(ne2*nblk_i1);
+        const int64_t i2 = (ib - i3*ne2*nblk_i1)/nblk_i1;
+        const int64_t i1a = (ib - i3*ne2*nblk_i1 - i2*nblk_i1)*RB;
+        const int64_t i1b = MIN(i1a + RB, ne1);
+        for (int i0 = 0; i0 < ne0; i0++) {
+            for (int64_t i1 = i1a; i1 < i1b; i1++) {
+                if (i0 < ne00 && i1 < ne01 && i2 < ne02 && i3 < ne03) {
+                    x = (const float *) ((const char *)src0->data + (i0       )*nb00 + (i1       )*nb01 + (i2       )*nb02 + (i3       )*nb03);
+                } else {
+                    x = (const float *) ((const char *)src1->data + (i0 - o[0])*nb10 + (i1 - o[1])*nb11 + (i2 - o[2])*nb12 + (i3 - o[3])*nb13);
                 }
+
+                float * y = (float *)((char *)dst->data + i0*nb0 + i1*nb1 + i2*nb2 + i3*nb3);
+
+                *y = *x;
             }
         }
     }
