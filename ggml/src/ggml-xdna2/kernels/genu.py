@@ -1,5 +1,5 @@
 # Unified decode kernel generator (IRON).  One xclbin for every (qtype, K <= KMAX, N <= 8*4*GMAX*16 rows).
-# The runtime sequence (instruction stream) depends on three host values only:
+# The runtime sequence (instruction stream) depends on four host values only:
 #   --chain_words  : 32-bit words of the weight stream of one chain  (= n_w_chunks * 2 lanes * S / 4)
 #   --a_words      : 32-bit words of the activation BO               (= n_act_chunks * 2 lanes * S / 4)
 #   --g            : 16-row groups per core (output words per column = g * 4 cores * 16)
@@ -20,10 +20,13 @@ p.add_argument("--gmax", type=int, default=128)
 p.add_argument("--depth", type=int, default=8)      # core side
 p.add_argument("--mdepth", type=int, default=2)     # memtile side
 p.add_argument("--stack", type=int, default=9216)
-p.add_argument("--chain_words", type=int, required=True)
+p.add_argument("--chain_words", type=int, required=True)    # weight words of one chain that the dispatch STREAMS (length of the fill)
+p.add_argument("--stride_words", type=int, default=0)      # words between the starts of consecutive chains in the W BO (0 = chain_words); a prefix of every chain is
+                                                           # processed when chain_words < stride_words (the NPU/CPU row split)
 p.add_argument("--a_words", type=int, required=True)
 p.add_argument("--g", type=int, required=True)
 a = p.parse_args()
+if a.stride_words == 0: a.stride_words = a.chain_words
 C = 8; CHAINS = 1; CPC = 4
 S = a.S
 SVMAX = a.kmax + a.kmax // 256 * 4 + a.kmax // 8
@@ -72,7 +75,7 @@ for c in range(C):
                                             Buffer(wrec_ty, name=f"wrec{c}_{k}"), Buffer(ost_ty, name=f"ost{c}_{k}")],
                                    tile=t, stack_size=a.stack)); k += 1
 n_in, n_out = len(in_prods), len(out_conses)
-W_el = a.chain_words * n_in
+W_el = a.stride_words * n_in
 A_el = a.a_words
 per_col = a.g * 4 * 16
 O_el = per_col * n_out
@@ -80,10 +83,10 @@ def sequence(wbuf, abuf, obuf, *hs):
     prods, conses = hs[:n_in], hs[n_in:]
     for i in range(n_in):
         prods[i].fill(abuf, tap=TensorAccessPattern((A_el,), 0, [1, 1, 1, A_el], [0, 0, 0, 1]), wait=False)
-        prods[i].fill(wbuf, tap=TensorAccessPattern((W_el,), i * a.chain_words, [1, 1, 1, a.chain_words], [0, 0, 0, 1]), wait=False)
+        prods[i].fill(wbuf, tap=TensorAccessPattern((W_el,), i * a.stride_words, [1, 1, 1, a.chain_words], [0, 0, 0, 1]), wait=False)
     for i in range(n_out):
         conses[i].drain(obuf, tap=TensorAccessPattern((O_el,), i * per_col, [1, 1, 1, per_col], [0, 0, 0, 1]), wait=True)
 rt = Runtime(sequence, [np.ndarray[(W_el,), np.dtype[np.int32]], np.ndarray[(A_el,), np.dtype[np.int32]],
                         np.ndarray[(O_el,), np.dtype[np.float32]], *in_prods, *out_conses])
 print(Program(NPU2(), rt, workers=workers).resolve_program())
-sys.stderr.write(f"META S={S} kmax={a.kmax} gmax={a.gmax} act_max={ACT_MAX} depth={a.depth} chain_words={a.chain_words} a_words={a.a_words} g={a.g}\n")
+sys.stderr.write(f"META S={S} kmax={a.kmax} gmax={a.gmax} act_max={ACT_MAX} depth={a.depth} chain_words={a.chain_words} stride_words={a.stride_words} a_words={a.a_words} g={a.g}\n")

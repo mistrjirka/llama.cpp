@@ -109,6 +109,11 @@ struct Geom {
         const int64_t full = gs / GSB, rem = gs % GSB;
         return size_t(nbk) * (size_t(full) * slab_bytes(GSB) + (rem ? slab_bytes(rem) : 0));
     }
+    // lane stream of a core with gs groups restricted to the first nbk_use records (k-blocks) of every superblock
+    size_t  lane_bytes_groups_k(int64_t gs, int64_t nbk_use) const {
+        const int64_t full = gs / GSB, rem = gs % GSB;
+        return size_t(nbk_use) * (size_t(full) * slab_bytes(GSB) + (rem ? slab_bytes(rem) : 0));
+    }
     size_t  sp_lane_bytes(int64_t s) const { return lane_bytes_groups(sp_groups(s)); }
     size_t  sp_nw(int64_t s) const { return sp_lane_bytes(s) / CHUNK; }   // chunks per lane stream
     size_t  sp_chain_bytes(int64_t s) const { return sp_nw(s) * N_LANES * CHUNK; }

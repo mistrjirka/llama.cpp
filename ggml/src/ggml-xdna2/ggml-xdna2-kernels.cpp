@@ -111,7 +111,7 @@ bool KernelCache::supports(const layout::Geom & g) {
 static const char * product_dir(Product p) { return p == Product::Prefill ? "prefill" : "unified"; }
 std::string KernelCache::dir() const { return cfg_.cache_dir + "/" + hash_ + "/" + product_dir(cfg_.product); }
 
-static const std::vector<const char *> kInstFilesDecode  = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin" };
+static const std::vector<const char *> kInstFilesDecode  = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin", "insts_sw.bin" };
 static const std::vector<const char *> kInstFilesPrefill = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_ow.bin" };
 static const std::vector<const char *> & inst_files(Product p) { return p == Product::Prefill ? kInstFilesPrefill : kInstFilesDecode; }
 
@@ -156,21 +156,26 @@ static bool read_words(const std::string & path, std::vector<uint32_t> & w) {
     return true;
 }
 
-bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out) {
+bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out, int64_t stride_words) {
     const int64_t refThird = cfg_.product == Product::Prefill ? kRefO : kRefG;
     if (!cached()) return false;
     std::lock_guard<std::mutex> lk(mu_);
     if (refs_.empty()) {
-        std::vector<std::vector<uint32_t>> r(4);
-        for (int i = 0; i < 4; ++i) {
+        std::vector<std::vector<uint32_t>> r(inst_files(cfg_.product).size());
+        for (size_t i = 0; i < r.size(); ++i) {
             if (!read_words(dir() + "/" + inst_files(cfg_.product)[i], r[i])) return false;
         }
         refs_ = std::move(r);
     }
     out = refs_[0];
-    return patch_param(refs_[0], refs_[1], kRefChain, 2 * kRefChain, chain_words, out) &&
-           patch_param(refs_[0], refs_[2], kRefA, 2 * kRefA, a_words, out) &&
-           patch_param(refs_[0], refs_[3], refThird, 2 * refThird, g, out);
+    bool ok = patch_param(refs_[0], refs_[1], kRefChain, 2 * kRefChain, chain_words, out) &&
+              patch_param(refs_[0], refs_[2], kRefA, 2 * kRefA, a_words, out) &&
+              patch_param(refs_[0], refs_[3], refThird, 2 * refThird, g, out);
+    if (ok && cfg_.product == Product::Decode) {
+        // the offsets of the chains (i * stride) are linear in the stride parameter, the lengths in chain_words
+        ok = patch_param(refs_[0], refs_[4], kRefChain, 2 * kRefChain, stride_words > 0 ? stride_words : chain_words, out);
+    }
+    return ok;
 }
 
 void KernelCache::request() {

@@ -18,7 +18,9 @@
 #include <cstdlib>
 #include <deque>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <tuple>
 #include <vector>
 
 using namespace xdna2;
@@ -268,10 +270,58 @@ static double xdna2_now() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+// NPU/CPU split of a weight matrix (GGML_XDNA2_DECODE=split): the NPU share of the bytes is GGML_XDNA2_SPLIT (default 0.5); matrices smaller than
+// GGML_XDNA2_SPLIT_MIN_MB (default 0) run on the CPU only. The plan of a matrix never changes.
+static const SplitPlan * xdna2_split_plan(const layout::Geom & g) {
+    static std::map<std::tuple<int, int64_t, int64_t>, std::vector<SplitPlan>> plans;
+    static const double frac = [] { const char * e = std::getenv("GGML_XDNA2_SPLIT"); return e && *e ? std::atof(e) : 0.5; }();
+    static const double min_mb = [] { const char * e = std::getenv("GGML_XDNA2_SPLIT_MIN_MB"); return e && *e ? std::atof(e) : 0.0; }();
+    const auto key = std::make_tuple(int(g.fmt), g.n, g.k);
+    auto it = plans.find(key);
+    if (it == plans.end()) {
+        it = plans.emplace(key, make_split_plan(g, double(g.bytes) / 1e6 >= min_mb ? frac : 0.0)).first;
+    }
+    return it->second.data();
+}
+
+struct TraceEnt { uint64_t n = 0; double t_total = 0, t_hook_start = 0, t_hook = 0, t_cpu_end = 0, t_end = 0; };
+static bool xdna2_trace() { static const bool b = std::getenv("GGML_XDNA2_TRACE") != nullptr; return b; }
+static std::map<std::tuple<int, int64_t, int64_t, int64_t>, TraceEnt> & xdna2_trace_tab() {
+    static std::map<std::tuple<int, int64_t, int64_t, int64_t>, TraceEnt> t;
+    static struct P { ~P() { for (auto & kv : t) { const auto & e = kv.second; fprintf(stderr, "trace fmt %d n %lld k %lld jobs %lld: %llu flushes, total %.1f us (hook starts at %.1f, hook takes %.1f, master cpu done at %.1f, npu wait+merge %.1f)\n",
+        std::get<0>(kv.first), (long long) std::get<1>(kv.first), (long long) std::get<2>(kv.first), (long long) std::get<3>(kv.first), (unsigned long long) e.n,
+        e.t_total / e.n * 1e6, e.t_hook_start / e.n * 1e6, e.t_hook / e.n * 1e6, e.t_cpu_end / e.n * 1e6, e.t_end / e.n * 1e6); } } } p;
+    return t;
+}
+
 static void xdna2_flush(ggml_backend_xdna2_context * ctx) {
     if (!ctx->cpu_pending.empty()) {
         const double t0 = xdna2_now();
-        cpu_decode_run(ctx->cpu_pending.data(), ctx->cpu_pending.size());
+        auto & jobs = ctx->cpu_pending;
+        if (decode_mode() == DecodeMode::Split) {
+            // the same weights twice in one batch would share their A/Y buffers: the later job runs on the CPU only
+            for (size_t i = 0; i < jobs.size(); ++i)
+                for (size_t q = 0; q < i; ++q)
+                    if (jobs[q].arena == jobs[i].arena && jobs[q].w_off == jobs[i].w_off) jobs[i].plan = nullptr;
+            bool began = true;
+            double th0 = 0, th1 = 0;
+            cpu_decode_run(jobs.data(), jobs.size(), [&] { th0 = xdna2_now(); began = npu_executor().decode_split_begin(jobs.data(), jobs.size()); th1 = xdna2_now(); });
+            const double tc = xdna2_now();
+            if (!began || !npu_executor().decode_split_end()) {
+                GGML_ABORT("%s: NPU decode split failed", __func__);
+            }
+            if (xdna2_trace()) {
+                const double te = xdna2_now();
+                auto & e = xdna2_trace_tab()[std::make_tuple(int(jobs[0].geom.fmt), jobs[0].geom.n, jobs[0].geom.k, (int64_t) jobs.size())];
+                e.n++; e.t_total += te - t0; e.t_hook_start += th0 - t0; e.t_hook += th1 - th0; e.t_cpu_end += tc - t0; e.t_end += te - tc;
+            }
+        } else {
+            cpu_decode_run(jobs.data(), jobs.size());
+            if (xdna2_trace()) {
+                auto & e = xdna2_trace_tab()[std::make_tuple(int(jobs[0].geom.fmt), jobs[0].geom.n, jobs[0].geom.k, (int64_t) jobs.size())];
+                e.n++; e.t_total += xdna2_now() - t0;
+            }
+        }
         ctx->t_cpu += xdna2_now() - t0;
         ctx->n_cpu_flush++; ctx->n_cpu_jobs += ctx->cpu_pending.size();
         for (const auto & j : ctx->cpu_pending) ctx->b_cpu += double(j.geom.bytes);
@@ -335,7 +385,7 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
         }
     }
 
-    const bool use_cpu = !reference_mode() && ne11 == 1 && decode_mode() == DecodeMode::Cpu && cpu_decode_available();
+    const bool use_cpu = !reference_mode() && ne11 == 1 && decode_mode() != DecodeMode::Npu && cpu_decode_available();
     const bool use_pf = !reference_mode() && ne11 >= prefill_min_tokens() && xdna2_pf_supports(geom.fmt) && npu_executor().prefill_available();
 
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
@@ -348,6 +398,9 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
                 cj.w    = arena->base() + base_off + size_t(i03 * ne02 + i02) * geom.bytes;
                 cj.x    = reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13);
                 cj.dst  = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i12 * nb2 + i13 * nb3);
+                cj.arena = arena;
+                cj.w_off = base_off + size_t(i03 * ne02 + i02) * geom.bytes;
+                cj.plan  = decode_mode() == DecodeMode::Split ? xdna2_split_plan(geom) : nullptr;
                 ctx->cpu_pending.push_back(cj);
                 continue;
             }
@@ -406,6 +459,13 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
         double busy, wall; int thr;
         cpu_decode_stats(busy, wall, thr);
         XLOG("ggml-xdna2: CPU decode team: %d threads, utilisation %.1f %% (busy %.2f thread-s of %.2f s wall)\n", thr, 100.0 * busy / (wall * thr), busy, wall);
+    }
+    {
+        const ExecStats st = npu_executor().stats();
+        if (st.sp_calls > 0) {
+            XLOG("ggml-xdna2: decode split NPU part: %llu batches, %llu dispatches, pack act %.3f s, start %.3f s, wait (after the CPU part) %.3f s, merge %.3f s, weights streamed %.2f GB\n",
+                 (unsigned long long) st.sp_calls, (unsigned long long) st.sp_runs, st.sp_t_pack, st.sp_t_start, st.sp_t_wait, st.sp_t_merge, st.sp_bytes_w / 1e9);
+        }
     }
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();

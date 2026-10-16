@@ -53,7 +53,9 @@ static double now() { return std::chrono::duration<double>(std::chrono::steady_c
 
 static int g_fail = 0;
 
-static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, int64_t sb_from = 0) {
+// sb_from > 0: the NPU would do the first sb_from superblocks (rows must stay untouched); kb_npu >= 0 (single-superblock matrices): the NPU would do the
+// first kb_npu records of every row, the CPU result is the K-suffix partial sum
+static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, int64_t sb_from = 0, int64_t kb_npu = -1) {
     const Geom g = make_geom(fmt, n, k);
     const std::vector<uint8_t> src = random_matrix(g, seed);
     std::vector<uint8_t> dev(g.bytes, 0);
@@ -69,7 +71,7 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, int64_t sb_
     for (int64_t i = 0; i < n; ++i) {
         tr->to_float(src.data() + size_t(i) * g.row_bytes, row.data(), k);
         double s = 0;
-        for (int64_t j = 0; j < k; ++j) s += double(row[j]) * double(x[j]);
+        for (int64_t j = (kb_npu >= 0 ? kb_npu * 256 : 0); j < k; ++j) s += double(row[j]) * double(x[j]);
         ref[i] = s;
     }
     // reference 2: the same math with ggml's own activation quantization (exact in f64): isolates the GEMV from the quantization noise
@@ -92,18 +94,20 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, int64_t sb_
         for (int64_t i = 0; i < n; ++i) {
             tr->to_float(src.data() + size_t(i) * g.row_bytes, row.data(), k);
             double s = 0;
-            for (int64_t j = 0; j < k; ++j) s += double(row[j]) * double(xd[j]);
+            for (int64_t j = (kb_npu >= 0 ? kb_npu * 256 : 0); j < k; ++j) s += double(row[j]) * double(xd[j]);
             ref2[i] = s;
         }
     }
     std::vector<float> y(n, 12345.0f);
     CpuDecodeJob job;
-    job.geom = g; job.w = dev.data(); job.x = x.data(); job.dst = y.data(); job.sb_from = sb_from;
+    std::vector<SplitPlan> plan(size_t(g.nsplit), SplitPlan{ sb_from, kb_npu >= 0 ? kb_npu : g.nbk });
+    job.geom = g; job.w = dev.data(); job.x = x.data(); job.dst = y.data(); job.plan = (sb_from > 0 || kb_npu >= 0) ? plan.data() : nullptr;
     cpu_decode_run(&job, 1);
     double num = 0, den = 0, maxe = 0, num2 = 0;
     int64_t nrows_checked = 0;
     for (int64_t i = 0; i < n; ++i) {
-        if (sb_from > 0) {
+        if (kb_npu >= g.nbk) { if (y[i] != 12345.0f) { std::printf("FAIL row %lld touched\n", (long long) i); ++g_fail; } continue; }
+        if (sb_from > 0 && kb_npu < 0) {
             // rows of the NPU prefix must be untouched
             const int64_t Gs = g.sp_groups(i / (GMAX * ROW_GRAN));
             const int64_t rr = i - g.sp_row0(i / (GMAX * ROW_GRAN));
@@ -116,7 +120,7 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, int64_t sb_
     }
     const double nmse = den > 0 ? num / den : num;
     const double nmse2 = den > 0 ? num2 / den : num2;
-    const bool ok = nmse2 < 1e-9 && nmse < 5e-4 && nrows_checked > 0;
+    const bool ok = (nrows_checked == 0 && kb_npu >= g.nbk) || (nmse2 < 1e-9 && nmse < 5e-4 && nrows_checked > 0);
     std::printf("%-5s N=%-6lld K=%-5lld sb_from=%lld  rows %lld  NMSE vs f32 %.3e  vs same-quant-acts %.3e  max|e| %.3e  %s\n", fmt_info(fmt).name, (long long) n, (long long) k,
                 (long long) sb_from, (long long) nrows_checked, nmse, nmse2, maxe, ok ? "OK" : "FAIL");
     if (!ok) ++g_fail;
@@ -127,7 +131,9 @@ static void bench(size_t mb, int threads_note) {
     struct Case { Fmt fmt; int64_t n, k; };
     const Case cases[] = { { Fmt::Q4_K, 9216, 2560 }, { Fmt::Q4_K, 12288, 4096 }, { Fmt::Q5_K, 2560, 4096 }, { Fmt::Q6_K, 2560, 9216 }, { Fmt::Q8_0, 2560, 4096 },
                            { Fmt::Q6_K, 8192, 4096 } };
+    size_t ncases = std::getenv("XD_CASES") ? size_t(std::atoi(std::getenv("XD_CASES"))) : sizeof(cases) / sizeof(cases[0]);
     for (const Case & c : cases) {
+        if (ncases-- == 0) break;
         const Geom g = make_geom(c.fmt, c.n, c.k);
         const size_t copies = std::max<size_t>(2, mb * 1000000 / g.bytes);
         std::vector<uint8_t> blk = random_matrix(g, 7);
@@ -180,6 +186,9 @@ int main(int argc, char ** argv) {
         test_shape(f, 9216, 2560, seed++, 1);
         test_shape(f, 9216, 2560, seed++, 3);
         test_shape(f, 70000, 512, seed++, 2);
+        test_shape(f, 2560, 4096, seed++, 1, 6);       // K split of a one-superblock matrix: CPU = K suffix of all rows
+        test_shape(f, 1024, 2560, seed++, 1, 9);
+        test_shape(f, 2560, 4096, seed++, 1, 16);      // NPU does everything: nothing left for the CPU (rows untouched)
     }
     std::printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

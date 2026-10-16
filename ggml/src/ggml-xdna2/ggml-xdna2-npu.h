@@ -23,6 +23,7 @@
 
 #include "ggml-xdna2-arena.h"
 #include "ggml-xdna2-compute.h"
+#include "ggml-xdna2-cpu.h"
 #include "ggml-xdna2-kernels.h"
 
 namespace xdna2 {
@@ -41,6 +42,9 @@ struct PrefillJob {
 
 struct ExecStats {
     uint64_t runs = 0;            // xrt runs (tokens x matmuls)
+    // decode split
+    uint64_t sp_calls = 0, sp_runs = 0;
+    double   sp_t_pack = 0, sp_t_start = 0, sp_t_wait = 0, sp_t_merge = 0, sp_bytes_w = 0;
     uint64_t batches = 0;         // runlist / single submissions
     double   t_pack_a = 0;        // write + sync activation BOs (s)
     double   t_wait = 0;          // start .. wait (NPU time incl. dispatch) (s)
@@ -84,6 +88,11 @@ public:
     virtual bool prefill_available() { return false; }
     // run n independent prefill jobs, blocking. false = failure.
     virtual bool run_prefill(const PrefillJob * jobs, size_t n_jobs) { (void) jobs; (void) n_jobs; return false; }
+
+    // Decode split (GGML_XDNA2_DECODE=split): start the NPU part (CpuDecodeJob::plan) of n independent jobs -- the activations are the quantized ones of
+    // cpu_decode_act(j) -- and return without waiting; decode_split_end() waits and merges the NPU rows into dst. The jobs must use distinct weights.
+    virtual bool decode_split_begin(const CpuDecodeJob * jobs, size_t n) { (void) jobs; (void) n; return false; }
+    virtual bool decode_split_end() { return false; }
 
     virtual ExecStats stats() const = 0;
     virtual void reset_stats() = 0;

@@ -314,18 +314,21 @@ XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, in
     const size_t slab_pages = slab / CHUNK;       // pages (4 lanes x CHUNK) per slab
     const size_t pf_lines = slab_pages * size_t(nl) * (CHUNK / 64);
     const size_t per_rec = (pf_lines + size_t(nl * gc) - 1) / size_t(nl * gc);
+    static const int PFS = [] { const char * e = std::getenv("XD_PFS"); return e ? std::atoi(e) : 1; }();
+    static const int PFH = [] { const char * e = std::getenv("XD_PFH"); return e ? std::atoi(e) : 0; }();
     for (int64_t kb = kb0; kb < kb1; ++kb) {
         const size_t so = s0_sb + size_t(kb) * slab;
-        const bool do_pf = kb + 1 < kb1;
-        const uint8_t * pf_base = cb + ((s0_sb + size_t(kb + 1) * slab) / CHUNK) * (N_LANES * CHUNK) + size_t(lane0) * CHUNK;
+        const bool do_pf = kb + PFS < kb1;
+        const uint8_t * pf_base = cb + ((s0_sb + size_t(kb + PFS) * slab) / CHUNK) * (N_LANES * CHUNK) + size_t(lane0) * CHUNK;
         size_t pf_done = 0;
         for (int64_t l = 0; l < nl; ++l) {
             for (int64_t gl = 0; gl < gc; ++gl) {
-                if (do_pf) {       // the next slab: line pf_done = (page, lane, line in chunk)
+                if (do_pf) {       // the slab PFS ahead: line pf_done = (page, lane, line in chunk)
                     const size_t e = std::min(pf_lines, pf_done + per_rec);
                     for (; pf_done < e; ++pf_done) {
                         const size_t page = pf_done / (size_t(nl) * (CHUNK / 64)), r = pf_done % (size_t(nl) * (CHUNK / 64));
-                        _mm_prefetch(reinterpret_cast<const char *>(pf_base + page * (N_LANES * CHUNK) + (r / (CHUNK / 64)) * CHUNK + (r % (CHUNK / 64)) * 64), _MM_HINT_T0);
+                        const char * a = reinterpret_cast<const char *>(pf_base + page * (N_LANES * CHUNK) + (r / (CHUNK / 64)) * CHUNK + (r % (CHUNK / 64)) * 64);
+                        if (PFH == 0) _mm_prefetch(a, _MM_HINT_T0); else if (PFH == 1) _mm_prefetch(a, _MM_HINT_T1); else _mm_prefetch(a, _MM_HINT_T2);
                     }
                 }
                 const RV<F == Fmt::Q6_K> rv{ cb + size_t(lane0 + l) * CHUNK, so + size_t(gl) * RB };
@@ -377,6 +380,8 @@ std::vector<float>   g_scratch;
 std::unique_ptr<std::atomic<int32_t>[]> g_done;
 size_t g_done_cap = 0;
 std::vector<InAct>   g_ins;
+std::vector<size_t>  g_in_of;
+uint8_t *            g_store = nullptr;
 
 XD_TGT void process_item(const Item & m, const CpuDecodeJob & jb, const ActRef & act, const Tabs & T) {
     const Grp & gr = g_grps[m.grp];
@@ -425,12 +430,12 @@ void cpu_decode_stats(double & busy_thread_s, double & wall_s, int & threads) {
     threads = pf_threads();
 }
 
-void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj) {
-    if (nj == 0) return;
-    const Tabs & T = tabs();
-    // 1. unique inputs (several matrices of a layer read the same activation)
+const void * cpu_decode_act(size_t job) { return g_store + g_ins[g_in_of[job]].off; }
+
+XD_TGT static void prepare_acts(const CpuDecodeJob * jobs, size_t nj) {
+    // unique inputs (several matrices of a layer read the same activation)
     g_ins.clear();
-    std::vector<size_t> in_of(nj);
+    g_in_of.assign(nj, 0);
     size_t total = 0;
     for (size_t j = 0; j < nj; ++j) {
         const bool q80 = jobs[j].geom.fmt == Fmt::Q8_0;
@@ -444,30 +449,111 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj) {
             g_ins.push_back(InAct{ jobs[j].x, k, q80, total, bytes });
             total += (bytes + 63) / 64 * 64;
         }
-        in_of[j] = e;
+        g_in_of[j] = e;
     }
     if (g_act_store.size() < total + 64) g_act_store.resize(total + 64);
-    uint8_t * store = reinterpret_cast<uint8_t *>((reinterpret_cast<uintptr_t>(g_act_store.data()) + 63) & ~uintptr_t(63));
+    g_store = reinterpret_cast<uint8_t *>((reinterpret_cast<uintptr_t>(g_act_store.data()) + 63) & ~uintptr_t(63));
+    for (const InAct & ia : g_ins) {
+        uint8_t * p = g_store + ia.off;
+        if (ia.q80) quant_q80(ia.x, p, reinterpret_cast<float *>(p + ia.k), ia.k / 32);
+        else        quant_q8k(ia.x, reinterpret_cast<Q8Kblk *>(p), ia.k / 256);
+    }
+}
 
-    // 2. work items: (split, chain, superblock) with the 4 lanes of the chain (splitting the lanes of a chain over threads breaks the linear
-    //    streams: 50 instead of 80 GB/s). Few big items cannot balance 10 threads, so a group is cut along K into parts when the batch has
-    //    fewer than ~4 items per thread.
+std::vector<SplitPlan> make_split_plan(const Geom & g, double frac) {
+    std::vector<SplitPlan> out(size_t(g.nsplit));
+    for (int64_t s = 0; s < g.nsplit; ++s) {
+        const int64_t Gs = g.sp_groups(s), nsb = g.sp_nsb(s);
+        SplitPlan & p = out[size_t(s)];
+        if (frac <= 0.0) continue;
+        if (nsb >= 2) {
+            int64_t best = 0;
+            double bd = frac;                                   // k = 0: distance |0 - frac|
+            for (int64_t k = 1; k <= nsb; ++k) {
+                const double f = double(std::min<int64_t>(k * GSB, Gs)) / double(Gs);
+                if (std::fabs(f - frac) < bd) { bd = std::fabs(f - frac); best = k; }
+            }
+            p.sb_npu = best;
+            p.kb_npu = best ? g.nbk : 0;
+        } else {
+            const int64_t kb = std::min<int64_t>(g.nbk, int64_t(std::llround(frac * double(g.nbk))));
+            p.sb_npu = kb ? nsb : 0;
+            p.kb_npu = kb;
+        }
+    }
+    return out;
+}
+
+void cpu_pack_npu_act(Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, int64_t n_w, const void * act, uint8_t * dst) {
+    (void) k_full;
+    const size_t nact = act_chunks(fmt, k_use);
+    thread_local std::vector<uint8_t> a;
+    a.assign(nact * CHUNK, 0);
+    const int64_t nbk = k_use / 256;
+    const int32_t hdr[6] = { int32_t(groups), int32_t(k_use), int32_t(fmt_info(fmt).qt), int32_t(nact - 1), int32_t(n_w), int32_t(groups * nbk) };
+    std::memcpy(a.data(), hdr, sizeof(hdr));
+    uint8_t * p = a.data() + 64;
+    if (fmt == Fmt::Q8_0) {       // q[K] signed | f32 d[K/32]   (CPU format: q + 128, then f32 d[K/32])
+        const uint8_t * q = static_cast<const uint8_t *>(act);
+        for (int64_t i = 0; i < k_use; ++i) p[i] = uint8_t(q[i] ^ 0x80);
+        std::memcpy(p + k_use, q + k_full, size_t(k_use / 32) * 4);
+    } else {                       // q[K] | f32 d[K/256] | i32 bsum32[K/32]
+        const Q8Kblk * b = static_cast<const Q8Kblk *>(act);
+        float * d = reinterpret_cast<float *>(p + k_use);
+        int32_t * bs = reinterpret_cast<int32_t *>(p + k_use + size_t(nbk) * 4);
+        for (int64_t i = 0; i < nbk; ++i) {
+            std::memcpy(p + i * 256, b[i].q, 256);
+            d[i] = b[i].d;
+            for (int j = 0; j < 8; ++j) bs[i * 8 + j] = int32_t(b[i].bs[2 * j]) + int32_t(b[i].bs[2 * j + 1]);
+        }
+    }
+    for (size_t r = 0; r < nact; ++r) {   // every chunk duplicated per lane (stride-0 DMA repeat is not supported)
+        for (int l = 0; l < N_LANES; ++l) std::memcpy(dst + (r * N_LANES + l) * CHUNK, a.data() + r * CHUNK, CHUNK);
+    }
+}
+
+void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<void()> & master_hook) {
+    if (nj == 0) return;
+    const Tabs & T = tabs();
+    prepare_acts(jobs, nj);
+
+    // work items: (split, chain, superblock) with the 4 lanes of the chain (splitting the lanes of a chain over threads breaks the linear
+    // streams: 50 instead of 80 GB/s). Few big items cannot balance 10 threads, so a group is cut along K into parts when the batch has
+    // fewer than ~4 items per thread.
+    auto plan_of = [&](size_t j, int64_t s) { return jobs[j].plan ? jobs[j].plan[s] : SplitPlan{ 0, jobs[j].geom.nbk }; };
+    // CPU k-block range of superblock sb (empty: the NPU does all of it)
+    auto kb_range = [&](size_t j, int64_t s, int64_t sb, int64_t & k0, int64_t & k1) {
+        const Geom & g = jobs[j].geom;
+        const SplitPlan p = plan_of(j, s);
+        k1 = g.nbk;
+        if (!p.npu() || sb >= p.sb_npu) k0 = 0;
+        else k0 = p.kb_npu;                     // K split: the NPU did [0, kb_npu) of these rows (== nbk: nothing left)
+        return k0 < k1;
+    };
     g_items.clear();
     g_grps.clear();
     size_t base_total = 0;
     for (size_t j = 0; j < nj; ++j) {
         const Geom & g = jobs[j].geom;
-        for (int64_t s = 0; s < g.nsplit; ++s) base_total += size_t(N_CHAINS) * size_t(std::max<int64_t>(0, g.sp_nsb(s) - std::min<int64_t>(jobs[j].sb_from, g.sp_nsb(s))));
+        for (int64_t s = 0; s < g.nsplit; ++s)
+            for (int64_t sb = 0; sb < g.sp_nsb(s); ++sb) {
+                int64_t k0, k1;
+                if (kb_range(j, s, sb, k0, k1)) base_total += N_CHAINS;
+            }
     }
-    const size_t want = size_t(4 * pf_threads());
-    const int64_t parts_wanted = base_total >= want ? 1 : int64_t((want + base_total - 1) / base_total);
+    static const int WANT = [] { const char * e = std::getenv("XD_WANT"); return e ? std::atoi(e) : 4; }();
+    const size_t want = size_t(WANT * pf_threads());
+    const int64_t parts_wanted = base_total == 0 ? 1 : base_total >= want ? 1 : int64_t((want + base_total - 1) / base_total);
     size_t scr_total = 0;
     for (size_t j = 0; j < nj; ++j) {
         const Geom & g = jobs[j].geom;
-        const int64_t P = std::max<int64_t>(1, std::min<int64_t>(parts_wanted, g.nbk / 2));
         for (int64_t s = 0; s < g.nsplit; ++s) {
             const int64_t Gs = g.sp_groups(s), nsb = g.sp_nsb(s);
-            for (int64_t sb = std::min<int64_t>(jobs[j].sb_from, nsb); sb < nsb; ++sb) {
+            for (int64_t sb = 0; sb < nsb; ++sb) {
+                int64_t k0, k1;
+                if (!kb_range(j, s, sb, k0, k1)) continue;
+                static const int MINK = [] { const char * e = std::getenv("XD_MINK"); return e ? std::atoi(e) : 2; }();
+                const int64_t P = std::max<int64_t>(1, std::min<int64_t>(parts_wanted, (k1 - k0) / MINK));
                 for (int64_t chain = 0; chain < N_CHAINS; ++chain) {
                     if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS >= g.n) continue;   // padding only
                     const int64_t gc = g.sb_groups(s, sb);
@@ -476,7 +562,7 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj) {
                     if (P > 1) scr_total += size_t(P) * size_t(N_LANES * gc * GROUP_ROWS);
                     for (int64_t part = 0; part < P; ++part) {
                         g_items.push_back(Item{ int32_t(j), int32_t(s), int32_t(chain), 0, N_LANES, int32_t(sb),
-                                                int32_t(g.nbk * part / P), int32_t(g.nbk * (part + 1) / P), int32_t(part), grp });
+                                                int32_t(k0 + (k1 - k0) * part / P), int32_t(k0 + (k1 - k0) * (part + 1) / P), int32_t(part), grp });
                     }
                 }
             }
@@ -488,30 +574,23 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj) {
     const double tw0 = now_s();
     std::atomic<size_t> next{0};
     const size_t n_items = g_items.size();
-    const size_t n_in = g_ins.size();
-    std::atomic<size_t> next_q{0};
 
 #if defined(_OPENMP)
     #pragma omp parallel num_threads(pf_threads())
 #endif
     {
-        // quantize the inputs (one task per input, tiny)
-        for (size_t q = next_q.fetch_add(1); q < n_in; q = next_q.fetch_add(1)) {
-            const InAct & ia = g_ins[q];
-            uint8_t * p = store + ia.off;
-            if (ia.q80) quant_q80(ia.x, p, reinterpret_cast<float *>(p + ia.k), ia.k / 32);
-            else        quant_q8k(ia.x, reinterpret_cast<Q8Kblk *>(p), ia.k / 256);
-        }
 #if defined(_OPENMP)
-        #pragma omp barrier
+        if (omp_get_thread_num() == 0 && master_hook) master_hook();
+#else
+        if (master_hook) master_hook();
 #endif
         const double tb = now_s();
         for (size_t it = next.fetch_add(1); it < n_items; it = next.fetch_add(1)) {
             const Item & m = g_items[it];
             const CpuDecodeJob & jb = jobs[m.job];
-            const InAct & ia = g_ins[in_of[m.job]];
+            const InAct & ia = g_ins[g_in_of[m.job]];
             ActRef act;
-            const uint8_t * p = store + ia.off;
+            const uint8_t * p = g_store + ia.off;
             if (ia.q80) { act.q0 = p; act.d0 = reinterpret_cast<const float *>(p + ia.k); }
             else        { act.k8 = reinterpret_cast<const Q8Kblk *>(p); }
             process_item(m, jb, act, T);
@@ -525,7 +604,10 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj) {
 
 bool cpu_decode_available() { return false; }
 void cpu_decode_stats(double & b, double & w, int & t) { b = w = 0; t = 1; }
-void cpu_decode_run(const CpuDecodeJob *, size_t) {}
+void cpu_decode_run(const CpuDecodeJob *, size_t, const std::function<void()> &) {}
+const void * cpu_decode_act(size_t) { return nullptr; }
+std::vector<SplitPlan> make_split_plan(const layout::Geom & g, double) { return std::vector<SplitPlan>(size_t(g.nsplit)); }
+void cpu_pack_npu_act(layout::Fmt, int64_t, int64_t, int64_t, int64_t, const void *, uint8_t *) {}
 
 #endif
 

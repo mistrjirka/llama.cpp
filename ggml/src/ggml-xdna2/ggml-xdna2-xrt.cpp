@@ -42,8 +42,8 @@ struct Ctx {
     xrt::xclbin                       xb;
     xrt::hw_context                   hw;
     xrt::kernel                       kern;
-    std::map<std::tuple<int64_t, int64_t, int64_t>, xrt::bo> instr;
-    std::map<std::tuple<int64_t, int64_t, int64_t>, uint32_t> instr_words;
+    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, xrt::bo> instr;          // (chain_words, a_words, g, stride_words)
+    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, uint32_t> instr_words;
     std::map<std::vector<SJob *>, xrt::runlist> runlists;
 };
 
@@ -83,6 +83,10 @@ struct SJob {
     xrt::run      run;        // member of runlists (cannot be started on its own)
     xrt::run      run_solo;   // same arguments, started on its own
     uint32_t      nwords = 0;
+    // decode split: the NPU part of this split (a prefix of every chain: G_npu groups per core, nbk_npu records per row)
+    bool          active = true;
+    int64_t       G_npu = 0, nbk_npu = 0, n_w = 0;
+    bool          add = false;      // the rows also get a CPU part (K split): add instead of store
 };
 
 class XrtExecutor final : public NpuExecutor {
@@ -99,6 +103,7 @@ public:
     ~XrtExecutor() override {
         std::lock_guard<std::mutex> lk(mu_);
         if (ctx_) ctx_->runlists.clear();
+        split_jobs_.clear();
         pf_jobs_.clear();
         pf_pools_.clear();
         pf_ctx_.reset();
@@ -121,6 +126,14 @@ public:
             if (std::get<0>(it->first) == arena) {
                 unbind(it->second);
                 it = jobs_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (auto it = split_jobs_.begin(); it != split_jobs_.end();) {
+            if (std::get<0>(it->first) == arena) {
+                unbind(it->second);
+                it = split_jobs_.erase(it);
             } else {
                 ++it;
             }
@@ -182,12 +195,12 @@ private:
         return *ctx_;
     }
 
-    const xrt::bo & get_instr(Ctx & c, const layout::Geom & g, int64_t s, size_t a_bytes) {
-        const auto key = std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(a_bytes / 4), g.sp_groups(s));
+    const xrt::bo & get_instr(Ctx & c, int64_t chain_words, size_t a_bytes, int64_t groups, int64_t stride_words) {
+        const auto key = std::make_tuple(chain_words, int64_t(a_bytes / 4), groups, stride_words);
         auto it = c.instr.find(key);
         if (it != c.instr.end()) return it->second;
         std::vector<uint32_t> w;
-        if (!kernel_cache().insts_for(std::get<0>(key), std::get<1>(key), std::get<2>(key), w)) {
+        if (!kernel_cache().insts_for(std::get<0>(key), std::get<1>(key), std::get<2>(key), w, std::get<3>(key))) {
             throw std::runtime_error("cannot derive the instruction stream of the decode kernel for chain_words=" +
                                      std::to_string(std::get<0>(key)));
         }
@@ -222,11 +235,12 @@ private:
             j->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
             std::memset(j->y.map<char *>(), 0, yb);
             j->y.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            const xrt::bo & bi = get_instr(c, g, s, j->a_bytes);
+            const xrt::bo & bi = get_instr(c, int64_t(g.sp_chain_words(s)), j->a_bytes, g.sp_groups(s), int64_t(g.sp_chain_words(s)));
+            const auto ikey = std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(j->a_bytes / 4), g.sp_groups(s), int64_t(g.sp_chain_words(s)));
             xrt::run r(c.kern);
             r.set_arg(0, 3);
             r.set_arg(1, bi);
-            r.set_arg(2, c.instr_words[std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(j->a_bytes / 4), g.sp_groups(s))]);
+            r.set_arg(2, c.instr_words[ikey]);
             r.set_arg(3, j->w);
             r.set_arg(4, j->a);
             r.set_arg(5, j->y);
@@ -235,7 +249,7 @@ private:
                 xrt::run r2(c.kern);
                 r2.set_arg(0, 3);
                 r2.set_arg(1, bi);
-                r2.set_arg(2, c.instr_words[std::make_tuple(int64_t(g.sp_chain_words(s)), int64_t(j->a_bytes / 4), g.sp_groups(s))]);
+                r2.set_arg(2, c.instr_words[ikey]);
                 r2.set_arg(3, j->w);
                 r2.set_arg(4, j->a);
                 r2.set_arg(5, j->y);
@@ -338,6 +352,165 @@ private:
                     if (row0 >= g.n) continue;
                     const int64_t cnt = std::min<int64_t>(16, g.n - row0);
                     std::memcpy(dst + row0, y + ((c * G + gg) * 4 + k) * 16, size_t(cnt) * sizeof(float));
+                }
+            }
+        }
+    }
+
+
+    // ---------------------------------------------------------------- decode split path (NPU prefix of every chain, CPU does the rest)
+    Splits & get_split_job(const CpuDecodeJob & cj, Ctx & c) {
+        const layout::Geom & g = cj.geom;
+        const JobKey key{ cj.arena, cj.w_off, int(g.fmt), g.n, g.k };
+        auto it = split_jobs_.find(key);
+        if (it != split_jobs_.end()) return it->second;
+        const double t0 = now_s();
+        const XrtBoArena * xa = dynamic_cast<const XrtBoArena *>(cj.arena);
+        if (!xa) throw std::runtime_error("weights are not in an NPU buffer");
+        Splits sj;
+        for (int64_t s = 0; s < g.nsplit; ++s) {
+            const SplitPlan p = cj.plan[s];
+            auto j = std::make_unique<SJob>();
+            j->geom = g;
+            j->split = s;
+            j->arena = cj.arena;
+            j->w_off = cj.w_off;
+            if (!p.npu()) {
+                j->active = false;
+                sj.push_back(std::move(j));
+                continue;
+            }
+            const int64_t Gs = g.sp_groups(s);
+            j->G_npu = std::min<int64_t>(p.sb_npu * layout::GSB, Gs);
+            j->nbk_npu = p.kb_npu;
+            j->add = p.kb_npu < g.nbk;
+            const size_t lane_bytes = g.lane_bytes_groups_k(j->G_npu, j->nbk_npu);
+            j->n_w = int64_t(lane_bytes / layout::CHUNK);
+            const int64_t chain_words = j->n_w * layout::CHUNK;            // n_w chunks x 4 lanes x CHUNK B / 4
+            j->w = xrt::bo(xa->bo(), g.sp_bytes(s), cj.w_off + g.sp_off(s));
+            j->a_bytes = layout::act_chunks(g.fmt, j->nbk_npu * 256) * layout::N_LANES * layout::CHUNK;
+            j->a = xrt::ext::bo{dev_, j->a_bytes};
+            const size_t yb = size_t(j->G_npu) * layout::ROW_GRAN * sizeof(float);
+            j->y = xrt::ext::bo{dev_, yb};
+            std::memset(j->a.map<char *>(), 0, j->a_bytes);
+            j->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            std::memset(j->y.map<char *>(), 0, yb);
+            j->y.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            const xrt::bo & bi = get_instr(c, chain_words, j->a_bytes, j->G_npu, int64_t(g.sp_chain_words(s)));
+            const auto ikey = std::make_tuple(chain_words, int64_t(j->a_bytes / 4), j->G_npu, int64_t(g.sp_chain_words(s)));
+            j->nwords = c.instr_words[ikey];
+            for (xrt::run * r : { &j->run, &j->run_solo }) {
+                xrt::run rr(c.kern);
+                rr.set_arg(0, 3);
+                rr.set_arg(1, bi);
+                rr.set_arg(2, j->nwords);
+                rr.set_arg(3, j->w);
+                rr.set_arg(4, j->a);
+                rr.set_arg(5, j->y);
+                *r = std::move(rr);
+            }
+            sj.push_back(std::move(j));
+        }
+        st_.t_setup += now_s() - t0;
+        return split_jobs_.emplace(key, std::move(sj)).first->second;
+    }
+
+    bool decode_split_begin(const CpuDecodeJob * jobs, size_t n) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        try {
+            Ctx & c = get_ctx();
+            if (last_ctx_ != 1) { if (last_ctx_ != 0) st_.pf_switches++; last_ctx_ = 1; }
+            sp_disp_.clear();
+            sp_jobs_.clear();
+            double t0 = now_s();
+            for (size_t i = 0; i < n; ++i) {
+                bool any = false;
+                for (int64_t s = 0; jobs[i].plan && s < jobs[i].geom.nsplit; ++s) any |= jobs[i].plan[s].npu();
+                if (!any) continue;
+                Splits & sj = get_split_job(jobs[i], c);
+                for (auto & j : sj) {
+                    if (!j->active) continue;
+                    cpu_pack_npu_act(jobs[i].geom.fmt, jobs[i].geom.k, j->nbk_npu * 256, j->G_npu, j->n_w, cpu_decode_act(i), j->a.map<uint8_t *>());
+                    j->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+                    sp_disp_.push_back(j.get());
+                    sp_jobs_.push_back(i);
+                    st_.sp_bytes_w += double(jobs[i].geom.lane_bytes_groups_k(j->G_npu, j->nbk_npu)) * layout::N_CORES;
+                }
+            }
+            st_.sp_t_pack += now_s() - t0;
+            sp_cjobs_ = jobs;
+            if (sp_disp_.empty()) return true;
+            if (sp_disp_.size() > kMaxRunlist) throw std::runtime_error("too many dispatches in one decode batch");
+            t0 = now_s();
+            if (sp_disp_.size() == 1) {
+                sp_disp_[0]->run_solo.start();
+            } else {
+                auto it = c.runlists.find(sp_disp_);
+                if (it == c.runlists.end()) {
+                    xrt::runlist rl(c.hw);
+                    for (SJob * j : sp_disp_) rl.add(j->run);
+                    it = c.runlists.emplace(sp_disp_, std::move(rl)).first;
+                }
+                it->second.execute();
+            }
+            st_.sp_t_start += now_s() - t0;
+            st_.sp_calls++;
+            st_.sp_runs += sp_disp_.size();
+            return true;
+        } catch (const std::exception & e) {
+            GGML_LOG_ERROR("ggml-xdna2: NPU decode split begin failed: %s\n", e.what());
+            return false;
+        }
+    }
+
+    bool decode_split_end() override {
+        std::lock_guard<std::mutex> lk(mu_);
+        try {
+            if (sp_disp_.empty()) return true;
+            double t0 = now_s();
+            if (sp_disp_.size() == 1) {
+                static const bool poll = std::getenv("XD_POLL") != nullptr;
+                if (poll) {
+                    while (sp_disp_[0]->run_solo.state() != ERT_CMD_STATE_COMPLETED) {}
+                } else {
+                    sp_disp_[0]->run_solo.wait2();
+                }
+            } else {
+                ctx_->runlists.find(sp_disp_)->second.wait();
+            }
+            st_.sp_t_wait += now_s() - t0;
+            t0 = now_s();
+            for (size_t q = 0; q < sp_disp_.size(); ++q) {
+                SJob & j = *sp_disp_[q];
+                const CpuDecodeJob & cj = sp_cjobs_[sp_jobs_[q]];
+                sync_from_device(j.y);
+                unpermute_part(cj.geom, j, cj.dst);
+            }
+            st_.sp_t_merge += now_s() - t0;
+            sp_disp_.clear();
+            return true;
+        } catch (const std::exception & e) {
+            GGML_LOG_ERROR("ggml-xdna2: NPU decode split end failed: %s\n", e.what());
+            return false;
+        }
+    }
+
+    // Y of the NPU part of a split: f32 [col 8][G_npu][core 4][16]  ->  row = split_row0 + ((col*4 + k)*Gs + g)*16 + i  (g < G_npu)
+    static void unpermute_part(const layout::Geom & g, SJob & j, float * dst) {
+        const float * y = j.y.map<const float *>();
+        const int64_t Gs = g.sp_groups(j.split), G = j.G_npu, row_base = g.sp_row0(j.split);
+        for (int64_t c = 0; c < 8; ++c) {
+            for (int64_t gg = 0; gg < G; ++gg) {
+                for (int64_t k = 0; k < 4; ++k) {
+                    const int64_t row0 = row_base + ((c * 4 + k) * Gs + gg) * 16;
+                    if (row0 >= g.n) continue;
+                    const int64_t cnt = std::min<int64_t>(16, g.n - row0);
+                    const float * src = y + ((c * G + gg) * 4 + k) * 16;
+                    if (j.add) {
+                        for (int64_t i = 0; i < cnt; ++i) dst[row0 + i] += src[i];
+                    } else {
+                        std::memcpy(dst + row0, src, size_t(cnt) * sizeof(float));
+                    }
                 }
             }
         }
@@ -552,6 +725,10 @@ private:
     bool ok_ = false;
     std::unique_ptr<Ctx> ctx_;
     std::map<JobKey, Splits> jobs_;
+    std::map<JobKey, Splits> split_jobs_;
+    std::vector<SJob *> sp_disp_;          // dispatches of the decode batch in flight
+    std::vector<size_t> sp_jobs_;          // job index of each
+    const CpuDecodeJob * sp_cjobs_ = nullptr;
     std::unique_ptr<PfCtx> pf_ctx_;
     std::map<std::pair<size_t, size_t>, std::unique_ptr<PfPool>> pf_pools_;
     std::map<JobKey, PfSplits> pf_jobs_;

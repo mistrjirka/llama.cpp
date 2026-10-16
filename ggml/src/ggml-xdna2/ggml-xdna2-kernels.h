@@ -4,10 +4,11 @@
 //
 // There is exactly ONE decode kernel (xclbin): kernels/qku.cc + genu.py. The qtype (Q4_K/Q5_K/Q6_K/Q8_0), K (<= layout::KMAX),
 // and the number of groups are RUNTIME values (activation header, see qku.cc), so all weights of a model run in ONE hw context.
-// Only the instruction stream depends on three host values, each linear (zero intercept) in exactly one 32-bit word set:
+// Only the instruction stream depends on four host values, each linear (zero intercept) in exactly one 32-bit word set:
 //     chain_words   weight words per chain of a dispatch  (layout::Geom::sp_chain_words)
 //     a_words       words of the activation BO
 //     g             16-row groups per core                (output words)
+//     stride_words  words between the chains in the W BO (= chain_words, or more to stream only a prefix of every chain: NPU/CPU row split)
 // The build step produces the xclbin plus the base stream (kRefChain, kRefA, kRefG) and one stream per varied parameter; the backend
 // derives the stream of a dispatch by scaling the words that differ (insts_for; checked bit identical against native builds).
 //
@@ -72,7 +73,8 @@ public:
     std::string xclbin_path() const { return dir() + "/kernel.xclbin"; }
 
     // Instruction stream (words) of a dispatch, derived from the reference streams. third = groups per core (decode) / output words per column (prefill).
-    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out);
+    // Decode only: stride_words = words between the starts of the chains in the W BO (0 = chain_words; chain_words < stride_words streams a PREFIX of every chain).
+    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out, int64_t stride_words = 0);
     // the pure patching rule (also used by the tool/tests): the words where base and var differ are linear in the parameter
     // (zero intercept): w(p) = base * p / p0. Applied on top of `inout`.
     static bool patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
