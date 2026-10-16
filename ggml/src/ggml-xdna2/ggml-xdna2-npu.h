@@ -107,6 +107,11 @@ bool reference_mode();
 bool prefill_enabled();
 int  prefill_min_tokens();
 
+// Decode (M = 1) execution mode, GGML_XDNA2_DECODE: "npu" (default: unified NPU decode kernel), "cpu" (AVX-512 GEMV straight from the NPU layout,
+// ggml-xdna2-cpu.cpp), "split" (NPU prefix + CPU suffix of every matrix, concurrently).
+enum class DecodeMode { Npu, Cpu, Split };
+DecodeMode decode_mode();
+
 // Placement policy: may a weight of this geometry live in our buffer (supports_op)?
 //   reference mode: always. Otherwise only if the NPU executor is usable and the kernel for (qtype, K) is cached or can be
 //   built with the installed toolchain.

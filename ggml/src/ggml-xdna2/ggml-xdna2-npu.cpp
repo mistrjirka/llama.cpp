@@ -124,6 +124,16 @@ int prefill_min_tokens() {
     return 2;      // measured (Qwen3.5-4B): the prefill kernel beats n per-token decode dispatches from 2 rows on (pp2 18.3 vs 13.2, pp16 122.5 vs 15.0 t/s)
 }
 
+DecodeMode decode_mode() {
+    static const DecodeMode m = [] {
+        const char * e = std::getenv("GGML_XDNA2_DECODE");
+        if (e && !std::strcmp(e, "cpu")) return DecodeMode::Cpu;
+        if (e && !std::strcmp(e, "split")) return DecodeMode::Split;
+        return DecodeMode::Npu;
+    }();
+    return m;
+}
+
 bool placement_ok(const layout::Geom & geom) {
     if (reference_mode()) {
         return true;

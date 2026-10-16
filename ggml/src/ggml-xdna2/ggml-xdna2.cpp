@@ -9,6 +9,7 @@
 
 #include "ggml-xdna2-arena.h"
 #include "ggml-xdna2-compute.h"
+#include "ggml-xdna2-cpu.h"
 #include "ggml-xdna2-layout.h"
 #include "ggml-xdna2-npu.h"
 
@@ -250,8 +251,10 @@ struct ggml_backend_xdna2_context {
     size_t                 n_acts = 0;
     std::vector<MulMatJob> pending;       // queued independent jobs
     std::vector<PrefillJob> pf_pending;   // queued independent prefill-kernel jobs
+    std::vector<CpuDecodeJob> cpu_pending; // queued independent CPU decode GEMVs (GGML_XDNA2_DECODE=cpu)
     std::vector<std::pair<const char *, const char *>> pending_dst;   // [begin, end) of the pending outputs
-    double t_quant = 0, t_graph = 0;      // seconds
+    double t_quant = 0, t_graph = 0, t_cpu = 0, b_cpu = 0;      // seconds / bytes
+    uint64_t n_cpu_flush = 0, n_cpu_jobs = 0;
     double t_last_end = 0, t_between = 0; // time between two graph computes of this backend (CPU splits + copies)
     uint64_t n_graphs = 0, n_mul_mat = 0;
 };
@@ -266,6 +269,17 @@ static double xdna2_now() {
 }
 
 static void xdna2_flush(ggml_backend_xdna2_context * ctx) {
+    if (!ctx->cpu_pending.empty()) {
+        const double t0 = xdna2_now();
+        cpu_decode_run(ctx->cpu_pending.data(), ctx->cpu_pending.size());
+        ctx->t_cpu += xdna2_now() - t0;
+        ctx->n_cpu_flush++; ctx->n_cpu_jobs += ctx->cpu_pending.size();
+        for (const auto & j : ctx->cpu_pending) ctx->b_cpu += double(j.geom.bytes);
+        ctx->cpu_pending.clear();
+        if (ctx->pending.empty() && ctx->pf_pending.empty()) {
+            ctx->pending_dst.clear();
+        }
+    }
     if (!ctx->pf_pending.empty()) {
         if (!npu_executor().run_prefill(ctx->pf_pending.data(), ctx->pf_pending.size())) {
             const layout::Geom & g = ctx->pf_pending[0].geom;
@@ -321,11 +335,22 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
         }
     }
 
+    const bool use_cpu = !reference_mode() && ne11 == 1 && decode_mode() == DecodeMode::Cpu && cpu_decode_available();
     const bool use_pf = !reference_mode() && ne11 >= prefill_min_tokens() && xdna2_pf_supports(geom.fmt) && npu_executor().prefill_available();
 
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
         for (int64_t i12 = 0; i12 < ne12; ++i12) {
             const int64_t i02 = i12 / r2, i03 = i13 / r3;
+
+            if (use_cpu) {
+                CpuDecodeJob cj;
+                cj.geom = geom;
+                cj.w    = arena->base() + base_off + size_t(i03 * ne02 + i02) * geom.bytes;
+                cj.x    = reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13);
+                cj.dst  = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i12 * nb2 + i13 * nb3);
+                ctx->cpu_pending.push_back(cj);
+                continue;
+            }
 
             if (use_pf) {
                 PrefillJob pj;
@@ -376,6 +401,12 @@ static const char * ggml_backend_xdna2_get_name(ggml_backend_t) {
 
 static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_stderr = false) {
 #define XLOG(...) do { if (to_stderr) { fprintf(stderr, __VA_ARGS__); } else { GGML_LOG_INFO(__VA_ARGS__); } } while (0)
+    if (ctx->t_cpu > 0) {
+        XLOG("ggml-xdna2: CPU decode GEMV from the NPU layout: %.3f s in %llu flushes (%llu matmuls), %.2f GB -> %.1f GB/s\n", ctx->t_cpu, (unsigned long long) ctx->n_cpu_flush, (unsigned long long) ctx->n_cpu_jobs, ctx->b_cpu / 1e9, ctx->b_cpu / 1e9 / ctx->t_cpu);
+        double busy, wall; int thr;
+        cpu_decode_stats(busy, wall, thr);
+        XLOG("ggml-xdna2: CPU decode team: %d threads, utilisation %.1f %% (busy %.2f thread-s of %.2f s wall)\n", thr, 100.0 * busy / (wall * thr), busy, wall);
+    }
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();
         XLOG("ggml-xdna2: time between backend graph computes (CPU splits + tensor copies) %.3f s\n", ctx->t_between);

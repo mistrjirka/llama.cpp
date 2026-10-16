@@ -17,6 +17,7 @@ find_library(XRT_COREUTIL_LIB
 ggml_add_backend_library(ggml-xdna2
     ggml-xdna2.cpp
     ggml-xdna2-compute.cpp
+    ggml-xdna2-cpu.cpp
     ggml-xdna2-bfp.cpp
     ggml-xdna2-kernels.cpp
     ggml-xdna2-npu.cpp
@@ -39,6 +40,7 @@ target_include_directories(ggml-xdna2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_source_files_properties(ggml-xdna2-compute.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 
 set_source_files_properties(ggml-xdna2-bfp.cpp PROPERTIES COMPILE_OPTIONS "-O3")
+set_source_files_properties(ggml-xdna2-cpu.cpp PROPERTIES COMPILE_OPTIONS "-O3")
 
 if (GGML_OPENMP_ENABLED)
     target_compile_definitions(ggml-xdna2 PRIVATE GGML_USE_OPENMP)
@@ -66,6 +68,17 @@ if (GGML_BUILD_TESTS OR LLAMA_BUILD_TESTS)
         target_link_libraries(test-xdna2-layout PRIVATE ${GGML_OPENMP_TARGET_CXX})
     endif()
     add_test(NAME test-xdna2-layout COMMAND test-xdna2-layout)
+
+    # CPU decode GEMV on the NPU layout: accuracy test + bandwidth microbenchmark
+    add_executable(test-xdna2-cpu tests/test-xdna2-cpu.cpp ggml-xdna2-cpu.cpp ggml-xdna2-bfp.cpp)
+    target_compile_features(test-xdna2-cpu PRIVATE cxx_std_17)
+    target_include_directories(test-xdna2-cpu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include)
+    target_compile_options(test-xdna2-cpu PRIVATE -O3)
+    target_link_libraries(test-xdna2-cpu PRIVATE ggml-base Threads::Threads)
+    if (GGML_OPENMP_ENABLED)
+        target_compile_definitions(test-xdna2-cpu PRIVATE GGML_USE_OPENMP)
+        target_link_libraries(test-xdna2-cpu PRIVATE ${GGML_OPENMP_TARGET_CXX})
+    endif()
 
     # kernel cache exerciser (builds NPU kernels, does not touch the NPU)
     add_executable(xdna2-kernel-tool tests/xdna2-kernel-tool.cpp ggml-xdna2-kernels.cpp)
