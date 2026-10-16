@@ -121,7 +121,7 @@ int prefill_min_tokens() {
     if (const char * e = std::getenv("GGML_XDNA2_PF_MIN")) {
         if (*e) return std::max(1, std::atoi(e));
     }
-    return 32;
+    return 2;      // measured (Qwen3.5-4B): the prefill kernel beats n per-token decode dispatches from 2 rows on (pp2 18.3 vs 13.2, pp16 122.5 vs 15.0 t/s)
 }
 
 bool placement_ok(const layout::Geom & geom) {

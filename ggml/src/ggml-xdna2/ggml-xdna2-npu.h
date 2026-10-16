@@ -103,7 +103,7 @@ KernelCache & prefill_kernel_cache();    // prefill kernel
 // GGML_XDNA2_REFERENCE=1: run the host reference emulation instead of the NPU (tests/debug only).
 bool reference_mode();
 
-// Prefill kernel policy: GGML_XDNA2_PF_DISABLE=1 turns it off; MUL_MATs with at least prefill_min_tokens() activation rows (GGML_XDNA2_PF_MIN, default 32) use it.
+// Prefill kernel policy: GGML_XDNA2_PF_DISABLE=1 turns it off; MUL_MATs with at least prefill_min_tokens() activation rows (GGML_XDNA2_PF_MIN, default 2) use it.
 bool prefill_enabled();
 int  prefill_min_tokens();
 
