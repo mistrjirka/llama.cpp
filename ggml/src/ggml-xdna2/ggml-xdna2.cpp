@@ -389,9 +389,9 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
         const ExecStats st = npu_executor().stats();
         if (st.pf_jobs > 0) {
             XLOG("ggml-xdna2: prefill: %llu jobs, %llu waves, %llu tile dispatches; encode %.3f s, A-BO fill %.3f s + sync %.3f s, NPU wait %.3f s, Y sync %.3f s + unpermute %.3f s, setup %.3f s, "
-                 "weights streamed %.2f GB (%.1f GB/s while on the NPU), %llu hw context switches\n",
+                 "weights streamed %.2f GB (%.1f GB/s while on the NPU), %llu hw context switches; host GB x %.2f a %.2f y %.2f\n",
                  (unsigned long long) st.pf_jobs, (unsigned long long) st.pf_waves, (unsigned long long) st.pf_dispatches, st.pf_t_encode, st.pf_t_abuild, st.pf_t_abo - st.pf_t_abuild, st.pf_t_npu,
-                 st.pf_t_ysync, st.pf_t_unperm - st.pf_t_ysync, st.pf_t_setup, st.pf_bytes_w / 1e9, st.pf_t_npu > 0 ? st.pf_bytes_w / 1e9 / st.pf_t_npu : 0.0, (unsigned long long) st.pf_switches);
+                 st.pf_t_ysync, st.pf_t_unperm - st.pf_t_ysync, st.pf_t_setup, st.pf_bytes_w / 1e9, st.pf_t_npu > 0 ? st.pf_bytes_w / 1e9 / st.pf_t_npu : 0.0, (unsigned long long) st.pf_switches, st.pf_bytes_x / 1e9, st.pf_bytes_a / 1e9, st.pf_bytes_y / 1e9);
         }
     }
     XLOG("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",

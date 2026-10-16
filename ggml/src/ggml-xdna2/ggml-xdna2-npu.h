@@ -60,6 +60,7 @@ struct ExecStats {
     double   pf_t_abuild = 0;     // part of pf_t_abo: host replication of the slabs (without the BO sync)
     double   pf_t_ysync = 0;      // part of pf_t_unperm: BO sync of the result
     double   pf_bytes_w = 0;      // weight bytes streamed by the prefill kernel (all tiles)
+    double   pf_bytes_x = 0, pf_bytes_a = 0, pf_bytes_y = 0;   // host bytes: f32 activations encoded, A tiles written, Y tiles unpermuted
     uint64_t pf_switches = 0;     // hw context switches (decode <-> prefill)
 };
 

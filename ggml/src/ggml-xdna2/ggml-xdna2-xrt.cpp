@@ -505,6 +505,7 @@ private:
             const PrefillJob & pj = jobs[u.job];
             pf_unpermute_tile(pool.y.map<const float *>() + (pool.y_tile / sizeof(float)) * u.slot, u.tile, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride);
             st_.pf_t_unperm += now_s() - t0;
+            st_.pf_bytes_y += double(pool.y_tile);
         };
         PfUnit * prev = nullptr;
         for (size_t ui = 0; ui < units.size(); ++ui) {
@@ -520,6 +521,7 @@ private:
                 en.tiles[u.tile].resize(size_t(g.nbk) * PF_SLAB_BYTES);
                 pf_encode_tile(en.tiles[u.tile].data(), pj.x, pj.x_stride, pj.n_tok, g.k, u.tile);
                 en.done[u.tile] = 1;
+                st_.pf_bytes_x += double(g.k) * PF_TILE_TOK * sizeof(float);
             }
             st_.pf_t_encode += now_s() - t0;
             // 2. A BO tile slot
@@ -528,6 +530,7 @@ private:
             pool.next_slot = (pool.next_slot + 1) % PF_MAX_TILES;
             pf_build_a_tile(pool.a.map<uint8_t *>() + pool.a_stride * u.slot, en.tiles[u.tile].data(), g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(u.sp->split));
             st_.pf_t_abuild += now_s() - t0;
+            st_.pf_bytes_a += double(pool.a_tile);
             pool.a.sync(XCL_BO_SYNC_BO_TO_DEVICE, pool.a_tile, pool.a_stride * u.slot);
             st_.pf_t_abo += now_s() - t0;
             // 3. dispatch

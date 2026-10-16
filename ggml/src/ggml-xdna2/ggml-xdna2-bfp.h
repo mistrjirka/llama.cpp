@@ -19,6 +19,9 @@
 
 namespace xdna2 {
 
+// OpenMP team size for the backend's host loops (physical cores, or GGML_XDNA2_THREADS)
+int pf_threads();
+
 constexpr size_t PF_SLAB_BYTES = 18432;       // 64 tokens x 256 k in bfp16ebs8
 constexpr int    PF_TILE_TOK   = 64;
 constexpr int    PF_MAX_TILES  = 8;           // tiles per wave (512 tokens)

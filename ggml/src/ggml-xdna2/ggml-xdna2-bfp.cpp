@@ -1,7 +1,10 @@
 #include "ggml-xdna2-bfp.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <thread>
 
 #if defined(__x86_64__)
 #include <immintrin.h>
@@ -13,7 +16,29 @@
 
 namespace xdna2 {
 
+// Team size of the host prefill loops. The default OpenMP team (all hardware threads) oversubscribes the cores while the
+// CPU backend's team (one thread per physical core, llama.cpp's default) is still spin-waiting: measured 2.5x slower
+// prefill end to end on the Ryzen AI 9 365. Default: physical cores; GGML_XDNA2_THREADS overrides.
+int pf_threads() {
+    static const int n = [] {
+        if (const char * e = std::getenv("GGML_XDNA2_THREADS")) {
+            const int v = std::atoi(e);
+            if (v > 0) return v;
+        }
+        int hw = int(std::thread::hardware_concurrency());
+        if (hw <= 0) hw = 1;
+        if (FILE * f = std::fopen("/sys/devices/system/cpu/smt/active", "r")) {
+            int smt = 0;
+            if (std::fscanf(f, "%d", &smt) == 1 && smt == 1 && hw > 1) hw /= 2;
+            std::fclose(f);
+        }
+        return hw;
+    }();
+    return n;
+}
+
 namespace {
+
 
 // 8 floats -> shared exponent + 8 int8 mantissas, bit exact with bfpmodel.enc_rne
 inline void enc8(const float * x, uint8_t * out /* 9 bytes */) {
@@ -112,7 +137,7 @@ void pf_enc8_fast(const float * x, uint8_t * out) {
 void pf_encode_tile(uint8_t * slabs, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile) {
     const int64_t nbk = k / 256;
 #if defined(_OPENMP)
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(pf_threads())
 #endif
     for (int64_t kb = 0; kb < nbk; ++kb) {
         uint8_t * slab = slabs + size_t(kb) * PF_SLAB_BYTES;
@@ -140,7 +165,7 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
     const int32_t hdr[4] = { int32_t(nsb), int32_t(nbk), int32_t(qtype), int32_t(groups) };
     std::memcpy(a_tile, hdr, sizeof(hdr));              // the header object (the rest of it is never read)
 #if defined(_OPENMP)
-    #pragma omp parallel for schedule(static) if(nsb * nbk >= 32)
+    #pragma omp parallel for schedule(static) if(nsb * nbk >= 32) num_threads(pf_threads())
 #endif
     for (int64_t s = 0; s < nsb; ++s) {
         std::memcpy(a_tile + PF_SLAB_BYTES + size_t(s) * size_t(nbk) * PF_SLAB_BYTES, slabs, size_t(nbk) * PF_SLAB_BYTES);
@@ -153,7 +178,7 @@ void pf_unpermute_tile(const float * y, int tile, int64_t n_tok, const layout::G
     const int64_t tok0 = int64_t(tile) * PF_TILE_TOK;
     const int ntok = int(std::min<int64_t>(PF_TILE_TOK, n_tok - tok0));
 #if defined(_OPENMP)
-    #pragma omp parallel
+    #pragma omp parallel num_threads(pf_threads())
 #endif
     {
 #if defined(_OPENMP)

@@ -1,4 +1,5 @@
 #include "ggml-xdna2-compute.h"
+#include "ggml-xdna2-bfp.h"
 
 #include "ggml.h"
 
@@ -31,7 +32,7 @@ void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok,
         out.d.assign(size_t(n_tok) * size_t(kb), 0.0f);
         out.bsum.clear();
 #if defined(_OPENMP)
-        #pragma omp parallel for schedule(static) if(n_tok * k >= (1 << 16))
+        #pragma omp parallel for schedule(static) if(n_tok * k >= (1 << 16)) num_threads(pf_threads())
 #endif
         for (int64_t t = 0; t < n_tok; ++t) {
             const float * x = reinterpret_cast<const float *>(reinterpret_cast<const char *>(src) + size_t(t) * row_stride_bytes);
@@ -64,7 +65,7 @@ void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok,
     const size_t blk_bytes = ggml_row_size(GGML_TYPE_Q8_K, 256);
     GGML_ASSERT(blk_bytes == 292);
 #if defined(_OPENMP)
-    #pragma omp parallel for schedule(static) if(n_tok * k >= (1 << 16))
+    #pragma omp parallel for schedule(static) if(n_tok * k >= (1 << 16)) num_threads(pf_threads())
 #endif
     for (int64_t t = 0; t < n_tok; ++t) {
         const float * x = reinterpret_cast<const float *>(reinterpret_cast<const char *>(src) + size_t(t) * row_stride_bytes);
@@ -276,7 +277,7 @@ public:
         const int64_t n_groups = g.n_pad / GROUP_ROWS;
 
 #if defined(_OPENMP)
-        #pragma omp parallel
+        #pragma omp parallel num_threads(pf_threads())
 #endif
         {
             std::vector<float> y(size_t(a.n_tok) * 16);
