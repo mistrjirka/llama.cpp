@@ -172,6 +172,26 @@ static void bench(size_t mb, int threads_note) {
 
 int main(int argc, char ** argv) {
     if (!cpu_decode_available()) { std::printf("AVX-512 VNNI/VBMI not available: skipped\n"); return 0; }
+    if (argc > 1 && std::string(argv[1]) == "--overhead") {   // fixed cost of one cpu_decode_run on a tiny matrix
+        const Geom g = make_geom(Fmt::Q4_K, 512, 256);
+        std::vector<uint8_t> blk = random_matrix(g, 5), dev(g.bytes);
+        pack(g, dev.data(), blk.data());
+        std::vector<float> x(256, 0.5f), y(512);
+        CpuDecodeJob job; job.geom = g; job.w = dev.data(); job.x = x.data(); job.dst = y.data();
+        for (int i = 0; i < 100; ++i) cpu_decode_run(&job, 1);
+        for (int gap : { 0, 50 }) {
+            const int n = 2000;
+            double tot = 0;
+            for (int i = 0; i < n; ++i) {
+                const double t0 = now();
+                cpu_decode_run(&job, 1);
+                tot += now() - t0;
+                if (gap) { const double t1 = now(); volatile double v = 1; while (now() - t1 < gap * 1e-6) v = v * 1.0000001; }
+            }
+            std::printf("tiny cpu_decode_run: %.2f us per call (gap %d us between calls)\n", tot / n * 1e6, gap);
+        }
+        return 0;
+    }
     if (argc > 1 && std::string(argv[1]) == "--bench") { bench(argc > 2 ? size_t(std::atoi(argv[2])) : 1024, 0); return 0; }
     const Fmt fmts[] = { Fmt::Q4_K, Fmt::Q5_K, Fmt::Q6_K, Fmt::Q8_0 };
     uint32_t seed = 1;

@@ -116,8 +116,8 @@ bool reference_mode();
 bool prefill_enabled();
 int  prefill_min_tokens();
 
-// Decode (M = 1) execution mode, GGML_XDNA2_DECODE: "npu" (default: unified NPU decode kernel), "cpu" (AVX-512 GEMV straight from the NPU layout,
-// ggml-xdna2-cpu.cpp), "split" (NPU prefix + CPU suffix of every matrix, concurrently).
+// Decode (M = 1) execution mode, GGML_XDNA2_DECODE: "npu" (unified NPU decode kernel), "cpu" (AVX-512 GEMV straight from the NPU layout,
+// ggml-xdna2-cpu.cpp, DEFAULT), "split" (NPU prefix + CPU suffix of every matrix, concurrently).
 enum class DecodeMode { Npu, Cpu, Split };
 DecodeMode decode_mode();
 

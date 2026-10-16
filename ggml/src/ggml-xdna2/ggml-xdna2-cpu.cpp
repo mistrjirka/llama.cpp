@@ -9,10 +9,17 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #if defined(__x86_64__)
 #include <immintrin.h>
+#include <mwaitxintrin.h>
+#include <sched.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <thread>
 #endif
 
 #if defined(_OPENMP)
@@ -25,7 +32,7 @@ using namespace layout;
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
 
-#define XD_TGT __attribute__((target("avx512f,avx512bw,avx512vl,avx512dq,avx512vnni,avx512vbmi,fma,avx2,f16c")))
+#define XD_TGT __attribute__((target("avx512f,avx512bw,avx512vl,avx512dq,avx512vnni,avx512vbmi,fma,avx2,f16c,mwaitx")))
 
 namespace {
 
@@ -374,8 +381,7 @@ struct Grp { int32_t nparts; size_t scr; };     // scratch offset (floats) of th
 struct InAct { const float * x; int64_t k; bool q80; size_t off; size_t bytes; };
 
 std::vector<uint8_t> g_act_store;     // activation scratch (grows, never shrinks); used by one cpu_decode_run at a time
-std::vector<Item>    g_items;
-std::vector<Grp>     g_grps;
+const Grp *          g_grps = nullptr;       // groups of the running flush
 std::vector<float>   g_scratch;
 std::unique_ptr<std::atomic<int32_t>[]> g_done;
 size_t g_done_cap = 0;
@@ -512,11 +518,40 @@ void cpu_pack_npu_act(Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, in
     }
 }
 
-void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<void()> & master_hook) {
-    if (nj == 0) return;
-    const Tabs & T = tabs();
-    prepare_acts(jobs, nj);
+namespace {
 
+// The work of one flush (a set of independent matmuls): items + their groups. Built once per distinct flush (the decode graph repeats every token),
+// together with the flush that follows it in the token (learned), so that the threads can already stream the first bytes of the NEXT flush into
+// their L2 caches while the CPU ops between two flushes run (the DRAM is idle then).
+struct FlushPlan {
+    std::vector<Item> items;
+    std::vector<Grp>  grps;
+    size_t scr_total = 0;
+    size_t n_static = 0;       // items [0, n_static) are distributed statically (item k -> thread k % T): their first slabs are what the previous flush prefetched
+};
+struct FlushRec {
+    std::vector<CpuDecodeJob> jobs;     // snapshot (geometry, weights, plan; x/dst are stale)
+    FlushPlan plan;
+    uint64_t  next = 0;                 // signature of the flush that followed this one the last time
+};
+std::unordered_map<uint64_t, FlushRec> g_flushes;
+uint64_t g_prev_sig = 0;
+
+uint64_t flush_sig(const CpuDecodeJob * jobs, size_t nj) {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](uint64_t v) { h ^= v; h *= 1099511628211ull; };
+    mix(nj);
+    for (size_t j = 0; j < nj; ++j) {
+        mix(reinterpret_cast<uintptr_t>(jobs[j].w)); mix(uint64_t(jobs[j].geom.n)); mix(uint64_t(jobs[j].geom.k)); mix(uint64_t(jobs[j].geom.fmt));
+        if (jobs[j].plan) for (int64_t sp = 0; sp < jobs[j].geom.nsplit; ++sp) { mix(uint64_t(jobs[j].plan[sp].sb_npu)); mix(uint64_t(jobs[j].plan[sp].kb_npu)); }
+        else mix(0x9e3779b97f4a7c15ull);
+    }
+    return h ? h : 1;
+}
+
+int env_int(const char * name, int def) { const char * e = std::getenv(name); return e && *e ? std::atoi(e) : def; }
+
+void build_plan(const CpuDecodeJob * jobs, size_t nj, FlushPlan & P) {
     // work items: (split, chain, superblock) with the 4 lanes of the chain (splitting the lanes of a chain over threads breaks the linear
     // streams: 50 instead of 80 GB/s). Few big items cannot balance 10 threads, so a group is cut along K into parts when the batch has
     // fewer than ~4 items per thread.
@@ -530,8 +565,8 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<vo
         else k0 = p.kb_npu;                     // K split: the NPU did [0, kb_npu) of these rows (== nbk: nothing left)
         return k0 < k1;
     };
-    g_items.clear();
-    g_grps.clear();
+    P.items.clear();
+    P.grps.clear();
     size_t base_total = 0;
     for (size_t j = 0; j < nj; ++j) {
         const Geom & g = jobs[j].geom;
@@ -541,10 +576,28 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<vo
                 if (kb_range(j, s, sb, k0, k1)) base_total += N_CHAINS;
             }
     }
-    static const int WANT = [] { const char * e = std::getenv("XD_WANT"); return e ? std::atoi(e) : 4; }();
-    const size_t want = size_t(WANT * pf_threads());
+    const int nthr = pf_threads();
+    const size_t want = size_t(env_int("XD_WANT", 4) * nthr);
     const int64_t parts_wanted = base_total == 0 ? 1 : base_total >= want ? 1 : int64_t((want + base_total - 1) / base_total);
+    // the LAST groups are cut into fine K-parts (about one k-block each): the cores are heterogeneous (5.1 / 3.3 GHz), so with coarse items the
+    // slow cores are still busy with a big last item while the others idle (measured: the last thread finishes 17 us after the mean)
+    const int tail_fine = env_int("XD_TAILP", 6);                 // max parts of a tail group (0: off)
+    const size_t tail_groups = size_t(env_int("XD_TAILG", 2) * nthr);
+    size_t n_groups_total = 0;
+    for (size_t j = 0; j < nj; ++j) {
+        const Geom & g = jobs[j].geom;
+        for (int64_t s = 0; s < g.nsplit; ++s) {
+            const int64_t Gs = g.sp_groups(s);
+            for (int64_t sb = 0; sb < g.sp_nsb(s); ++sb) {
+                int64_t k0, k1;
+                if (!kb_range(j, s, sb, k0, k1)) continue;
+                for (int64_t chain = 0; chain < N_CHAINS; ++chain)
+                    if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS < g.n) ++n_groups_total;
+            }
+        }
+    }
     size_t scr_total = 0;
+    size_t gidx = 0;
     for (size_t j = 0; j < nj; ++j) {
         const Geom & g = jobs[j].geom;
         for (int64_t s = 0; s < g.nsplit; ++s) {
@@ -552,41 +605,230 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<vo
             for (int64_t sb = 0; sb < nsb; ++sb) {
                 int64_t k0, k1;
                 if (!kb_range(j, s, sb, k0, k1)) continue;
-                static const int MINK = [] { const char * e = std::getenv("XD_MINK"); return e ? std::atoi(e) : 2; }();
-                const int64_t P = std::max<int64_t>(1, std::min<int64_t>(parts_wanted, (k1 - k0) / MINK));
                 for (int64_t chain = 0; chain < N_CHAINS; ++chain) {
                     if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS >= g.n) continue;   // padding only
+                    int64_t P_ = std::max<int64_t>(1, std::min<int64_t>(parts_wanted, (k1 - k0) / 2));
+                    if (tail_fine > 0 && gidx + tail_groups >= n_groups_total) P_ = std::max<int64_t>(P_, std::min<int64_t>(tail_fine, k1 - k0));
+                    ++gidx;
                     const int64_t gc = g.sb_groups(s, sb);
-                    const int32_t grp = int32_t(g_grps.size());
-                    g_grps.push_back(Grp{ int32_t(P), scr_total });
-                    if (P > 1) scr_total += size_t(P) * size_t(N_LANES * gc * GROUP_ROWS);
-                    for (int64_t part = 0; part < P; ++part) {
-                        g_items.push_back(Item{ int32_t(j), int32_t(s), int32_t(chain), 0, N_LANES, int32_t(sb),
-                                                int32_t(k0 + (k1 - k0) * part / P), int32_t(k0 + (k1 - k0) * (part + 1) / P), int32_t(part), grp });
+                    const int32_t grp = int32_t(P.grps.size());
+                    P.grps.push_back(Grp{ int32_t(P_), scr_total });
+                    if (P_ > 1) scr_total += size_t(P_) * size_t(N_LANES * gc * GROUP_ROWS);
+                    for (int64_t part = 0; part < P_; ++part) {
+                        P.items.push_back(Item{ int32_t(j), int32_t(s), int32_t(chain), 0, N_LANES, int32_t(sb),
+                                                int32_t(k0 + (k1 - k0) * part / P_), int32_t(k0 + (k1 - k0) * (part + 1) / P_), int32_t(part), grp });
                     }
                 }
             }
         }
     }
-    if (g_scratch.size() < scr_total) g_scratch.resize(scr_total);
-    if (g_done_cap < g_grps.size()) { g_done.reset(new std::atomic<int32_t>[g_grps.size()]); g_done_cap = g_grps.size(); }
-    for (size_t i = 0; i < g_grps.size(); ++i) g_done[i].store(0, std::memory_order_relaxed);
+    P.scr_total = scr_total;
+    // static prologue: ~PFB bytes of items per thread
+    const size_t T = size_t(pf_threads());
+    const size_t pfb = size_t(env_int("XD_PFB", 384)) * 1024;
+    P.n_static = 0;
+    if (pfb && !P.items.empty()) {
+        const Item & it0 = P.items[0];
+        const Geom & g = jobs[it0.job].geom;
+        const size_t item_bytes = size_t(it0.nl) * size_t(g.sb_groups(it0.split, it0.sb)) * g.rec_bytes * size_t(std::max(1, it0.kb1 - it0.kb0));
+        const size_t m = std::max<size_t>(1, pfb / std::max<size_t>(1, item_bytes));
+        P.n_static = std::min(T * m, P.items.size());
+    }
+}
+
+// Physical cores: the first hardware thread of each core (team thread i runs on cores[i]) and its SMT sibling (helper i), if any.
+struct CoreMap { std::vector<int> first, sibling; };
+const CoreMap & core_map() {
+    static const CoreMap m = [] {
+        CoreMap r;
+        for (int c = 0; c < 4096; ++c) {
+            char path[128];
+            std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", c);
+            FILE * f = std::fopen(path, "r");
+            if (!f) break;
+            int a = -1, b = -1;
+            const int n = std::fscanf(f, "%d", &a);
+            if (n == 1 && a == c) {
+                int ch = std::fgetc(f);
+                if (ch == ',' || ch == '-') { if (std::fscanf(f, "%d", &b) != 1) b = -1; }
+                r.first.push_back(c);
+                r.sibling.push_back(b);
+            }
+            std::fclose(f);
+        }
+        return r;
+    }();
+    return m;
+}
+
+// Pin the OpenMP team to one hardware thread per physical core (so the L2 of a core keeps what its helper loaded).
+void pin_team_thread(int tid) {
+    thread_local bool pinned = false;
+    if (pinned || env_int("XD_PIN", 1) == 0) return;
+    pinned = true;
+    const CoreMap & cm = core_map();
+    if (cm.first.empty()) return;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(cm.first[size_t(tid) % cm.first.size()], &set);
+    sched_setaffinity(0, sizeof(set), &set);
+}
+
+// ---- cross-flush weight streaming by SMT helper threads ---------------------------------------------------------------------------------------
+// The CPU ops between two flushes leave the DRAM idle. The sibling hardware thread of every team thread loads the first bytes of the static items
+// of the NEXT flush (plain loads: software prefetches were measured to be dropped on this CPU) into the L2 it shares with the team thread, so the
+// next flush starts with a warm L2. Stopped as soon as the next flush starts (epoch).
+std::atomic<uint64_t> g_epoch{0};
+
+struct alignas(64) Helper {
+    std::atomic<uint32_t> seq{0};
+    std::atomic<uint32_t> sleeping{0};
+    const FlushRec *      rec = nullptr;
+    int                   tid = 0, nth = 1, cpu = -1;
+};
+std::vector<Helper *> g_helpers;
+
+long futex_call(std::atomic<uint32_t> * addr, int op, uint32_t val) {
+    return syscall(SYS_futex, reinterpret_cast<uint32_t *>(addr), op, val, nullptr, nullptr, 0);
+}
+
+XD_TGT void helper_stream(const FlushRec & rec, int tid, int nth, uint64_t ep) {
+    const FlushPlan & P = rec.plan;
+    const size_t budget = size_t(env_int("XD_PFB", 384)) * 1024;
+    size_t n_mine = 0;
+    for (size_t k = size_t(tid); k < P.n_static; k += size_t(nth)) ++n_mine;
+    if (n_mine == 0) return;
+    const size_t per_item = budget / n_mine;
+    __m512i acc = _mm512_setzero_si512();
+    for (size_t k = size_t(tid); k < P.n_static; k += size_t(nth)) {
+        const Item & m = P.items[k];
+        const Geom & g = rec.jobs[m.job].geom;
+        const uint8_t * w = rec.jobs[m.job].w;
+        const int64_t gc = g.sb_groups(m.split, m.sb);
+        const uint8_t * cb = w + g.sp_off(m.split) + size_t(m.chain) * g.sp_chain_bytes(m.split);
+        const size_t slab_full = g.slab_bytes(GSB), slab = g.slab_bytes(gc);
+        const size_t s0_sb = size_t(m.sb) * size_t(g.nbk) * slab_full;
+        size_t left = per_item;
+        for (int64_t kb = m.kb0; kb < m.kb1 && left > 0; ++kb) {
+            const uint8_t * base = cb + ((s0_sb + size_t(kb) * slab) / CHUNK) * (N_LANES * CHUNK);
+            const size_t bytes = std::min(slab / CHUNK * (N_LANES * CHUNK), left);
+            for (size_t o = 0; o < bytes; o += 256) {
+                acc = _mm512_xor_si512(acc, _mm512_loadu_si512(base + o));
+                acc = _mm512_xor_si512(acc, _mm512_loadu_si512(base + o + 64));
+                acc = _mm512_xor_si512(acc, _mm512_loadu_si512(base + o + 128));
+                acc = _mm512_xor_si512(acc, _mm512_loadu_si512(base + o + 192));
+                if ((o & 4095) == 0 && g_epoch.load(std::memory_order_relaxed) != ep) return;
+            }
+            left -= bytes;
+        }
+    }
+    static volatile uint32_t sink;
+    sink = uint32_t(_mm512_reduce_add_epi32(acc));
+}
+
+XD_TGT void helper_main(Helper * h) {
+    if (h->cpu >= 0) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(h->cpu, &set);
+        sched_setaffinity(0, sizeof(set), &set);
+    }
+    uint32_t seen = 0;
+    for (;;) {
+        // spin for a while (the next request usually comes within a few 100 us), then sleep on the futex
+        const double t0 = now_s();
+        uint32_t q;
+        static const int spin_mode = env_int("XD_HSPIN", 0);
+        while ((q = h->seq.load(std::memory_order_acquire)) == seen) {
+            if (spin_mode == 1) {
+                _mm_monitorx(&h->seq, 0, 0);
+                if (h->seq.load(std::memory_order_acquire) == seen) _mm_mwaitx(0, 0, 100000);     // wake on write to the line or after ~100k cycles
+            } else {
+                _mm_pause();
+            }
+            if (spin_mode == 2 || now_s() - t0 > 2e-3) {
+                h->sleeping.store(1, std::memory_order_seq_cst);
+                if (h->seq.load(std::memory_order_seq_cst) == seen) futex_call(&h->seq, FUTEX_WAIT_PRIVATE, seen);
+                h->sleeping.store(0, std::memory_order_relaxed);
+            }
+        }
+        seen = q;
+        static const int noload = env_int("XD_HNOLOAD", 0);
+        if (!noload) helper_stream(*h->rec, h->tid, h->nth, g_epoch.load(std::memory_order_acquire));
+    }
+}
+
+void start_helpers(int nthreads) {
+    static bool started = false;
+    if (started) return;
+    started = true;
+    if (env_int("XD_XPF", 0) == 0) return;      // EXPERIMENT, off: SMT helper threads cost more than they gain (stage7 RESULTS)
+    const CoreMap & cm = core_map();
+    for (int t = 0; t < nthreads && size_t(t) < cm.first.size(); ++t) {
+        if (cm.sibling[size_t(t)] < 0) { for (Helper * h : g_helpers) (void) h; g_helpers.clear(); return; }   // no SMT: no helpers
+    }
+    for (int t = 0; t < nthreads && size_t(t) < cm.first.size(); ++t) {
+        Helper * h = new Helper;
+        h->tid = t; h->nth = nthreads; h->cpu = cm.sibling[size_t(t)];
+        g_helpers.push_back(h);
+        std::thread([h] { helper_main(h); }).detach();
+    }
+}
+
+inline void helper_request(int tid, const FlushRec * rec) {
+    if (size_t(tid) >= g_helpers.size()) return;
+    Helper * h = g_helpers[size_t(tid)];
+    h->rec = rec;
+    h->seq.fetch_add(1, std::memory_order_seq_cst);
+    if (h->sleeping.load(std::memory_order_seq_cst)) futex_call(&h->seq, FUTEX_WAKE_PRIVATE, 1);
+}
+
+} // namespace
+
+static double g_tend[64], g_tbeg[64], g_tail_sum = 0, g_start_skew = 0, g_tail_spread = 0; static long g_tail_n = 0, g_tail_last[64];
+static struct TailP { ~TailP() { if (g_tail_n) { fprintf(stderr, "TAIL: %ld flushes, avg (last finish - mean finish) %.1f us, spread (last-first) %.1f us, mean start delay %.1f us; last thread histogram:", g_tail_n, g_tail_sum / g_tail_n * 1e6, g_tail_spread / g_tail_n * 1e6, g_start_skew / g_tail_n * 1e6); for (int t = 0; t < 10; ++t) fprintf(stderr, " %ld", g_tail_last[t]); fprintf(stderr, "\n"); } } } g_tailp;
+void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<void()> & master_hook) {
+    if (nj == 0) return;
+    static const bool tail_dbg = std::getenv("XD_TAIL") != nullptr;
+    const Tabs & T = tabs();
+    prepare_acts(jobs, nj);
+
+    // the plan of this flush (cached) and the learned successor
+    const uint64_t sig = flush_sig(jobs, nj);
+    FlushRec & rec = g_flushes[sig];
+    if (rec.jobs.empty()) {
+        rec.jobs.assign(jobs, jobs + nj);
+        build_plan(rec.jobs.data(), nj, rec.plan);
+    }
+    if (g_prev_sig && g_prev_sig != sig) g_flushes[g_prev_sig].next = sig;       // (g_flushes may rehash: re-take the reference)
+    g_prev_sig = sig;
+    FlushRec & cur = g_flushes[sig];
+    const FlushPlan & P = cur.plan;
+    start_helpers(pf_threads());
+    g_epoch.fetch_add(1, std::memory_order_release);         // stop the helpers still streaming for this flush's predecessor
+    const FlushRec * nxt = (cur.next && !g_helpers.empty()) ? &g_flushes[cur.next] : nullptr;
+    if (g_scratch.size() < P.scr_total) g_scratch.resize(P.scr_total);
+    if (g_done_cap < P.grps.size()) { g_done.reset(new std::atomic<int32_t>[P.grps.size()]); g_done_cap = P.grps.size(); }
+    for (size_t i = 0; i < P.grps.size(); ++i) g_done[i].store(0, std::memory_order_relaxed);
+    g_grps = P.grps.data();                // process_item reads the groups through g_grps
     const double tw0 = now_s();
     std::atomic<size_t> next{0};
-    const size_t n_items = g_items.size();
+    const size_t n_items = P.items.size();
+    const size_t n_static = P.n_static;
 
 #if defined(_OPENMP)
     #pragma omp parallel num_threads(pf_threads())
 #endif
     {
 #if defined(_OPENMP)
-        if (omp_get_thread_num() == 0 && master_hook) master_hook();
+        const int tid = omp_get_thread_num(), nth = omp_get_num_threads();
 #else
-        if (master_hook) master_hook();
+        const int tid = 0, nth = 1;
 #endif
+        pin_team_thread(tid);
+        if (tid == 0 && master_hook) master_hook();
         const double tb = now_s();
-        for (size_t it = next.fetch_add(1); it < n_items; it = next.fetch_add(1)) {
-            const Item & m = g_items[it];
+        auto run = [&](const Item & m) {
             const CpuDecodeJob & jb = jobs[m.job];
             const InAct & ia = g_ins[g_in_of[m.job]];
             ActRef act;
@@ -594,10 +836,20 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<vo
             if (ia.q80) { act.q0 = p; act.d0 = reinterpret_cast<const float *>(p + ia.k); }
             else        { act.k8 = reinterpret_cast<const Q8Kblk *>(p); }
             process_item(m, jb, act, T);
-        }
-        g_busy_ns.fetch_add(uint64_t((now_s() - tb) * 1e9));
+        };
+        for (size_t k = size_t(tid); k < n_static; k += size_t(nth)) run(P.items[k]);
+        for (size_t it = n_static + next.fetch_add(1); it < n_items; it = n_static + next.fetch_add(1)) run(P.items[it]);
+        const double te = now_s();
+        g_busy_ns.fetch_add(uint64_t((te - tb) * 1e9));
+        if (tail_dbg) { g_tend[tid] = te; g_tbeg[tid] = tb; }
+        if (nxt) helper_request(tid, nxt);
     }
     g_wall_ns.fetch_add(uint64_t((now_s() - tw0) * 1e9));
+    if (tail_dbg) {
+        double mx = 0, sum = 0, sb = 0; int last = 0; double mn = 1e18;
+        for (int t = 0; t < 10; ++t) { if (g_tend[t] > mx) { mx = g_tend[t]; last = t; } sum += g_tend[t]; sb += g_tbeg[t]; mn = std::min(mn, g_tend[t]); }
+        g_tail_sum += mx - sum / 10; g_tail_n++; g_tail_last[last]++; g_start_skew += sb / 10 - tw0; g_tail_spread += mx - mn;
+    }
 }
 
 #else   // not x86-64 GCC/clang

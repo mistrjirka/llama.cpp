@@ -129,7 +129,8 @@ DecodeMode decode_mode() {
         const char * e = std::getenv("GGML_XDNA2_DECODE");
         if (e && !std::strcmp(e, "cpu")) return DecodeMode::Cpu;
         if (e && !std::strcmp(e, "split")) return DecodeMode::Split;
-        return DecodeMode::Npu;
+        if (e && !std::strcmp(e, "npu")) return DecodeMode::Npu;
+        return DecodeMode::Cpu;      // fastest end to end (stage7): AVX-512 GEMV from the NPU layout; falls back to the NPU kernel if the CPU lacks VNNI/VBMI
     }();
     return m;
 }
