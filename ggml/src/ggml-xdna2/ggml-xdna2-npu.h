@@ -25,6 +25,7 @@
 #include "ggml-xdna2-compute.h"
 #include "ggml-xdna2-cpu.h"
 #include "ggml-xdna2-kernels.h"
+#include "ggml-xdna2-bfp.h"
 
 namespace xdna2 {
 
@@ -38,8 +39,8 @@ struct PrefillJob {
     int64_t         n_tok = 0;
     float *         dst = nullptr;       // dst row j at (char *) dst + j * dst_row_stride, geom.n floats each
     size_t          dst_row_stride = 0;
-    const float *   glu_other = nullptr; // fused SwiGLU: dst = silu(gate) * up, the other operand at glu_other (same row stride as dst)
-    bool            glu_y_is_gate = false;
+    PfEpi           epi = PfEpi::None;   // fused epilogue (SwiGLU or residual add, see pf_unpermute_tiles), second operand at epi_other
+    const float *   epi_other = nullptr;
 };
 
 // One FLASH_ATTN_EXT (prefill) on the attention kernel: head dim 256, 16 q heads, 4 kv heads, causal over the cache cells 0 .. p0 + t for query t

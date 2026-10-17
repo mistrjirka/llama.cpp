@@ -261,7 +261,7 @@ struct ggml_backend_xdna2_context {
     double t_quant = 0, t_graph = 0, t_cpu = 0, b_cpu = 0;      // seconds / bytes
     uint64_t n_cpu_flush = 0, n_cpu_jobs = 0;
     double t_last_end = 0, t_between = 0; // time between two graph computes of this backend (CPU splits + copies)
-    uint64_t n_graphs = 0, n_mul_mat = 0, n_glu_fused = 0;
+    uint64_t n_graphs = 0, n_mul_mat = 0, n_glu_fused = 0, n_add_fused = 0;
     double   t_fa = 0;                    // FLASH_ATTN_EXT on the NPU (incl. host encode/scatter)
     uint64_t n_fa = 0;
 };
@@ -475,9 +475,9 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();
         XLOG("ggml-xdna2: time between backend graph computes (CPU splits + tensor copies) %.3f s\n", ctx->t_between);
-        XLOG("ggml-xdna2: %llu graph splits, %llu mul_mat, %llu SwiGLU fused; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
+        XLOG("ggml-xdna2: %llu graph splits, %llu mul_mat, %llu SwiGLU + %llu add fused; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
                       "pack act %.3f s, wait %.3f s (%llu hw context switches: %.3f s), unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
-                      (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, (unsigned long long) ctx->n_glu_fused, ctx->t_quant, ctx->t_graph,
+                      (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, (unsigned long long) ctx->n_glu_fused, (unsigned long long) ctx->n_add_fused, ctx->t_quant, ctx->t_graph,
                       (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, (unsigned long long) st.n_switch, st.t_wait_switch, st.t_unpermute, st.t_setup,
                       st.t_kernel_wait, st.bytes_w / 1e9);
     }
@@ -678,11 +678,12 @@ static void ggml_backend_xdna2_glu(ggml_backend_xdna2_context * ctx, ggml_tensor
             if (pj.dst == gate->data && pj.n_tok == gate->ne[1] && pj.geom.n == gate->ne[0]) jg = &pj;
             if (pj.dst == up->data   && pj.n_tok == up->ne[1]   && pj.geom.n == up->ne[0])   ju = &pj;
         }
-        if (jg && ju && jg != ju && !jg->glu_other && !ju->glu_other && jg->dst_row_stride == size_t(dst->nb[1]) && ju->dst_row_stride == size_t(dst->nb[1])) {
+        if (jg && ju && jg != ju && jg->epi == PfEpi::None && ju->epi == PfEpi::None && jg->dst_row_stride == size_t(dst->nb[1]) &&
+            ju->dst_row_stride == size_t(dst->nb[1])) {
             PrefillJob * later = jg > ju ? jg : ju, * earlier = jg > ju ? ju : jg;     // the units run job by job: the earlier output is complete first
-            later->glu_other     = earlier->dst;
-            later->glu_y_is_gate = later == jg;
-            later->dst           = static_cast<float *>(dst->data);
+            later->epi       = later == jg ? PfEpi::GluGate : PfEpi::GluUp;
+            later->epi_other = earlier->dst;
+            later->dst       = static_cast<float *>(dst->data);
             const char * db = static_cast<const char *>(dst->data);
             ctx->pending_dst.emplace_back(db, db + ggml_nbytes(dst));
             ctx->n_glu_fused++;
@@ -699,6 +700,48 @@ static void ggml_backend_xdna2_glu(ggml_backend_xdna2_context * ctx, ggml_tensor
         swiglu_row(reinterpret_cast<float *>(static_cast<char *>(dst->data) + i1 * dst->nb[1] + i2 * dst->nb[2] + i3 * dst->nb[3]),
                    reinterpret_cast<const float *>(static_cast<const char *>(gate->data) + i1 * gate->nb[1] + i2 * gate->nb[2] + i3 * gate->nb[3]),
                    reinterpret_cast<const float *>(static_cast<const char *>(up->data) + i1 * up->nb[1] + i2 * up->nb[2] + i3 * up->nb[3]), n);
+    }
+}
+
+// ADD (same shapes) of one of our products and another tensor (the residual): the queued prefill job adds it in its unpermute and writes the sum
+// straight into this node; otherwise computed on the host.
+static void ggml_backend_xdna2_add(ggml_backend_xdna2_context * ctx, ggml_tensor * dst) {
+    const ggml_tensor * a = dst->src[0], * b = dst->src[1];
+    if (xdna2_fuse_enabled() && ggml_is_contiguous_rows(dst)) {
+        PrefillJob * ja = nullptr, * jb = nullptr;
+        for (auto & pj : ctx->pf_pending) {
+            if (pj.dst == a->data && pj.n_tok == a->ne[1] && pj.geom.n == a->ne[0]) ja = &pj;
+            if (pj.dst == b->data && pj.n_tok == b->ne[1] && pj.geom.n == b->ne[0]) jb = &pj;
+        }
+        PrefillJob * j = ja ? ja : jb;
+        const ggml_tensor * x = ja ? b : a;          // the other operand: must not be a pending output (it is read during the flush)
+        bool x_pending = false;
+        {
+            const char * xb = static_cast<const char *>(x->data), * xe = xb + ggml_nbytes(x);
+            for (const auto & d : ctx->pending_dst) if (xb < d.second && d.first < xe) x_pending = true;
+        }
+        if (j && !(ja && jb) && !x_pending && j->epi == PfEpi::None && j->dst_row_stride == size_t(dst->nb[1]) && size_t(x->nb[1]) == size_t(dst->nb[1]) &&
+            ggml_nrows(dst) == dst->ne[1]) {
+            j->epi       = PfEpi::Add;
+            j->epi_other = static_cast<const float *>(x->data);
+            j->dst       = static_cast<float *>(dst->data);
+            const char * db = static_cast<const char *>(dst->data);
+            ctx->pending_dst.emplace_back(db, db + ggml_nbytes(dst));
+            ctx->n_add_fused++;
+            return;
+        }
+    }
+    xdna2_flush(ctx);
+    const int64_t nr = ggml_nrows(dst), n = dst->ne[0];
+#if defined(_OPENMP)
+    #pragma omp parallel for schedule(static) if(nr >= 16) num_threads(pf_threads())
+#endif
+    for (int64_t r = 0; r < nr; ++r) {
+        const int64_t i1 = r % dst->ne[1], i2 = (r / dst->ne[1]) % dst->ne[2], i3 = r / (dst->ne[1] * dst->ne[2]);
+        float * d = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i1 * dst->nb[1] + i2 * dst->nb[2] + i3 * dst->nb[3]);
+        const float * pa = reinterpret_cast<const float *>(static_cast<const char *>(a->data) + i1 * a->nb[1] + i2 * a->nb[2] + i3 * a->nb[3]);
+        const float * pb = reinterpret_cast<const float *>(static_cast<const char *>(b->data) + i1 * b->nb[1] + i2 * b->nb[2] + i3 * b->nb[3]);
+        for (int64_t i = 0; i < n; ++i) d[i] = pa[i] + pb[i];
     }
 }
 
@@ -725,6 +768,10 @@ static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend,
 
             case GGML_OP_GLU:
                 ggml_backend_xdna2_glu(ctx, node);
+                break;
+
+            case GGML_OP_ADD:
+                ggml_backend_xdna2_add(ctx, node);
                 break;
 
             case GGML_OP_NONE:
@@ -926,6 +973,12 @@ static bool xdna2_reject(int why) {
     return false;
 }
 
+// the tensor a RESHAPE (chain) of t is a reshape of (same data, same row size), else t
+static const ggml_tensor * xdna2_through_reshape(const ggml_tensor * t) {
+    while (t->op == GGML_OP_RESHAPE && t->view_src && t->src[0] && t->src[0]->ne[0] == t->ne[0]) t = t->src[0];
+    return t;
+}
+
 static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml_tensor * op) {
     switch (op->op) {
         case GGML_OP_NONE:
@@ -982,7 +1035,22 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             if (!xdna2_fuse_enabled() || ggml_get_glu_op(op) != GGML_GLU_OP_SWIGLU || b == nullptr || ggml_get_op_params_i32(op, 1) != 0) return xdna2_reject(30);
             if (op->type != GGML_TYPE_F32 || a->type != GGML_TYPE_F32 || b->type != GGML_TYPE_F32 || !ggml_are_same_shape(a, b) || !ggml_are_same_shape(a, op)) return xdna2_reject(31);
             if (a->nb[0] != sizeof(float) || b->nb[0] != sizeof(float) || op->nb[0] != sizeof(float)) return xdna2_reject(32);
-            if (a->op != GGML_OP_MUL_MAT || b->op != GGML_OP_MUL_MAT) return xdna2_reject(33);
+            if (xdna2_through_reshape(a)->op != GGML_OP_MUL_MAT || xdna2_through_reshape(b)->op != GGML_OP_MUL_MAT) return xdna2_reject(33);
+            return true;
+        }
+
+        case GGML_OP_ADD:
+        {
+            // residual add onto one of our products (fused into its unpermute, see ggml_backend_xdna2_add)
+            const ggml_tensor * a = op->src[0], * b = op->src[1];
+            if (!xdna2_fuse_enabled()) return xdna2_reject(40);
+            if (op->type != GGML_TYPE_F32 || a->type != GGML_TYPE_F32 || b->type != GGML_TYPE_F32 || !ggml_are_same_shape(a, b) || !ggml_are_same_shape(a, op)) return xdna2_reject(41);
+            if (a->nb[0] != sizeof(float) || b->nb[0] != sizeof(float) || op->nb[0] != sizeof(float)) return xdna2_reject(42);
+            a = xdna2_through_reshape(a);
+            b = xdna2_through_reshape(b);
+            if ((a->op == GGML_OP_MUL_MAT) == (b->op == GGML_OP_MUL_MAT)) return xdna2_reject(43);
+            const ggml_tensor * mm = a->op == GGML_OP_MUL_MAT ? a : b;
+            if (mm->src[0]->buffer && mm->src[0]->buffer->buft != xdna2_buft()) return xdna2_reject(44);
             return true;
         }
 

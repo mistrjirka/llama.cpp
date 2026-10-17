@@ -48,10 +48,11 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
 // Copy the fp32 outputs of one tile of one split into dst (row j at dst + j*dst_row_stride bytes, g.n floats per row).
 void pf_unpermute_tile(const float * y_tile, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride);
 // Same, for ntiles consecutive tiles (tile t's Y at y + t * y_tile_floats) in ONE parallel region.
-// With glu_other: SwiGLU epilogue, dst = silu(gate) * up where Y is the gate (glu_y_is_gate) or the up projection and the other operand is read
-// from glu_other (same row stride as dst).
+// Epilogue with a second operand X (read at `other`, same row stride as dst): dst = silu(Y) * X, silu(X) * Y (SwiGLU with Y as the gate / the up
+// projection) or Y + X.
+enum class PfEpi { None, GluGate, GluUp, Add };
 void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
-                        size_t dst_row_stride, const float * glu_other = nullptr, bool glu_y_is_gate = false);
+                        size_t dst_row_stride, PfEpi epi = PfEpi::None, const float * other = nullptr);
 
 // dst = silu(gate) * up over n floats (the same formula as the CPU backend's SWIGLU)
 void swiglu_row(float * dst, const float * gate, const float * up, int64_t n);

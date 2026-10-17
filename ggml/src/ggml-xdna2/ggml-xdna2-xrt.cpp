@@ -723,7 +723,7 @@ private:
             const PrefillJob & pj = jobs[u.job];
             const float * y = pool.y.map<const float *>() + (pool.y_slot / sizeof(float)) * size_t(u.slot);
             pf_unpermute_tiles(y, pool.y_tile / sizeof(float), u.tile0, u.tiles, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride,
-                               pj.glu_other, pj.glu_y_is_gate);
+                               pj.epi, pj.epi_other);
             st_.pf_t_unperm += now_s() - t0;
             st_.pf_bytes_y += double(pool.y_tile) * u.tiles;
         };

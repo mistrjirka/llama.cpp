@@ -146,10 +146,10 @@ static inline __m512 v_swiglu(__m512 g, __m512 u) {
     return _mm512_mul_ps(s, u);
 }
 XDNA2_TARGET_AVX512
-static inline void store_line_glu_nt(float * d, const float * s0, const float * s1, const float * o, bool y_is_gate) {
+static inline void store_line_epi_nt(float * d, const float * s0, const float * s1, const float * o, PfEpi epi) {
     const __m512 y = _mm512_insertf32x8(_mm512_castps256_ps512(_mm256_loadu_ps(s0)), _mm256_loadu_ps(s1), 1);
     const __m512 x = _mm512_loadu_ps(o);
-    _mm512_stream_ps(d, y_is_gate ? v_swiglu(y, x) : v_swiglu(x, y));
+    _mm512_stream_ps(d, epi == PfEpi::Add ? _mm512_add_ps(y, x) : epi == PfEpi::GluGate ? v_swiglu(y, x) : v_swiglu(x, y));
 }
 static const bool g_have_avx512 = __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512vl") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512dq");
 #endif
@@ -237,9 +237,10 @@ namespace {
 // 8 tokens (mb) of one tile, the rows of one column c: per token 4 contiguous runs (core k) of Gs * 16 rows, so the stores stream whole lines
 // (the scattered side are the 32 B reads of the Y blocks, which stay in L2 across the 8 tokens)
 inline float silu_mul(float g, float u) { return g / (1.0f + std::exp(-g)) * u; }
+inline float epi_apply(PfEpi epi, float y, float x) { return epi == PfEpi::Add ? y + x : epi == PfEpi::GluGate ? silu_mul(y, x) : silu_mul(x, y); }
 
 inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride,
-                           int mb, int64_t c, const float * other, bool y_is_gate) {
+                           int mb, int64_t c, PfEpi epi, const float * other) {
     using namespace layout;
     const int64_t Gs = g.sp_groups(split), nsb = g.sp_nsb(split), row_base = g.sp_row0(split);
     const int64_t tok0 = int64_t(tile) * PF_TILE_TOK;
@@ -248,7 +249,7 @@ inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layou
         const int t = mb * 8 + m8;
         if (t >= ntok) break;
         float * drow = reinterpret_cast<float *>(reinterpret_cast<char *>(dst) + size_t(tok0 + t) * dst_row_stride);
-        const float * orow = other ? reinterpret_cast<const float *>(reinterpret_cast<const char *>(other) + size_t(tok0 + t) * dst_row_stride) : nullptr;
+        const float * orow = epi != PfEpi::None ? reinterpret_cast<const float *>(reinterpret_cast<const char *>(other) + size_t(tok0 + t) * dst_row_stride) : nullptr;
         for (int64_t k = 0; k < 4; ++k) {
             for (int64_t sb = 0; sb < nsb; ++sb) {
                 const int64_t gc = g.sb_groups(split, sb);
@@ -260,13 +261,10 @@ inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layou
                     if (orow) {
                         const float * o = orow + row0;
 #ifdef XDNA2_HAVE_AVX512
-                        if (g_have_avx512 && row0 + 16 <= g.n && ((uintptr_t) d & 63) == 0) { store_line_glu_nt(d, s0, s1, o, y_is_gate); continue; }
+                        if (g_have_avx512 && row0 + 16 <= g.n && ((uintptr_t) d & 63) == 0) { store_line_epi_nt(d, s0, s1, o, epi); continue; }
 #endif
                         const int64_t cnt = std::min<int64_t>(16, g.n - row0);
-                        for (int64_t i = 0; i < cnt; ++i) {
-                            const float v = i < 8 ? s0[i] : s1[i - 8];
-                            d[i] = y_is_gate ? silu_mul(v, o[i]) : silu_mul(o[i], v);
-                        }
+                        for (int64_t i = 0; i < cnt; ++i) d[i] = epi_apply(epi, i < 8 ? s0[i] : s1[i - 8], o[i]);
                         continue;
                     }
                     if (row0 + 16 <= g.n) {
@@ -291,7 +289,7 @@ void pf_unpermute_tile(const float * y, int tile, int64_t n_tok, const layout::G
 }
 
 void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
-                        size_t dst_row_stride, const float * glu_other, bool glu_y_is_gate) {
+                        size_t dst_row_stride, PfEpi epi, const float * other) {
     const int64_t items = int64_t(ntiles) * 64;
 #if defined(_OPENMP)
     #pragma omp parallel num_threads(pf_threads())
@@ -303,7 +301,7 @@ void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int nt
     for (int64_t it = 0; it < items; ++it) {
         const int t = int(it / 64), mb = int(it / 8 % 8);
         const int64_t c = it % 8;
-        unpermute_rows(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, mb, c, glu_other, glu_y_is_gate);
+        unpermute_rows(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, mb, c, epi, other);
     }
 #ifdef XDNA2_HAVE_AVX512
     _mm_sfence();      // make this thread's non-temporal stores globally visible before the region ends
