@@ -1,5 +1,9 @@
 #include "ops.h"
 
+#if defined(__SSE__)
+#include <immintrin.h>
+#endif
+
 #include "ggml-cpu.h"
 #include "ggml-impl.h"
 #include "binary-ops.h"
@@ -11176,11 +11180,20 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     // per-seq stride in floats (seq s starts at state + s * seq_stride)
     const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
 
-    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0);
+    // scratch per thread: delta [S_v] | state_work [S_v*S_v] (K > 1) | transposed state [S_v*S_v] + 3 vectors [S_v] (fast path)
+    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0) + S_v * S_v + 3 * S_v;
     const int ith = params->ith;
 
     float * delta       = (float *)params->wdata + ith * per_thread + CACHE_LINE_SIZE_F32;
     float * state_work  = K > 1 ? (delta + S_v) : nullptr;
+    float * st_T        = delta + S_v + (K > 1 ? S_v * S_v : 0);
+    float * ek = st_T + S_v * S_v, * eq = ek + S_v, * eg = eq + S_v;
+
+    // Fast path for multi-token calls without state snapshots: the state is kept TRANSPOSED (T[i][j] = S[j][i]), so that
+    // S*k, S*q and the rank-1 update are row-wise multiply-adds over j instead of S_v horizontal dot reductions per token.
+    // With T' = eg_i T + k_i delta_j:  (S*k)_j after the decay = sum_i T[i][j] (eg_i k_i),  out_j = sum_i T[i][j] (eg_i q_i) + delta_j (k.q).
+#define GDN_JB 64
+    const bool transposed_path = K == 1 && n_tokens >= 8 && S_v % GDN_JB == 0;
 
     // output layout: [attn_scores | new_states]
     // attn_scores: S_v * H * n_tokens * n_seqs    floats
@@ -11222,6 +11235,72 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
         // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
         const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
+
+        if (transposed_path) {
+#if defined(__SSE__)
+            // the decaying state reaches denormals, which are very slow on x86: flush them for this loop only
+            const unsigned int csr = _mm_getcsr();
+            _mm_setcsr(csr | 0x8040);   // FTZ | DAZ
+#endif
+            for (int64_t j = 0; j < S_v; ++j) {
+                for (int64_t i = 0; i < S_v; ++i) {
+                    st_T[i * S_v + j] = s_in[j * S_v + i];
+                }
+            }
+            float * attn_t = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
+            for (int64_t t = 0; t < n_tokens; t++) {
+                const float * q_d = (const float *)((const char *)src_q->data + iq3 * nbq3 + t * nbq2 + iq1 * nbq1);
+                const float * k_d = (const float *)((const char *)src_k->data + ik3 * nbk3 + t * nbk2 + ik1 * nbk1);
+                const float * v_d = (const float *)((const char *)src_v->data + iv3 * nbv3 + t * nbv2 + iv1 * nbv1);
+                const float beta_val = *(const float *)((const char *)src_beta->data + iv3 * nbb3 + t * nbb2 + iv1 * nbb1);
+                const float * g_d    =  (const float *)((const char *)src_g->data    + iv3 * nbg3 + t * nbg2 + iv1 * nbg1);
+
+                const float a = kda ? 0.0f : expf(g_d[0]);
+                float kq = 0.0f;
+                for (int64_t i = 0; i < S_v; ++i) {
+                    eg[i] = kda ? expf(g_d[i]) : a;
+                    ek[i] = eg[i] * k_d[i];
+                    eq[i] = eg[i] * q_d[i];
+                    kq += k_d[i] * q_d[i];
+                }
+                // pass 1 (read), 16 columns at a time with the two accumulators in registers: acc_k = T^T ek, acc_q = T^T eq
+                for (int64_t jc = 0; jc < S_v; jc += GDN_JB) {
+                    float ak[GDN_JB] = { 0.0f }, aq[GDN_JB] = { 0.0f };
+                    for (int64_t i = 0; i < S_v; ++i) {
+                        const float * GGML_RESTRICT row = st_T + i * S_v + jc;
+                        const float eki = ek[i], eqi = eq[i];
+                        for (int l = 0; l < GDN_JB; ++l) {
+                            ak[l] += row[l] * eki;
+                            aq[l] += row[l] * eqi;
+                        }
+                    }
+                    for (int l = 0; l < GDN_JB; ++l) {
+                        const float d = (v_d[jc + l] - ak[l]) * beta_val;
+                        delta[jc + l] = d;
+                        attn_t[jc + l] = (aq[l] + d * kq) * scale;
+                    }
+                }
+                // pass 2 (write): T[i][:] = eg_i T[i][:] + k_i delta[:]
+                for (int64_t i = 0; i < S_v; ++i) {
+                    float * GGML_RESTRICT row = st_T + i * S_v;
+                    const float * GGML_RESTRICT dl = delta;
+                    const float egi = eg[i], ki = k_d[i];
+                    for (int64_t j = 0; j < S_v; ++j) {
+                        row[j] = row[j] * egi + ki * dl[j];
+                    }
+                }
+                attn_t += S_v * H;
+            }
+            for (int64_t j = 0; j < S_v; ++j) {
+                for (int64_t i = 0; i < S_v; ++i) {
+                    s_out[j * S_v + i] = st_T[i * S_v + j];
+                }
+            }
+#if defined(__SSE__)
+            _mm_setcsr(csr);
+#endif
+            continue;
+        }
 
         // attn output pointer for first token of this (head, seq)
         float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
