@@ -599,6 +599,100 @@ static const char * ggml_backend_xdna2_device_get_description(ggml_backend_dev_t
     return "AMD XDNA2 NPU";
 }
 
+//
+// host buffer type: plain host memory (CPU readable in place, is_host) that is also an NPU buffer object, for the compute tensors.
+// Tensors are 64 B aligned (CPU buffers align to 32 B), and the NPU can address them (DMA straight into the destination tensors).
+//
+
+static void ggml_backend_xdna2_host_buffer_memset_tensor(ggml_backend_buffer_t, ggml_tensor * tensor, uint8_t value, size_t offset, size_t size) {
+    std::memset(static_cast<uint8_t *>(tensor->data) + offset, value, size);
+}
+
+static void ggml_backend_xdna2_host_buffer_set_tensor(ggml_backend_buffer_t, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
+    std::memcpy(static_cast<uint8_t *>(tensor->data) + offset, data, size);
+}
+
+static void ggml_backend_xdna2_host_buffer_get_tensor(ggml_backend_buffer_t, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    std::memcpy(data, static_cast<const uint8_t *>(tensor->data) + offset, size);
+}
+
+static bool ggml_backend_xdna2_host_buffer_cpy_tensor(ggml_backend_buffer_t, const ggml_tensor * src, ggml_tensor * dst) {
+    if (ggml_backend_buffer_is_host(src->buffer)) {
+        std::memcpy(dst->data, src->data, ggml_nbytes(src));
+        return true;
+    }
+    return false;
+}
+
+static void ggml_backend_xdna2_host_buffer_clear(ggml_backend_buffer_t buffer, uint8_t value) {
+    Arena * arena = xdna2_ctx(buffer)->arena.get();
+    std::memset(arena->base(), value, arena->size());
+}
+
+static const ggml_backend_buffer_i ggml_backend_xdna2_host_buffer_i = {
+    /* .free_buffer   = */ ggml_backend_xdna2_buffer_free_buffer,
+    /* .get_base      = */ ggml_backend_xdna2_buffer_get_base,
+    /* .init_tensor   = */ nullptr,
+    /* .memset_tensor = */ ggml_backend_xdna2_host_buffer_memset_tensor,
+    /* .set_tensor    = */ ggml_backend_xdna2_host_buffer_set_tensor,
+    /* .get_tensor    = */ ggml_backend_xdna2_host_buffer_get_tensor,
+    /* .set_tensor_2d = */ nullptr,
+    /* .get_tensor_2d = */ nullptr,
+    /* .cpy_tensor    = */ ggml_backend_xdna2_host_buffer_cpy_tensor,
+    /* .clear         = */ ggml_backend_xdna2_host_buffer_clear,
+    /* .reset         = */ nullptr,
+};
+
+static const char * ggml_backend_xdna2_host_buft_get_name(ggml_backend_buffer_type_t) {
+    return GGML_XDNA2_NAME "_Host";
+}
+
+static ggml_backend_buffer_t ggml_backend_xdna2_host_buft_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {
+    std::unique_ptr<Arena> arena;
+    try {
+        arena = npu_executor().alloc_weight_arena(size);     // a host-only BO (cacheable mapping), like the weights
+        if (!arena) {
+            arena = std::make_unique<HostArena>(size);
+        }
+    } catch (const std::exception & e) {
+        GGML_LOG_ERROR("%s: failed to allocate %zu bytes: %s\n", __func__, size, e.what());
+        return nullptr;
+    }
+    const size_t asize = arena->size();
+    auto * ctx = new xdna2_buffer_context{std::move(arena)};
+    return ggml_backend_buffer_init(buft, ggml_backend_xdna2_host_buffer_i, ctx, asize);
+}
+
+static size_t ggml_backend_xdna2_host_buft_get_alignment(ggml_backend_buffer_type_t) {
+    return 64;     // whole cache lines: the prefill output path writes full lines with non-temporal stores
+}
+
+static bool ggml_backend_xdna2_host_buft_is_host(ggml_backend_buffer_type_t) {
+    return true;
+}
+
+static ggml_backend_buffer_type_t xdna2_host_buft() {
+    static ggml_backend_buffer_type buft = {
+        /* .iface = */ {
+            /* .get_name         = */ ggml_backend_xdna2_host_buft_get_name,
+            /* .alloc_buffer     = */ ggml_backend_xdna2_host_buft_alloc_buffer,
+            /* .alloc_buffer_n   = */ nullptr,
+            /* .get_alignment    = */ ggml_backend_xdna2_host_buft_get_alignment,
+            /* .get_max_size     = */ nullptr,
+            /* .get_alloc_size   = */ nullptr,
+            /* .get_alloc_size_n = */ nullptr,
+            /* .is_host          = */ ggml_backend_xdna2_host_buft_is_host,
+        },
+        /* .device  = */ ggml_backend_reg_dev_get(ggml_backend_xdna2_reg(), 0),
+        /* .context = */ nullptr,
+    };
+    return &buft;
+}
+
+static ggml_backend_buffer_type_t ggml_backend_xdna2_device_get_host_buffer_type(ggml_backend_dev_t) {
+    return xdna2_host_buft();
+}
+
 static void ggml_backend_xdna2_device_get_memory(ggml_backend_dev_t, size_t * free, size_t * total) {
     // buffers live in host memory (system RAM shared with the NPU): nothing to report
     *free  = 0;
@@ -616,7 +710,7 @@ static void ggml_backend_xdna2_device_get_props(ggml_backend_dev_t dev, ggml_bac
     ggml_backend_xdna2_device_get_memory(dev, &props->memory_free, &props->memory_total);
     props->caps = {
         /* .async                 = */ false,
-        /* .host_buffer           = */ false,
+        /* .host_buffer           = */ true,
         /* .buffer_from_host_ptr  = */ false,
         /* .events                = */ false,
         /* .mmap_support          = */ true,
@@ -695,7 +789,7 @@ static const ggml_backend_device_i ggml_backend_xdna2_device_i = {
     /* .get_props            = */ ggml_backend_xdna2_device_get_props,
     /* .init_backend         = */ ggml_backend_xdna2_device_init_backend,
     /* .get_buffer_type      = */ ggml_backend_xdna2_device_get_buffer_type,
-    /* .get_host_buffer_type = */ nullptr,
+    /* .get_host_buffer_type = */ ggml_backend_xdna2_device_get_host_buffer_type,
     /* .buffer_from_host_ptr = */ nullptr,
     /* .supports_op          = */ ggml_backend_xdna2_device_supports_op,
     /* .supports_buft        = */ ggml_backend_xdna2_device_supports_buft,

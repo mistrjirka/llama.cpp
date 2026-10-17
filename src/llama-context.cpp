@@ -506,11 +506,17 @@ llama_context::llama_context(
             }
 
             // an accelerator whose own buffers are not host memory but which reads host buffers in place (e.g. XDNA2: weights in a
-            // device layout, activations in RAM): keep its compute tensors in host memory so the CPU splits read them without a copy
+            // device layout, activations in RAM): keep its compute tensors in host memory so the CPU splits read them without a copy.
+            // The device's host buffer type is preferred (e.g. memory the accelerator can also address), else plain CPU memory.
             static const bool accel_host_compute = [] { const char * e = getenv("LLAMA_ACCEL_HOST_COMPUTE"); return !(e && *e == '0'); }();
-            if (accel_host_compute && backend_type == GGML_BACKEND_DEVICE_TYPE_ACCEL && !ggml_backend_buft_is_host(buft) &&
-                ggml_backend_dev_supports_buft(ggml_backend_get_device(backend.get()), ggml_backend_cpu_buffer_type())) {
-                buft = ggml_backend_cpu_buffer_type();
+            if (accel_host_compute && backend_type == GGML_BACKEND_DEVICE_TYPE_ACCEL && !ggml_backend_buft_is_host(buft)) {
+                ggml_backend_dev_t dev = ggml_backend_get_device(backend.get());
+                ggml_backend_buffer_type_t host_buft = ggml_backend_dev_host_buffer_type(dev);
+                if (host_buft && ggml_backend_buft_is_host(host_buft) && ggml_backend_dev_supports_buft(dev, host_buft)) {
+                    buft = host_buft;
+                } else if (ggml_backend_dev_supports_buft(dev, ggml_backend_cpu_buffer_type())) {
+                    buft = ggml_backend_cpu_buffer_type();
+                }
             }
 
             backend_buft.push_back(buft);
