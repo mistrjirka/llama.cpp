@@ -49,12 +49,13 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
 void pf_unpermute_tile(const float * y_tile, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride);
 // Same, for ntiles consecutive tiles (tile t's Y at y + t * y_tile_floats) in ONE parallel region.
 // Epilogue with a second operand X (read at `other`, same row stride as dst): dst = silu(Y) * X, silu(X) * Y (SwiGLU with Y as the gate / the up
-// projection) or Y + X.
-enum class PfEpi { None, GluGate, GluUp, Add };
+// projection), the same with tanh-GELU (GeGLU), or Y + X.
+enum class PfEpi { None, GluGate, GluUp, GegluGate, GegluUp, Add };
 void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
                         size_t dst_row_stride, PfEpi epi = PfEpi::None, const float * other = nullptr);
 
-// dst = silu(gate) * up over n floats (the same formula as the CPU backend's SWIGLU)
+// dst = silu(gate) * up over n floats (the same formula as the CPU backend's SWIGLU); geglu_row: tanh-GELU (fp32; the CPU uses an fp16 table)
 void swiglu_row(float * dst, const float * gate, const float * up, int64_t n);
+void geglu_row(float * dst, const float * gate, const float * up, int64_t n);
 
 } // namespace xdna2

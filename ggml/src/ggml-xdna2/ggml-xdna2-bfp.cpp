@@ -140,6 +140,13 @@ static inline __m512 v_expf(__m512 x) {
     const __m512 alt = _mm512_mask_blend_ps(_mm512_cmp_ps_mask(n, zero, _CMP_LE_OQ), _mm512_set1_ps(INFINITY), zero);
     return _mm512_mask_blend_ps(d, res, alt);
 }
+// tanh-GELU(g) * u = g / (1 + exp(-2 sqrt(2/pi) (g + 0.044715 g^3))) * u
+XDNA2_TARGET_AVX512
+static inline __m512 v_geglu(__m512 g, __m512 u) {
+    const __m512 g2 = _mm512_mul_ps(g, g);
+    const __m512 t = _mm512_mul_ps(_mm512_mul_ps(g, _mm512_fmadd_ps(g2, _mm512_set1_ps(0.044715f), _mm512_set1_ps(1.0f))), _mm512_set1_ps(-1.5957691216057308f));
+    return _mm512_mul_ps(_mm512_div_ps(g, _mm512_add_ps(_mm512_set1_ps(1.0f), v_expf(t))), u);
+}
 XDNA2_TARGET_AVX512
 static inline __m512 v_swiglu(__m512 g, __m512 u) {
     const __m512 s = _mm512_div_ps(g, _mm512_add_ps(_mm512_set1_ps(1.0f), v_expf(_mm512_sub_ps(_mm512_setzero_ps(), g))));
@@ -149,7 +156,15 @@ XDNA2_TARGET_AVX512
 static inline void store_line_epi_nt(float * d, const float * s0, const float * s1, const float * o, PfEpi epi) {
     const __m512 y = _mm512_insertf32x8(_mm512_castps256_ps512(_mm256_loadu_ps(s0)), _mm256_loadu_ps(s1), 1);
     const __m512 x = _mm512_loadu_ps(o);
-    _mm512_stream_ps(d, epi == PfEpi::Add ? _mm512_add_ps(y, x) : epi == PfEpi::GluGate ? v_swiglu(y, x) : v_swiglu(x, y));
+    __m512 r;
+    switch (epi) {
+        case PfEpi::Add:       r = _mm512_add_ps(y, x); break;
+        case PfEpi::GluGate:   r = v_swiglu(y, x); break;
+        case PfEpi::GluUp:     r = v_swiglu(x, y); break;
+        case PfEpi::GegluGate: r = v_geglu(y, x); break;
+        default:               r = v_geglu(x, y); break;
+    }
+    _mm512_stream_ps(d, r);
 }
 static const bool g_have_avx512 = __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512vl") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512dq");
 #endif
@@ -237,7 +252,16 @@ namespace {
 // 8 tokens (mb) of one tile, the rows of one column c: per token 4 contiguous runs (core k) of Gs * 16 rows, so the stores stream whole lines
 // (the scattered side are the 32 B reads of the Y blocks, which stay in L2 across the 8 tokens)
 inline float silu_mul(float g, float u) { return g / (1.0f + std::exp(-g)) * u; }
-inline float epi_apply(PfEpi epi, float y, float x) { return epi == PfEpi::Add ? y + x : epi == PfEpi::GluGate ? silu_mul(y, x) : silu_mul(x, y); }
+inline float gelu_mul(float g, float u) { return g / (1.0f + std::exp(-1.5957691216057308f * g * (1.0f + 0.044715f * g * g))) * u; }
+inline float epi_apply(PfEpi epi, float y, float x) {
+    switch (epi) {
+        case PfEpi::Add:       return y + x;
+        case PfEpi::GluGate:   return silu_mul(y, x);
+        case PfEpi::GluUp:     return silu_mul(x, y);
+        case PfEpi::GegluGate: return gelu_mul(y, x);
+        default:               return gelu_mul(x, y);
+    }
+}
 
 inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride,
                            int mb, int64_t c, PfEpi epi, const float * other) {
@@ -311,9 +335,12 @@ void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int nt
 
 #ifdef XDNA2_HAVE_AVX512
 XDNA2_TARGET_AVX512
-static int64_t swiglu_avx512(float * dst, const float * gate, const float * up, int64_t n) {
+static int64_t glu_avx512(float * dst, const float * gate, const float * up, int64_t n, bool gelu) {
     int64_t i = 0;
-    for (; i + 16 <= n; i += 16) _mm512_storeu_ps(dst + i, v_swiglu(_mm512_loadu_ps(gate + i), _mm512_loadu_ps(up + i)));
+    for (; i + 16 <= n; i += 16) {
+        const __m512 g = _mm512_loadu_ps(gate + i), u = _mm512_loadu_ps(up + i);
+        _mm512_storeu_ps(dst + i, gelu ? v_geglu(g, u) : v_swiglu(g, u));
+    }
     return i;
 }
 #endif
@@ -321,9 +348,17 @@ static int64_t swiglu_avx512(float * dst, const float * gate, const float * up, 
 void swiglu_row(float * dst, const float * gate, const float * up, int64_t n) {
     int64_t i = 0;
 #ifdef XDNA2_HAVE_AVX512
-    if (g_have_avx512) i = swiglu_avx512(dst, gate, up, n);
+    if (g_have_avx512) i = glu_avx512(dst, gate, up, n, false);
 #endif
     for (; i < n; ++i) dst[i] = silu_mul(gate[i], up[i]);
+}
+
+void geglu_row(float * dst, const float * gate, const float * up, int64_t n) {
+    int64_t i = 0;
+#ifdef XDNA2_HAVE_AVX512
+    if (g_have_avx512) i = glu_avx512(dst, gate, up, n, true);
+#endif
+    for (; i < n; ++i) dst[i] = gelu_mul(gate[i], up[i]);
 }
 
 } // namespace xdna2

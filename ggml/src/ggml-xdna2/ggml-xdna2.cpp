@@ -477,7 +477,7 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
     if (ctx->n_mul_mat > 0) {
         const ExecStats st = npu_executor().stats();
         XLOG("ggml-xdna2: time between backend graph computes (CPU splits + tensor copies) %.3f s\n", ctx->t_between);
-        XLOG("ggml-xdna2: %llu graph splits, %llu mul_mat, %llu SwiGLU + %llu add fused; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
+        XLOG("ggml-xdna2: %llu graph splits, %llu mul_mat, %llu GLU + %llu add fused; host quantize %.3f s, graph total %.3f s | npu: %llu runs in %llu submissions, "
                       "pack act %.3f s, wait %.3f s (%llu hw context switches: %.3f s), unpermute %.3f s, setup %.3f s, kernel wait %.3f s, weights streamed %.2f GB\n",
                       (unsigned long long) ctx->n_graphs, (unsigned long long) ctx->n_mul_mat, (unsigned long long) ctx->n_glu_fused, (unsigned long long) ctx->n_add_fused, ctx->t_quant, ctx->t_graph,
                       (unsigned long long) st.runs, (unsigned long long) st.batches, st.t_pack_a, st.t_wait, (unsigned long long) st.n_switch, st.t_wait_switch, st.t_unpermute, st.t_setup,
@@ -669,11 +669,12 @@ static bool xdna2_fuse_enabled() {
     return b;
 }
 
-// SWIGLU (split form) of two MUL_MAT outputs. When both products are queued prefill jobs, the later one gets the SwiGLU as the epilogue of its
+// SWIGLU / GEGLU (split form) of two MUL_MAT outputs. When both products are queued prefill jobs, the later one gets the GLU as the epilogue of its
 // unpermute and writes the result straight into this node (its own output is never written); otherwise computed on the host.
 static void ggml_backend_xdna2_glu(ggml_backend_xdna2_context * ctx, ggml_tensor * dst) {
     const ggml_tensor * gate = dst->src[0];
     const ggml_tensor * up   = dst->src[1];
+    const bool gelu = ggml_get_glu_op(dst) == GGML_GLU_OP_GEGLU;
     if (xdna2_fuse_enabled() && ggml_is_contiguous(dst)) {
         PrefillJob * jg = nullptr, * ju = nullptr;
         for (auto & pj : ctx->pf_pending) {
@@ -683,7 +684,7 @@ static void ggml_backend_xdna2_glu(ggml_backend_xdna2_context * ctx, ggml_tensor
         if (jg && ju && jg != ju && jg->epi == PfEpi::None && ju->epi == PfEpi::None && jg->dst_row_stride == size_t(dst->nb[1]) &&
             ju->dst_row_stride == size_t(dst->nb[1])) {
             PrefillJob * later = jg > ju ? jg : ju, * earlier = jg > ju ? ju : jg;     // the units run job by job: the earlier output is complete first
-            later->epi       = later == jg ? PfEpi::GluGate : PfEpi::GluUp;
+            later->epi       = gelu ? (later == jg ? PfEpi::GegluGate : PfEpi::GegluUp) : (later == jg ? PfEpi::GluGate : PfEpi::GluUp);
             later->epi_other = earlier->dst;
             later->dst       = static_cast<float *>(dst->data);
             const char * db = static_cast<const char *>(dst->data);
@@ -699,7 +700,7 @@ static void ggml_backend_xdna2_glu(ggml_backend_xdna2_context * ctx, ggml_tensor
 #endif
     for (int64_t r = 0; r < nr; ++r) {
         const int64_t i1 = r % dst->ne[1], i2 = (r / dst->ne[1]) % dst->ne[2], i3 = r / (dst->ne[1] * dst->ne[2]);
-        swiglu_row(reinterpret_cast<float *>(static_cast<char *>(dst->data) + i1 * dst->nb[1] + i2 * dst->nb[2] + i3 * dst->nb[3]),
+        (gelu ? geglu_row : swiglu_row)(reinterpret_cast<float *>(static_cast<char *>(dst->data) + i1 * dst->nb[1] + i2 * dst->nb[2] + i3 * dst->nb[3]),
                    reinterpret_cast<const float *>(static_cast<const char *>(gate->data) + i1 * gate->nb[1] + i2 * gate->nb[2] + i3 * gate->nb[3]),
                    reinterpret_cast<const float *>(static_cast<const char *>(up->data) + i1 * up->nb[1] + i2 * up->nb[2] + i3 * up->nb[3]), n);
     }
@@ -1032,9 +1033,9 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
 
         case GGML_OP_GLU:
         {
-            // SwiGLU of two of our products (fused into the unpermute of the later one, see ggml_backend_xdna2_glu)
+            // SwiGLU / GeGLU of two of our products (fused into the unpermute of the later one, see ggml_backend_xdna2_glu)
             const ggml_tensor * a = op->src[0], * b = op->src[1];
-            if (!xdna2_fuse_enabled() || ggml_get_glu_op(op) != GGML_GLU_OP_SWIGLU || b == nullptr || ggml_get_op_params_i32(op, 1) != 0) return xdna2_reject(30);
+            if (!xdna2_fuse_enabled() || (ggml_get_glu_op(op) != GGML_GLU_OP_SWIGLU && ggml_get_glu_op(op) != GGML_GLU_OP_GEGLU) || b == nullptr || ggml_get_op_params_i32(op, 1) != 0) return xdna2_reject(30);
             if (op->type != GGML_TYPE_F32 || a->type != GGML_TYPE_F32 || b->type != GGML_TYPE_F32 || !ggml_are_same_shape(a, b) || !ggml_are_same_shape(a, op)) return xdna2_reject(31);
             if (a->nb[0] != sizeof(float) || b->nb[0] != sizeof(float) || op->nb[0] != sizeof(float)) return xdna2_reject(32);
             if (xdna2_through_reshape(a)->op != GGML_OP_MUL_MAT || xdna2_through_reshape(b)->op != GGML_OP_MUL_MAT) return xdna2_reject(33);
