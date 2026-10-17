@@ -39,8 +39,10 @@ k_hdr = Kernel("pf_hdr", a.obj, [A_ty, hdr_ty])
 k_zero = Kernel("pf_zero", a.obj, [out_core_ty])
 k_begin = Kernel("pf_slab_begin", a.obj, [hdr_ty, hdr_ty])
 k_chunk = Kernel("pf_chunk", a.obj, [chunk_ty, A_ty, out_core_ty, wrec_ty, bt_ty, hdr_ty])
+k_pre = Kernel("pf_chunk_pre", a.obj, [chunk_ty, wrec_ty, bt_ty, hdr_ty])
+k_flush = Kernel("pf_flush", a.obj, [A_ty, out_core_ty, bt_ty])
 
-def core_fn(of_w, of_a, of_o, khd, kz, kbg, kch, hdr, ctl, wrec, Bt):
+def core_fn(of_w, of_a, of_o, khd, kz, kbg, kch, kpre, kfl, hdr, ctl, wrec, Bt):
     ao = of_a.acquire(1); khd(ao, hdr); of_a.release(1)
     nsb = arith.index_cast(T.index(), hdr[0])
     nbk = arith.index_cast(T.index(), hdr[1])
@@ -48,10 +50,15 @@ def core_fn(of_w, of_a, of_o, khd, kz, kbg, kch, hdr, ctl, wrec, Bt):
         o = of_o.acquire(1)
         kz(o)
         for _ in range_(0, nbk, 1):
-            av = of_a.acquire(1)
             kbg(hdr, ctl)
-            nc = arith.index_cast(T.index(), ctl[0])
-            for _ in range_(0, nc, 1):
+            # phase 1: the first record's chunks, expanded before the A slab is acquired (its transfer overlaps this)
+            n1 = arith.index_cast(T.index(), ctl[1])
+            for _ in range_(0, n1, 1):
+                w = of_w.acquire(1); kpre(w, wrec, Bt, hdr); of_w.release(1)
+            av = of_a.acquire(1)
+            kfl(av, o, Bt)
+            n2 = arith.index_cast(T.index(), ctl[2])
+            for _ in range_(0, n2, 1):
                 w = of_w.acquire(1); kch(w, av, o, wrec, Bt, hdr); of_w.release(1)
             of_a.release(1)
         of_o.release(1)
@@ -71,7 +78,7 @@ for c in range(C):
                             names=[f"w{c}_{i}" for i in range(CPC)], depths=[a.wdepth] * CPC)
     w_prods.append(of_in.prod(tile=t))
     for i in range(CPC):
-        workers.append(Worker(core_fn, [wf[i].cons(), af.cons(), subs[i].prod(), k_hdr, k_zero, k_begin, k_chunk,
+        workers.append(Worker(core_fn, [wf[i].cons(), af.cons(), subs[i].prod(), k_hdr, k_zero, k_begin, k_chunk, k_pre, k_flush,
                                         Buffer(hdr_ty, name=f"hdr{c}_{i}"), Buffer(hdr_ty, name=f"ctl{c}_{i}"),
                                         Buffer(wrec_ty, name=f"wrec{c}_{i}"), Buffer(bt_ty, name=f"bt{c}_{i}")],
                               tile=t, stack_size=a.stack))

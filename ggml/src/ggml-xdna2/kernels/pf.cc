@@ -15,12 +15,12 @@
 #define MT 64                       // tokens per tile
 #define MB (MT / 8)                 // 8-token blocks
 // per-record scale tables, overlaid by qtype (only one record is in flight):
-//   Q4_K/Q5_K : SV[j][nb][64] bf16 (2 KB), AC0[j][nb][64] f32 (4 KB)         j = 32-k sub-block, nb = 8-row half
+//   Q4_K/Q5_K : SV[j][nb][64] bf16 (2 KB), BV[j][nb][64] bf16 (2 KB)          j = 32-k sub-block, nb = 8-row half
 //   Q6_K      : SV6[s][nb][64] bf16 (4 KB)                                    s = 16-k sub-block
 //   Q8_0      : SVH[b][nb][64], SVL[b][nb][64] bf16 (2 KB each)               b = 32-k block (d split in two bf16)
 alignas(64) static uint8_t TBL[6144];
 #define SV  ((bfloat16 (*)[2][64])(TBL))
-#define AC0 ((float (*)[2][64])(TBL + 2048))
+#define BV  ((bfloat16 (*)[2][64])(TBL + 2048))
 #define SV6 ((bfloat16 (*)[2][64])(TBL))
 #define SVH ((bfloat16 (*)[2][64])(TBL))
 #define SVL ((bfloat16 (*)[2][64])(TBL + 2048))
@@ -42,7 +42,7 @@ static inline aie::vector<float, 16> h2f(const uint16_t *p) {
   return aie::select(r, aie::neg(r), isneg);
 }
 
-// ---- scale prep v3: SV[j][nb] = bf16(d*sc_j) replicated [n][k]; AC0[j][nb] = -b_j - 128*a_bf (fp32)
+// ---- scale prep v4: SV[j][nb] = bf16(d*sc_j) replicated [n][k]; BV[j][nb] = bf16(-dmin*m_j) replicated (the expand forms -b - 128*a)
 template <int SCO, int DO, int DMO>
 static inline void prep_scales_k(const int8_t *__restrict rec) {
   const uint8_t *scp = (const uint8_t *)(rec + SCO);
@@ -76,8 +76,7 @@ static inline void prep_scales_k(const int8_t *__restrict rec) {
     aie::store_v(SCB + jp * 32, aie::to_float<bfloat16>(scp2[jp]));
     aie::store_v(MNB + jp * 32, aie::to_float<bfloat16>(mnp2[jp]));
   }
-  const aie::vector<bfloat16, 64> m128 = aie::broadcast<bfloat16, 64>(-128.0f);
-  AIE_LOOP_NO_UNROLL
+  AIE_LOOP_UNROLL_FULL
   for (int j = 0; j < 8; j++) {
     aie::vector<bfloat16, 16> sc16 = aie::load_v<16>(SCB + j * 16), mn16 = aie::load_v<16>(MNB + j * 16);
     aie::accum<accfloat, 16> aa = aie::mul(d_hi, sc16);
@@ -88,15 +87,13 @@ static inline void prep_scales_k(const int8_t *__restrict rec) {
     aie::vector<bfloat16, 16> b_bf = bb.to_vector<bfloat16>();
     aie::store_v(ABF + j * 16, a_bf); aie::store_v(BBF + j * 16, b_bf);
   }
-  AIE_LOOP_NO_UNROLL
+  AIE_LOOP_UNROLL(4)
   for (int i = 0; i < 16; i++) {           // i = j*2 + nb
     aie::vector<bfloat16, 8> a8 = aie::load_v<8>(ABF + i * 8), b8 = aie::load_v<8>(BBF + i * 8);
     aie::vector<bfloat16, 64> av = aie::transpose(a8.grow_replicate<64>(), 8, 8);
     aie::vector<bfloat16, 64> bv = aie::transpose(b8.grow_replicate<64>(), 8, 8);
     aie::store_v(&SV[0][0][0] + i * 64, av);
-    aie::accum<accfloat, 64> c0; c0.from_vector(bv);
-    c0 = aie::mac(c0, m128, av);
-    aie::store_v(&AC0[0][0][0] + i * 64, c0.to_vector<float>());
+    aie::store_v(&BV[0][0][0] + i * 64, bv);
   }
 }
 
@@ -128,7 +125,8 @@ static inline void expand_q4(const int8_t *__restrict rec, int8_t *__restrict Bt
       sink = aie::bit_xor(sink, aie::bit_xor(x0.cast_to<uint8>().extract<64>(0), x1.cast_to<uint8>().extract<64>(1)));
 #else
       aie::accum<accfloat, 64> acc0, acc1;
-      acc0.from_vector(aie::load_v<64>(AC0[j][0])); acc1.from_vector(aie::load_v<64>(AC0[j][1]));
+      acc0.from_vector(aie::load_v<64>(BV[j][0])); acc1.from_vector(aie::load_v<64>(BV[j][1]));
+      acc0 = aie::mac(acc0, m128, sv0); acc1 = aie::mac(acc1, m128, sv1);     // -b - 128 a (as the former AC0 table: same op order)
       acc0 = aie::mac(acc0, x0, sv0); acc1 = aie::mac(acc1, x1, sv1);
       out.push(aie::block_vector<bfp16ebs8, 64>(::to_v64bfp16ebs8(acc0)));
       out.push(aie::block_vector<bfp16ebs8, 64>(::to_v64bfp16ebs8(acc1)));
@@ -166,8 +164,10 @@ static inline void expand_q5(const int8_t *__restrict rec, int8_t *__restrict Bt
         auto [z0, z1] = aie::interleave_zip(T[c], c43, 1);
         aie::vector<bfloat16, 64> x = aie::concat(z0.cast_to<bfloat16>(), z1.cast_to<bfloat16>());
         aie::accum<accfloat, 64> acc;
-        acc.from_vector(aie::load_v<64>(AC0[j][nb]));
-        acc = aie::mac(acc, x, aie::load_v<64>(SV[j][nb]));
+        const aie::vector<bfloat16, 64> sv = aie::load_v<64>(SV[j][nb]);
+        acc.from_vector(aie::load_v<64>(BV[j][nb]));
+        acc = aie::mac(acc, aie::broadcast<bfloat16, 64>(-128.0f), sv);
+        acc = aie::mac(acc, x, sv);
         out.push(aie::block_vector<bfp16ebs8, 64>(::to_v64bfp16ebs8(acc)));
       }
     }
@@ -320,22 +320,38 @@ extern "C" void pf_slab_begin(const int32_t *__restrict hdr, int32_t *__restrict
   st_gc = rem < GSB ? rem : GSB;
   st_gl = 0; st_fill = 0;
   ctl[0] = (st_gc * rec_bytes(qt) + PF_S - 1) / PF_S;
+  // the chunks of the first record are consumed (and the record expanded) before the A slab is acquired, so the A transfer overlaps that work
+  ctl[1] = st_gc > 0 ? (rec_bytes(qt) + PF_S - 1) / PF_S : 0;
+  if (ctl[1] > ctl[0]) ctl[1] = ctl[0];
+  ctl[2] = ctl[0] - ctl[1];
 }
 static inline void copy_bytes64(int8_t *__restrict dst, const int8_t *__restrict src, int n) {
-  for (int i = 0; i < n; i += 64) aie::store_v(dst + i, aie::load_v<64>(src + i));
+  // the pipeliner is off for this kernel: unrolled by hand so the loads issue back to back
+  int i = 0;
+  for (; i + 512 <= n; i += 512) {
+    const auto v0 = aie::load_v<64>(src + i),       v1 = aie::load_v<64>(src + i + 64),  v2 = aie::load_v<64>(src + i + 128), v3 = aie::load_v<64>(src + i + 192);
+    const auto v4 = aie::load_v<64>(src + i + 256), v5 = aie::load_v<64>(src + i + 320), v6 = aie::load_v<64>(src + i + 384), v7 = aie::load_v<64>(src + i + 448);
+    aie::store_v(dst + i, v0);       aie::store_v(dst + i + 64, v1);  aie::store_v(dst + i + 128, v2); aie::store_v(dst + i + 192, v3);
+    aie::store_v(dst + i + 256, v4); aie::store_v(dst + i + 320, v5); aie::store_v(dst + i + 384, v6); aie::store_v(dst + i + 448, v7);
+  }
+  for (; i < n; i += 64) aie::store_v(dst + i, aie::load_v<64>(src + i));
 }
 static inline void copy_bytes32(int8_t *__restrict dst, const int8_t *__restrict src, int n) {
   for (int i = 0; i < n; i += 32) aie::store_v(dst + i, aie::load_v<32>(src + i));
 }
-static inline void process(const int8_t *__restrict rec, const int8_t *__restrict A, float *__restrict C, int8_t *__restrict Bt, int qt) {
-  const auto saved = aie::swap_rounding(aie::rounding_mode::conv_even);
+static inline void expand_rec(const int8_t *__restrict rec, int8_t *__restrict Bt, int qt) {
   if (qt == 4) { prep_scales_k<2048, 2240, 2272>(rec); expand_q4(rec, Bt); }
   else if (qt == 5) { prep_scales_k<2560, 2752, 2784>(rec); expand_q5(rec, Bt); }
   else if (qt == 6) { prep_q6(rec); expand_q6(rec, Bt); }
   else { prep_q8(rec); expand_q8(rec, Bt); }
+}
+static inline void process(const int8_t *__restrict rec, const int8_t *__restrict A, float *__restrict C, int8_t *__restrict Bt, int qt) {
+  const auto saved = aie::swap_rounding(aie::rounding_mode::conv_even);
+  expand_rec(rec, Bt, qt);
   mm_blocks(A, Bt, C);
   aie::set_rounding(saved);
 }
+static int st_pend = -1;                     // record expanded before the A slab was acquired, waiting for its mmul
 extern "C" void pf_chunk(const int8_t *__restrict chunk, const int8_t *__restrict A, float *__restrict C, int8_t *__restrict wrec,
                          int8_t *__restrict Bt, const int32_t *__restrict hdr) {
   const int qt = hdr[2];
@@ -351,4 +367,32 @@ extern "C" void pf_chunk(const int8_t *__restrict chunk, const int8_t *__restric
       st_gl++;
     }
   }
+}
+
+// phase 1 of a slab: like pf_chunk, but the record that completes is only expanded (its mmul waits for the A slab: pf_flush)
+extern "C" void pf_chunk_pre(const int8_t *__restrict chunk, int8_t *__restrict wrec, int8_t *__restrict Bt, const int32_t *__restrict hdr) {
+  const int qt = hdr[2];
+  const int REC = rec_bytes(qt);
+  int pos = 0;
+  while (pos < PF_S && st_gl < st_gc) {
+    int n = REC - st_fill; if (n > PF_S - pos) n = PF_S - pos;
+    if (((st_fill | pos | n) & 63) == 0) copy_bytes64(wrec + st_fill, chunk + pos, n); else copy_bytes32(wrec + st_fill, chunk + pos, n);
+    st_fill += n; pos += n;
+    if (st_fill == REC) {
+      st_fill = 0;
+      const auto saved = aie::swap_rounding(aie::rounding_mode::conv_even);
+      expand_rec(wrec, Bt, qt);
+      aie::set_rounding(saved);
+      st_pend = st_gl;
+      st_gl++;
+    }
+  }
+}
+// the A slab is here: mmul of the record expanded in phase 1
+extern "C" void pf_flush(const int8_t *__restrict A, float *__restrict C, int8_t *__restrict Bt) {
+  if (st_pend < 0) return;
+  const auto saved = aie::swap_rounding(aie::rounding_mode::conv_even);
+  mm_blocks(A, Bt, C + st_pend * 1024);
+  aie::set_rounding(saved);
+  st_pend = -1;
 }
