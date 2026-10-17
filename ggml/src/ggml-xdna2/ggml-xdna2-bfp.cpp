@@ -1,6 +1,7 @@
 #include "ggml-xdna2-bfp.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -121,6 +122,35 @@ static inline void store_line_nt(float * d, const float * s0, const float * s1) 
     const __m512 v = _mm512_insertf32x8(_mm512_castps256_ps512(_mm256_loadu_ps(s0)), _mm256_loadu_ps(s1), 1);
     _mm512_stream_ps(d, v);
 }
+// silu as ggml-cpu computes it (ggml_v_expf / ggml_v_silu in ggml-cpu/vec.h), so the fused SwiGLU matches the CPU op
+XDNA2_TARGET_AVX512
+static inline __m512 v_expf(__m512 x) {
+    const __m512 r = _mm512_set1_ps(0x1.8p23f);
+    const __m512 z = _mm512_fmadd_ps(x, _mm512_set1_ps(0x1.715476p+0f), r);
+    const __m512 n = _mm512_sub_ps(z, r);
+    const __m512 b = _mm512_fnmadd_ps(n, _mm512_set1_ps(0x1.7f7d1cp-20f), _mm512_fnmadd_ps(n, _mm512_set1_ps(0x1.62e4p-1f), x));
+    const __mmask16 d = _mm512_cmp_ps_mask(_mm512_abs_ps(n), _mm512_set1_ps(192), _CMP_GT_OQ);
+    const __m512 u = _mm512_mul_ps(b, b);
+    const __m512 j = _mm512_fmadd_ps(_mm512_fmadd_ps(_mm512_fmadd_ps(_mm512_set1_ps(0x1.0e4020p-7f), b, _mm512_set1_ps(0x1.573e2ep-5f)), u,
+                                                     _mm512_fmadd_ps(_mm512_set1_ps(0x1.555e66p-3f), b, _mm512_set1_ps(0x1.fffdb6p-2f))),
+                                     u, _mm512_fmadd_ps(_mm512_set1_ps(0x1.ffffecp-1f), b, _mm512_set1_ps(1.0f)));
+    const __m512 res = _mm512_scalef_ps(j, n);
+    if (_mm512_kortestz(d, d)) return res;
+    const __m512 zero = _mm512_setzero_ps();
+    const __m512 alt = _mm512_mask_blend_ps(_mm512_cmp_ps_mask(n, zero, _CMP_LE_OQ), _mm512_set1_ps(INFINITY), zero);
+    return _mm512_mask_blend_ps(d, res, alt);
+}
+XDNA2_TARGET_AVX512
+static inline __m512 v_swiglu(__m512 g, __m512 u) {
+    const __m512 s = _mm512_div_ps(g, _mm512_add_ps(_mm512_set1_ps(1.0f), v_expf(_mm512_sub_ps(_mm512_setzero_ps(), g))));
+    return _mm512_mul_ps(s, u);
+}
+XDNA2_TARGET_AVX512
+static inline void store_line_glu_nt(float * d, const float * s0, const float * s1, const float * o, bool y_is_gate) {
+    const __m512 y = _mm512_insertf32x8(_mm512_castps256_ps512(_mm256_loadu_ps(s0)), _mm256_loadu_ps(s1), 1);
+    const __m512 x = _mm512_loadu_ps(o);
+    _mm512_stream_ps(d, y_is_gate ? v_swiglu(y, x) : v_swiglu(x, y));
+}
 static const bool g_have_avx512 = __builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512vl") && __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512dq");
 #endif
 
@@ -206,8 +236,10 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
 namespace {
 // 8 tokens (mb) of one tile, the rows of one column c: per token 4 contiguous runs (core k) of Gs * 16 rows, so the stores stream whole lines
 // (the scattered side are the 32 B reads of the Y blocks, which stay in L2 across the 8 tokens)
+inline float silu_mul(float g, float u) { return g / (1.0f + std::exp(-g)) * u; }
+
 inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride,
-                           int mb, int64_t c) {
+                           int mb, int64_t c, const float * other, bool y_is_gate) {
     using namespace layout;
     const int64_t Gs = g.sp_groups(split), nsb = g.sp_nsb(split), row_base = g.sp_row0(split);
     const int64_t tok0 = int64_t(tile) * PF_TILE_TOK;
@@ -216,6 +248,7 @@ inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layou
         const int t = mb * 8 + m8;
         if (t >= ntok) break;
         float * drow = reinterpret_cast<float *>(reinterpret_cast<char *>(dst) + size_t(tok0 + t) * dst_row_stride);
+        const float * orow = other ? reinterpret_cast<const float *>(reinterpret_cast<const char *>(other) + size_t(tok0 + t) * dst_row_stride) : nullptr;
         for (int64_t k = 0; k < 4; ++k) {
             for (int64_t sb = 0; sb < nsb; ++sb) {
                 const int64_t gc = g.sb_groups(split, sb);
@@ -224,6 +257,18 @@ inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layou
                     if (row0 >= g.n) break;
                     const float * s0 = y + (((c * nsb + sb) * 4 + k) * GSB + gl) * 1024 + (mb * 2) * 64 + m8 * 8, * s1 = s0 + 64;
                     float * d = drow + row0;
+                    if (orow) {
+                        const float * o = orow + row0;
+#ifdef XDNA2_HAVE_AVX512
+                        if (g_have_avx512 && row0 + 16 <= g.n && ((uintptr_t) d & 63) == 0) { store_line_glu_nt(d, s0, s1, o, y_is_gate); continue; }
+#endif
+                        const int64_t cnt = std::min<int64_t>(16, g.n - row0);
+                        for (int64_t i = 0; i < cnt; ++i) {
+                            const float v = i < 8 ? s0[i] : s1[i - 8];
+                            d[i] = y_is_gate ? silu_mul(v, o[i]) : silu_mul(o[i], v);
+                        }
+                        continue;
+                    }
                     if (row0 + 16 <= g.n) {
 #ifdef XDNA2_HAVE_AVX512
                         if (g_have_avx512 && ((uintptr_t) d & 63) == 0) { store_line_nt(d, s0, s1); continue; }
@@ -246,7 +291,7 @@ void pf_unpermute_tile(const float * y, int tile, int64_t n_tok, const layout::G
 }
 
 void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
-                        size_t dst_row_stride) {
+                        size_t dst_row_stride, const float * glu_other, bool glu_y_is_gate) {
     const int64_t items = int64_t(ntiles) * 64;
 #if defined(_OPENMP)
     #pragma omp parallel num_threads(pf_threads())
@@ -258,12 +303,29 @@ void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int nt
     for (int64_t it = 0; it < items; ++it) {
         const int t = int(it / 64), mb = int(it / 8 % 8);
         const int64_t c = it % 8;
-        unpermute_rows(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, mb, c);
+        unpermute_rows(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, mb, c, glu_other, glu_y_is_gate);
     }
 #ifdef XDNA2_HAVE_AVX512
     _mm_sfence();      // make this thread's non-temporal stores globally visible before the region ends
 #endif
     }
+}
+
+#ifdef XDNA2_HAVE_AVX512
+XDNA2_TARGET_AVX512
+static int64_t swiglu_avx512(float * dst, const float * gate, const float * up, int64_t n) {
+    int64_t i = 0;
+    for (; i + 16 <= n; i += 16) _mm512_storeu_ps(dst + i, v_swiglu(_mm512_loadu_ps(gate + i), _mm512_loadu_ps(up + i)));
+    return i;
+}
+#endif
+
+void swiglu_row(float * dst, const float * gate, const float * up, int64_t n) {
+    int64_t i = 0;
+#ifdef XDNA2_HAVE_AVX512
+    if (g_have_avx512) i = swiglu_avx512(dst, gate, up, n);
+#endif
+    for (; i < n; ++i) dst[i] = silu_mul(gate[i], up[i]);
 }
 
 } // namespace xdna2

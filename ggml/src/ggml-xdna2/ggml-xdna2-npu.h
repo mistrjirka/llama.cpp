@@ -38,6 +38,8 @@ struct PrefillJob {
     int64_t         n_tok = 0;
     float *         dst = nullptr;       // dst row j at (char *) dst + j * dst_row_stride, geom.n floats each
     size_t          dst_row_stride = 0;
+    const float *   glu_other = nullptr; // fused SwiGLU: dst = silu(gate) * up, the other operand at glu_other (same row stride as dst)
+    bool            glu_y_is_gate = false;
 };
 
 // One FLASH_ATTN_EXT (prefill) on the attention kernel: head dim 256, 16 q heads, 4 kv heads, causal over the cache cells 0 .. p0 + t for query t
