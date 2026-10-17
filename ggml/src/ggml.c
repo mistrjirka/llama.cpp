@@ -1110,9 +1110,11 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_SGD",
 
     "GLU",
+
+    "SSM_CONV_CM",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1225,9 +1227,11 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "sgd(x)",
 
     "glu(x)",
+
+    "ssm_conv_cm(x, s, c)",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -5700,6 +5704,35 @@ struct ggml_tensor * ggml_ssm_conv(
     result->op     = GGML_OP_SSM_CONV;
     result->src[0] = sx;
     result->src[1] = c;
+
+    return result;
+}
+
+// ggml_ssm_conv_cm
+
+struct ggml_tensor * ggml_ssm_conv_cm(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * x,
+        struct ggml_tensor  * state,
+        struct ggml_tensor  * c,
+        bool                  silu) {
+    GGML_ASSERT(ggml_is_matrix(c));
+    GGML_ASSERT(x->type == GGML_TYPE_F32 && state->type == GGML_TYPE_F32 && c->type == GGML_TYPE_F32);
+
+    const int64_t d_conv  = c->ne[0];
+    const int64_t d_inner = c->ne[1];
+
+    GGML_ASSERT(x->ne[0] == d_inner && x->ne[2] == 1 && x->ne[3] == 1);
+    GGML_ASSERT(state->ne[0] == d_conv - 1 && state->ne[1] == d_inner && ggml_nelements(state) == (d_conv - 1) * d_inner);
+
+    struct ggml_tensor * result = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d_inner, x->ne[1], 1);
+
+    ggml_set_op_params_i32(result, 0, silu ? 1 : 0);
+
+    result->op     = GGML_OP_SSM_CONV_CM;
+    result->src[0] = x;
+    result->src[1] = state;
+    result->src[2] = c;
 
     return result;
 }

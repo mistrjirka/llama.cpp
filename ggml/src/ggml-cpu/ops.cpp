@@ -10010,6 +10010,98 @@ void ggml_compute_forward_ssm_conv(
     }
 }
 
+// ggml_compute_forward_ssm_conv_cm
+
+// y[t][i] = sum_k c[i][k] * in[t + k][i] with in = concat(state, x) along time, all in the channel-major layout: the threads split the channels
+// and walk the tokens, so every load/store is contiguous along the channels (the time-major ssm_conv walks the channels with a row stride)
+static void ggml_compute_forward_ssm_conv_cm_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+    const ggml_tensor * x  = dst->src[0];   // {d_inner, n_t}
+    const ggml_tensor * st = dst->src[1];   // {d_conv - 1, d_inner}
+    const ggml_tensor * c  = dst->src[2];   // {d_conv, d_inner}
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    const int64_t nc  = c->ne[0];
+    const int64_t nr  = c->ne[1];
+    const int64_t n_t = x->ne[1];
+    const bool    silu = ggml_get_op_params_i32(dst, 0) != 0;
+
+    GGML_ASSERT(x->nb[0] == sizeof(float) && dst->nb[0] == sizeof(float) && c->nb[0] == sizeof(float));
+    GGML_ASSERT(nc <= 8);
+
+    // channel range of this thread, in multiples of 16
+    const int64_t nblk = (nr + 15) / 16;
+    const int64_t b0 = nblk * ith / nth, b1 = nblk * (ith + 1) / nth;
+    const int64_t i0 = b0 * 16, i1 = std::min(nr, b1 * 16);
+    if (i0 >= i1) {
+        return;
+    }
+    const int64_t ni = i1 - i0;
+
+    // per thread: the weights transposed to [k][channel] and the state as channel-major rows [k][channel]
+    float * wt = (float *) params->wdata + ith * (2 * 8 * nr + CACHE_LINE_SIZE_F32);
+    float * sr = wt + 8 * nr;
+    for (int64_t k = 0; k < nc; ++k) {
+        for (int64_t i = i0; i < i1; ++i) {
+            wt[k * nr + i] = *(const float *) ((const char *) c->data + i * c->nb[1] + k * c->nb[0]);
+        }
+    }
+    for (int64_t k = 0; k < nc - 1; ++k) {
+        for (int64_t i = i0; i < i1; ++i) {
+            sr[k * nr + i] = *(const float *) ((const char *) st->data + i * st->nb[1] + k * st->nb[0]);
+        }
+    }
+
+    for (int64_t t = 0; t < n_t; ++t) {
+        // in[t + k] is x row t + k - (nc - 1), or state row t + k when that is negative
+        const float * rows[8];
+        for (int64_t k = 0; k < nc; ++k) {
+            const int64_t j = t + k - (nc - 1);
+            rows[k] = j < 0 ? sr + (j + nc - 1) * nr : (const float *) ((const char *) x->data + j * x->nb[1]);
+        }
+        float * y = (float *) ((char *) dst->data + t * dst->nb[1]);
+        int64_t i = i0;
+#if defined(__AVX512F__)
+        for (; i + 16 <= i1; i += 16) {
+            __m512 acc = _mm512_mul_ps(_mm512_loadu_ps(wt + i), _mm512_loadu_ps(rows[0] + i));
+            for (int64_t k = 1; k < nc; ++k) {
+                acc = _mm512_fmadd_ps(_mm512_loadu_ps(wt + k * nr + i), _mm512_loadu_ps(rows[k] + i), acc);
+            }
+            if (silu) {
+                acc = ggml_v_silu(acc);
+            }
+            _mm512_storeu_ps(y + i, acc);
+        }
+#endif
+        for (; i < i1; ++i) {
+            float sumf = 0.0f;
+            for (int64_t k = 0; k < nc; ++k) {
+                sumf += wt[k * nr + i] * rows[k][i];
+            }
+            y[i] = silu ? ggml_silu_f32(sumf) : sumf;
+        }
+    }
+    GGML_UNUSED(ni);
+}
+
+void ggml_compute_forward_ssm_conv_cm(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+    switch (dst->src[0]->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_ssm_conv_cm_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
 // ggml_compute_forward_ssm_scan
 
 static void ggml_compute_forward_ssm_scan_f32(

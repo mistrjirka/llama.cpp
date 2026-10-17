@@ -521,6 +521,53 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
     return conv_input;
 }
 
+ggml_tensor * llm_build_delta_net_base::build_conv_silu(
+        llm_graph_input_rs * inp,
+        ggml_tensor *        conv_states_all,
+        ggml_tensor *        qkv_mixed,
+        ggml_tensor *        conv_kernel,
+        int64_t              conv_channels,
+        int                  il) {
+    static const bool cm_off = [] { const char * e = getenv("LLAMA_CONV_CM"); return e && *e == '0'; }();
+    const int64_t conv_kernel_size = conv_kernel->ne[0];
+    const int64_t n_seqs = ubatch.n_seqs;
+    const int64_t n_t    = qkv_mixed->ne[1];
+
+    if (cm_off || n_seqs != 1 || cparams.n_rs_seq != 0 || n_t < conv_kernel_size - 1 || qkv_mixed->nb[0] != ggml_type_size(qkv_mixed->type)) {
+        ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+        ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+        cb(conv_output_proper, "conv_output_raw", il);
+        ggml_tensor * conv_output_silu = ggml_silu(ctx0, conv_output_proper);
+        cb(conv_output_silu, "conv_output_silu", il);
+        return conv_output_silu;
+    }
+
+    const auto * mctx_cur = inp->mctx;
+    const auto kv_head  = mctx_cur->get_head();
+
+    ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), n_seqs);
+    cb(conv_states, "conv_states", il);
+    conv_states = ggml_reshape_2d(ctx0, conv_states, conv_kernel_size - 1, conv_channels);
+
+    ggml_tensor * x = ggml_view_2d(ctx0, qkv_mixed, conv_channels, n_t, qkv_mixed->nb[1], 0);
+
+    // the new conv state: the last kernel_size - 1 inputs of each channel, time-major like the cache
+    const int64_t row_count = (conv_kernel_size - 1) * conv_channels;
+    ggml_tensor * x_last = ggml_view_2d(ctx0, x, conv_channels, conv_kernel_size - 1, x->nb[1], (n_t - (conv_kernel_size - 1)) * x->nb[1]);
+    ggml_tensor * conv_state_update = ggml_view_2d(ctx0, conv_states_all, row_count, 1, conv_states_all->nb[1],
+                                                   kv_head * ggml_row_size(conv_states_all->type, row_count));
+    cb(conv_state_update, "conv_state_update", il);
+
+    ggml_tensor * conv_output_silu = ggml_ssm_conv_cm(ctx0, x, conv_states, conv_kernel, true);
+    cb(conv_output_silu, "conv_output_silu", il);
+
+    // after the conv (it reads the old state)
+    ggml_build_forward_expand(gf, conv_output_silu);
+    ggml_build_forward_expand(gf, ggml_cpy(ctx0, ggml_transpose(ctx0, x_last), conv_state_update));
+
+    return conv_output_silu;
+}
+
 ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         llm_graph_input_rs * inp,
         ggml_tensor *        ssm_states_all,

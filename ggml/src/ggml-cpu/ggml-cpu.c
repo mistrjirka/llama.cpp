@@ -2041,6 +2041,10 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_ssm_conv(params, tensor);
             } break;
+        case GGML_OP_SSM_CONV_CM:
+            {
+                ggml_compute_forward_ssm_conv_cm(params, tensor);
+            } break;
         case GGML_OP_SSM_SCAN:
             {
                 ggml_compute_forward_ssm_scan(params, tensor);
@@ -2428,6 +2432,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_FLASH_ATTN_EXT:
         case GGML_OP_FLASH_ATTN_BACK:
         case GGML_OP_SSM_CONV:
+        case GGML_OP_SSM_CONV_CM:
         case GGML_OP_SSM_SCAN:
         case GGML_OP_LIGHTNING_INDEXER:
             {
@@ -3028,6 +3033,11 @@ struct ggml_cplan ggml_graph_plan(
                         const int64_t K   = ggml_get_op_params_i32(node, 0);
                         const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0) + S_v * S_v + 3 * S_v;   // see ggml_compute_forward_gated_delta_net_one_chunk
                         cur = per_thread * sizeof(float) * n_tasks;
+                    } break;
+                case GGML_OP_SSM_CONV_CM:
+                    {
+                        const int64_t nr = node->src[2]->ne[1];
+                        cur = (2 * 8 * nr + CACHE_LINE_SIZE_F32) * sizeof(float) * n_tasks;   // see ggml_compute_forward_ssm_conv_cm_f32
                     } break;
                 case GGML_OP_COUNT:
                     {

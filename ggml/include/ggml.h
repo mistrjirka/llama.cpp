@@ -601,6 +601,8 @@ extern "C" {
 
         GGML_OP_GLU,
 
+        GGML_OP_SSM_CONV_CM,
+
         GGML_OP_COUNT,
     };
 
@@ -2530,6 +2532,17 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * sx,
             struct ggml_tensor  * c);
+
+    // short causal convolution of channel-major input (one sequence): x [d_inner, n_t] (a token's channels contiguous),
+    // state [d_conv - 1, d_inner] (the previous d_conv - 1 inputs of each channel, oldest first), c [d_conv, d_inner]
+    // result [d_inner, n_t]: y[t][i] = sum_k c[i][k] * in[t + k][i], in = concat(state, x) along time; optionally followed by SiLU.
+    // Same result as ggml_ssm_conv(concat(state, transpose(x))) without materializing the transposed input.
+    GGML_API struct ggml_tensor * ggml_ssm_conv_cm(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * x,
+            struct ggml_tensor  * state,
+            struct ggml_tensor  * c,
+            bool                  silu);
 
     GGML_API struct ggml_tensor * ggml_ssm_scan(
             struct ggml_context * ctx,

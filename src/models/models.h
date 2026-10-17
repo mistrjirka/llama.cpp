@@ -86,6 +86,17 @@ struct llm_build_delta_net_base : public llm_graph_context {
             int64_t              conv_channels,
             int                  il);
 
+    // conv state + short causal conv + SiLU of qkv_mixed (qkv_dim, n_seq_tokens, n_seqs) -> (channels, n_seq_tokens, n_seqs); writes the conv state back.
+    // One sequence with >= kernel_size - 1 tokens (no rollback slots): one GGML_OP_SSM_CONV_CM on the channel-major input (no transposed copy);
+    // otherwise build_conv_state + ggml_ssm_conv + ggml_silu.  LLAMA_CONV_CM=0 forces the latter.
+    ggml_tensor * build_conv_silu(
+            llm_graph_input_rs * inp,
+            ggml_tensor *        conv_states_all,
+            ggml_tensor *        qkv_mixed,
+            ggml_tensor *        conv_kernel,
+            int64_t              conv_channels,
+            int                  il);
+
     // run delta-net attention and write the new recurrent state(s) back to ssm_states_all
     // s: (head_v_dim, head_v_dim, num_v_heads, n_seqs); returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
     ggml_tensor * build_recurrent_attn(
