@@ -65,8 +65,11 @@ std::string read_file(const std::string & p) {
 
 const std::vector<const char *> kBuildFilesDecode  = { "build_kernel.sh", "env.sh", "qku.cc", "genu.py" };
 const std::vector<const char *> kBuildFilesPrefill = { "build_prefill.sh", "env.sh", "pf.cc", "genp.py", "aie_kernel_utils.h" };
+const std::vector<const char *> kBuildFilesAttn    = { "build_fa.sh", "env.sh", "fa.cc", "genfa.py", "aie_kernel_utils.h" };
 
-const std::vector<const char *> & build_files(Product p) { return p == Product::Prefill ? kBuildFilesPrefill : kBuildFilesDecode; }
+const std::vector<const char *> & build_files(Product p) {
+    return p == Product::Prefill ? kBuildFilesPrefill : p == Product::Attention ? kBuildFilesAttn : kBuildFilesDecode;
+}
 
 std::string compute_hash(const std::string & dir, Product prod) {
     uint64_t h = 1469598103934665603ull;
@@ -108,12 +111,19 @@ bool KernelCache::supports(const layout::Geom & g) {
     return layout::k_supported(g.k) && g.n > 0;
 }
 
-static const char * product_dir(Product p) { return p == Product::Prefill ? "prefill" : "unified"; }
+static const char * product_dir(Product p) { return p == Product::Prefill ? "prefill" : p == Product::Attention ? "attention" : "unified"; }
 std::string KernelCache::dir() const { return cfg_.cache_dir + "/" + hash_ + "/" + product_dir(cfg_.product); }
 
 static const std::vector<const char *> kInstFilesDecode  = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin", "insts_sw.bin" };
 static const std::vector<const char *> kInstFilesPrefill = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_ow.bin", "insts_rw.bin" };
-static const std::vector<const char *> & inst_files(Product p) { return p == Product::Prefill ? kInstFilesPrefill : kInstFilesDecode; }
+static const int kFaPairs[] = { 1, 2, 4, 8, 16 };
+static const std::vector<const char *> kInstFilesAttn = {
+    "insts_r1_base.bin",  "insts_r1_nb.bin",  "insts_r1_kv.bin",  "insts_r2_base.bin",  "insts_r2_nb.bin",  "insts_r2_kv.bin",
+    "insts_r4_base.bin",  "insts_r4_nb.bin",  "insts_r4_kv.bin",  "insts_r8_base.bin",  "insts_r8_nb.bin",  "insts_r8_kv.bin",
+    "insts_r16_base.bin", "insts_r16_nb.bin", "insts_r16_kv.bin" };
+static const std::vector<const char *> & inst_files(Product p) {
+    return p == Product::Prefill ? kInstFilesPrefill : p == Product::Attention ? kInstFilesAttn : kInstFilesDecode;
+}
 
 bool KernelCache::cached() const {
     {
@@ -196,6 +206,24 @@ bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std
     return ok;
 }
 
+bool KernelCache::fa_insts_for(int pairs, int64_t nb, int64_t kvmax, std::vector<uint32_t> & out) {
+    if (cfg_.product != Product::Attention || !cached() || nb < 1 || kvmax < 16 || kvmax % 16) return false;
+    int ri = -1;
+    for (int i = 0; i < 5; ++i) if (kFaPairs[i] == pairs) ri = i;
+    if (ri < 0) return false;
+    std::lock_guard<std::mutex> lk(mu_);
+    if (refs_.empty()) {
+        std::vector<std::vector<uint32_t>> r(inst_files(cfg_.product).size());
+        for (size_t i = 0; i < r.size(); ++i) {
+            if (!read_words(dir() + "/" + inst_files(cfg_.product)[i], r[i])) return false;
+        }
+        refs_ = std::move(r);
+    }
+    const auto & base = refs_[3 * ri], & vnb = refs_[3 * ri + 1], & vkv = refs_[3 * ri + 2];
+    out = base;
+    return patch_affine(base, vnb, kRefFaNb, 2 * kRefFaNb, nb, out) && patch_param(base, vkv, kRefFaKv, 2 * kRefFaKv, kvmax, out);
+}
+
 void KernelCache::request() {
     if (cached()) return;
     std::lock_guard<std::mutex> lk(mu_);
@@ -235,7 +263,8 @@ bool KernelCache::run_build(double & seconds) {
     const std::string fin = dir();
     mkdirs(tmp);
 
-    const std::string script = cfg_.kernel_src_dir + (cfg_.product == Product::Prefill ? "/build_prefill.sh" : "/build_kernel.sh");
+    const std::string script = cfg_.kernel_src_dir + (cfg_.product == Product::Prefill ? "/build_prefill.sh" :
+                                                       cfg_.product == Product::Attention ? "/build_fa.sh" : "/build_kernel.sh");
     const char * argv[] = { "bash", script.c_str(), cfg_.toolchain_env.c_str(), tmp.c_str(), nullptr };
 
     posix_spawn_file_actions_t fa;
@@ -244,7 +273,7 @@ bool KernelCache::run_build(double & seconds) {
     posix_spawn_file_actions_addopen(&fa, 1, log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     posix_spawn_file_actions_adddup2(&fa, 1, 2);
     pid_t pid = 0;
-    say(0, cfg_.product == Product::Prefill ? "building the prefill kernel" : "building the unified decode kernel");
+    say(0, std::string("building the ") + product_dir(cfg_.product) + " kernel");
     int rc = posix_spawn(&pid, "/bin/bash", &fa, nullptr, const_cast<char * const *>(argv), environ);
     posix_spawn_file_actions_destroy(&fa);
     bool ok = false;
@@ -264,7 +293,7 @@ bool KernelCache::run_build(double & seconds) {
             ok = exists(fin + "/kernel.xclbin");
             rmtree(tmp);
         }
-        if (ok) say(0, std::string("built the ") + (cfg_.product == Product::Prefill ? "prefill" : "unified decode") + " kernel in " + tbuf);
+        if (ok) say(0, std::string("built the ") + product_dir(cfg_.product) + " kernel in " + tbuf);
     } else {
         const std::string failed = fin + ".failed.log";
         std::string txt = read_file(log);

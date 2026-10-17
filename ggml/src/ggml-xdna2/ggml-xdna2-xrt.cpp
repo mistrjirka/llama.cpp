@@ -24,6 +24,7 @@
 #include "ggml-xdna2-sync.h"
 #include "ggml-xdna2-kernels.h"
 #include "ggml-xdna2-bfp.h"
+#include "ggml-xdna2-attn.h"
 
 namespace xdna2 {
 
@@ -53,6 +54,23 @@ struct PfCtx {
     xrt::hw_context                   hw;
     xrt::kernel                       kern;
     std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, xrt::bo> instr;     // (chain_words, a_words, a_rep, o_words)
+};
+
+// The ATTENTION hw context (third xclbin): instruction BOs per (pairs, nb, kvmax).
+struct FaCtx {
+    xrt::xclbin                       xb;
+    xrt::hw_context                   hw;
+    xrt::kernel                       kern;
+    std::map<std::tuple<int, int64_t, int64_t>, std::pair<xrt::bo, uint32_t>> instr;
+};
+
+// bfp16 shadow of one layer's KV cache: K and V BOs [kv head 4][cap_rows / 16 blocks][FA_OBJ]. A block is `full` once it was encoded from 16 valid
+// cache rows; its fingerprint then detects a later rewrite of those rows (another sequence, a context shift, a new prompt of the same length).
+struct FaShadow {
+    int64_t               cap_rows = 0;
+    xrt::bo               k, v;
+    std::vector<char>     full;
+    std::vector<uint64_t> fp;
 };
 
 // Activation + output BOs shared by all prefill dispatches of one shape (a dispatch is a tile; PF_MAX_TILES tiles per wave).
@@ -107,6 +125,8 @@ public:
         pf_jobs_.clear();
         pf_pools_.clear();
         pf_ctx_.reset();
+        fa_shadows_.clear();
+        fa_ctx_.reset();
         jobs_.clear();
         ctx_.reset();
     }
@@ -721,6 +741,213 @@ private:
         return true;
     }
 
+
+    // ---------------------------------------------------------------- attention path
+    FaCtx & get_fa_ctx() {
+        if (fa_ctx_) return *fa_ctx_;
+        const double t0 = now_s();
+        KernelCache & kc = attention_kernel_cache();
+        kc.request();
+        const double tw = now_s();
+        if (!kc.wait()) {
+            throw std::runtime_error("the NPU attention kernel is not available (build failed, see the kernel cache)");
+        }
+        st_.t_kernel_wait += now_s() - tw;
+        auto c = std::make_unique<FaCtx>();
+        c->xb = xrt::xclbin(kc.xclbin_path());
+        dev_.register_xclbin(c->xb);
+        c->hw = xrt::hw_context(dev_, c->xb.get_uuid());
+        std::string kn;
+        for (auto & k : c->xb.get_kernels()) {
+            if (k.get_name().rfind("MLIR_AIE", 0) == 0) { kn = k.get_name(); break; }
+        }
+        if (kn.empty()) throw std::runtime_error("no MLIR_AIE kernel in " + kc.xclbin_path());
+        c->kern = xrt::kernel(c->hw, kn);
+        fa_ctx_ = std::move(c);
+        st_.fa_t_setup += now_s() - t0;
+        return *fa_ctx_;
+    }
+
+    std::pair<xrt::bo, uint32_t> & get_fa_instr(FaCtx & c, int pairs, int64_t nb, int64_t kvmax) {
+        const auto key = std::make_tuple(pairs, nb, kvmax);
+        auto it = c.instr.find(key);
+        if (it != c.instr.end()) return it->second;
+        std::vector<uint32_t> w;
+        if (!attention_kernel_cache().fa_insts_for(pairs, nb, kvmax, w)) {
+            throw std::runtime_error("cannot derive the instruction stream of the attention kernel");
+        }
+        xrt::bo bi(dev_, w.size() * 4, xrt::bo::flags::cacheable, c.kern.group_id(1));
+        std::memcpy(bi.map<char *>(), w.data(), w.size() * 4);
+        bi.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        return c.instr.emplace(key, std::make_pair(std::move(bi), uint32_t(w.size()))).first->second;
+    }
+
+    FaShadow & get_fa_shadow(const void * id, int64_t rows) {
+        FaShadow & s = fa_shadows_[id];
+        if (s.cap_rows < rows) {
+            const double t0 = now_s();
+            const int64_t cap = (rows + 255) / 256 * 256;
+            const size_t bytes = size_t(FA_NKV) * size_t(cap / FA_BLK) * FA_OBJ;
+            s.k = xrt::ext::bo{dev_, bytes};
+            s.v = xrt::ext::bo{dev_, bytes};
+            s.cap_rows = cap;
+            s.full.assign(size_t(cap / FA_BLK), 0);
+            s.fp.assign(size_t(cap / FA_BLK), 0);
+            st_.fa_t_setup += now_s() - t0;
+        }
+        return s;
+    }
+
+    // per-call Q (+ header) and output regions, one per dispatch (4 KiB aligned sub-BOs)
+    static size_t fa_q_region(int pairs) { return (size_t(pairs) * (FA_PAIR_QB + FA_OBJ) + 4095) / 4096 * 4096; }
+    void ensure_fa_io(int64_t total_pairs) {
+        const size_t qb = fa_q_region(int(total_pairs)) + 5 * 4096, ob = size_t(total_pairs) * FA_PAIR_OB;
+        if (fa_qbuf_bytes_ < qb) { fa_qbuf_ = xrt::ext::bo{dev_, qb}; fa_qbuf_bytes_ = qb; }
+        if (fa_obuf_bytes_ < ob) { fa_obuf_ = xrt::ext::bo{dev_, ob}; fa_obuf_bytes_ = ob; }
+    }
+
+    bool attention_available() override {
+        if (!attention_enabled()) return false;
+        return attention_kernel_cache().available();
+    }
+
+    bool run_attention(const AttnJob & job) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        try {
+            return run_attention_locked(job);
+        } catch (const std::exception & e) {
+            GGML_LOG_ERROR("ggml-xdna2: NPU attention run failed: %s\n", e.what());
+            return false;
+        }
+    }
+
+    // The queries p0 .. p0 + n_tok - 1 are covered by 16-query tiles from pos0 = p0 rounded down to 16, two tiles per pair; pair i streams the
+    // K/V blocks 0 .. pos0/16 + 2i + 1. The pairs are cut into dispatches of 16/8/4/2/1 pairs, all queued at once (the cores run them back to back).
+    bool run_attention_locked(const AttnJob & j) {
+        FaCtx & c = get_fa_ctx();
+        if (last_ctx_ != 3) { if (last_ctx_ != 0) st_.fa_switches++; last_ctx_ = 3; }
+        st_.fa_calls++;
+        const int64_t pos0 = j.p0 / FA_BLK * FA_BLK;
+        const int64_t n_tiles = (j.p0 + j.n_tok - pos0 + FA_BLK - 1) / FA_BLK;
+        const int64_t pairs = (n_tiles + 1) / 2;
+        const int64_t d0 = pos0 / FA_BLK;
+        const int64_t nb_total = d0 + 2 * pairs;
+        const int64_t n_valid = j.p0 + j.n_tok;                   // cells with data (the mask lets query n_tok-1 see them all)
+        FaShadow & s = get_fa_shadow(j.kv_id, std::max(j.kv_cap, nb_total * FA_BLK));
+        const int64_t cap_blocks = s.cap_rows / FA_BLK;
+
+        // 1. shadow KV: (re)encode the blocks that are new, partial, or whose rows changed
+        double t0 = now_s();
+        std::vector<char> todo(size_t(nb_total), 0);
+        const size_t row_bytes = size_t(FA_NKV) * FA_D * 2;
+#if defined(_OPENMP)
+        #pragma omp parallel for schedule(static) num_threads(pf_threads())
+#endif
+        for (int64_t b = 0; b < nb_total; ++b) {
+            if (!s.full[b] || (b + 1) * FA_BLK > n_valid || b >= j.p0 / FA_BLK) { todo[b] = 1; continue; }
+            if (fa_block_fingerprint(j.k, j.v, j.kv_row_stride, row_bytes, b) != s.fp[b]) todo[b] = 1;
+        }
+        int64_t lo = nb_total, hi = -1, n_enc = 0;
+        for (int64_t b = 0; b < nb_total; ++b) if (todo[b]) { lo = std::min(lo, b); hi = b; n_enc++; }
+        if (hi >= 0) {
+            uint8_t * kb = s.k.map<uint8_t *>(), * vb = s.v.map<uint8_t *>();
+#if defined(_OPENMP)
+            #pragma omp parallel for collapse(2) schedule(dynamic, 4) num_threads(pf_threads())
+#endif
+            for (int64_t b = lo; b <= hi; ++b) {
+                for (int g = 0; g < FA_NKV; ++g) {
+                    if (!todo[b]) continue;
+                    const size_t off = (size_t(g) * cap_blocks + size_t(b)) * FA_OBJ;
+                    fa_encode_kv_block(kb + off, vb + off, j.k, j.v, j.bf16, j.kv_row_stride, j.kv_head_stride, g, b, n_valid);
+                }
+            }
+            for (int64_t b = lo; b <= hi; ++b) {
+                if (!todo[b]) continue;
+                s.full[b] = (b + 1) * FA_BLK <= n_valid;
+                if (s.full[b]) s.fp[b] = fa_block_fingerprint(j.k, j.v, j.kv_row_stride, row_bytes, b);
+            }
+            for (int g = 0; g < FA_NKV; ++g) {
+                const size_t off = (size_t(g) * cap_blocks + size_t(lo)) * FA_OBJ, len = size_t(hi - lo + 1) * FA_OBJ;
+                s.k.sync(XCL_BO_SYNC_BO_TO_DEVICE, len, off);
+                s.v.sync(XCL_BO_SYNC_BO_TO_DEVICE, len, off);
+            }
+        }
+        st_.fa_blocks_enc += uint64_t(n_enc);
+        st_.fa_t_kv += now_s() - t0;
+
+        // 2. dispatch plan and Q objects + headers
+        t0 = now_s();
+        struct Disp { int64_t first; int pairs; size_t qoff, ooff; xrt::run run; };
+        std::vector<Disp> ds;
+        size_t qoff = 0, ooff = 0;
+        for (int64_t p = 0; p < pairs;) {
+            int r = 16;
+            while (r > pairs - p) r /= 2;
+            ds.push_back(Disp{ p, r, qoff, ooff, xrt::run() });
+            qoff += fa_q_region(r);
+            ooff += size_t(r) * FA_PAIR_OB;
+            p += r;
+        }
+        ensure_fa_io(pairs);
+        uint8_t * qb = fa_qbuf_.map<uint8_t *>();
+        const float prescale = j.scale * 1.4426950408889634f;
+#if defined(_OPENMP)
+        #pragma omp parallel for collapse(2) schedule(static) num_threads(pf_threads())
+#endif
+        for (int64_t p = 0; p < pairs; ++p) {
+            for (int o = 0; o < FA_NKV * 8; ++o) {
+                size_t di = 0;
+                while (di + 1 < ds.size() && ds[di + 1].first <= p) di++;
+                const Disp & d = ds[di];
+                const int64_t r = p - d.first;
+                const int g = o / 8, me = o % 8, qi = me / 4, hh = me % 4;
+                fa_encode_q(qb + d.qoff + (size_t(r) * FA_NKV + size_t(g)) * 8 * FA_OBJ + size_t(me) * FA_OBJ, j.q, j.q_tok_stride, j.q_head_stride,
+                            j.n_tok, j.p0, pos0 + 32 * p + 16 * qi, 4 * g + hh, prescale);
+            }
+        }
+        for (auto & d : ds) {
+            for (int r = 0; r < d.pairs; ++r) {
+                int32_t * hdr = reinterpret_cast<int32_t *>(qb + d.qoff + size_t(d.pairs) * FA_PAIR_QB + size_t(r) * FA_OBJ);
+                hdr[0] = int32_t(d0 + 2 * (d.first + r) + 2);
+                hdr[1] = int32_t(d0 + 2 * (d.first + r));
+            }
+        }
+        fa_qbuf_.sync(XCL_BO_SYNC_BO_TO_DEVICE, qoff, 0);
+        st_.fa_t_q += now_s() - t0;
+
+        // 3. queue all dispatches, then collect them in order (the scatter of one overlaps the next)
+        t0 = now_s();
+        std::vector<xrt::bo> subs;
+        for (auto & d : ds) {
+            auto & in = get_fa_instr(c, d.pairs, d0 + 2 * d.first + 2, s.cap_rows);
+            subs.emplace_back(fa_qbuf_, fa_q_region(d.pairs), d.qoff);
+            subs.emplace_back(fa_obuf_, size_t(d.pairs) * FA_PAIR_OB, d.ooff);
+            d.run = xrt::run(c.kern);
+            d.run.set_arg(0, 3);
+            d.run.set_arg(1, in.first);
+            d.run.set_arg(2, in.second);
+            d.run.set_arg(3, subs[subs.size() - 2]);
+            d.run.set_arg(4, s.k);
+            d.run.set_arg(5, s.v);
+            d.run.set_arg(6, subs.back());
+            d.run.start();
+            st_.fa_dispatches++;
+        }
+        st_.fa_t_setup += now_s() - t0;
+        for (auto & d : ds) {
+            t0 = now_s();
+            d.run.wait2();
+            st_.fa_t_npu += now_s() - t0;
+            t0 = now_s();
+            sync_from_device(fa_obuf_, size_t(d.pairs) * FA_PAIR_OB, d.ooff);
+            fa_scatter_out(fa_obuf_.map<const float *>() + d.ooff / sizeof(float), d.pairs, pos0 + 32 * d.first, j.p0, j.n_tok, j.dst,
+                           j.dst_tok_stride, j.dst_head_stride);
+            st_.fa_t_out += now_s() - t0;
+        }
+        st_.fa_pairs += uint64_t(pairs);
+        return true;
+    }
+
     std::mutex mu_;
     xrt::device dev_;
     bool ok_ = false;
@@ -734,7 +961,11 @@ private:
     std::map<std::pair<size_t, size_t>, std::unique_ptr<PfPool>> pf_pools_;
     std::map<JobKey, PfSplits> pf_jobs_;
     std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, uint32_t> pf_instr_words_;
-    int last_ctx_ = 0;      // 0 none, 1 decode, 2 prefill
+    std::unique_ptr<FaCtx> fa_ctx_;
+    std::map<const void *, FaShadow> fa_shadows_;
+    xrt::bo fa_qbuf_, fa_obuf_;
+    size_t fa_qbuf_bytes_ = 0, fa_obuf_bytes_ = 0;
+    int last_ctx_ = 0;      // 0 none, 1 decode, 2 prefill, 3 attention
     ExecStats st_;
 };
 

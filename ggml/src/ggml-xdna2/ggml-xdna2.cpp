@@ -12,8 +12,11 @@
 #include "ggml-xdna2-cpu.h"
 #include "ggml-xdna2-layout.h"
 #include "ggml-xdna2-npu.h"
+#include "ggml-xdna2-attn.h"
+#include "ggml-xdna2-bfp.h"
 
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -259,6 +262,8 @@ struct ggml_backend_xdna2_context {
     uint64_t n_cpu_flush = 0, n_cpu_jobs = 0;
     double t_last_end = 0, t_between = 0; // time between two graph computes of this backend (CPU splits + copies)
     uint64_t n_graphs = 0, n_mul_mat = 0;
+    double   t_fa = 0;                    // FLASH_ATTN_EXT on the NPU (incl. host encode/scatter)
+    uint64_t n_fa = 0;
 };
 
 // The host reference path is a test/debug tool (GGML_XDNA2_REFERENCE=1) and never a fallback for the NPU.
@@ -485,6 +490,15 @@ static void xdna2_print_stats(const ggml_backend_xdna2_context * ctx, bool to_st
                  st.pf_t_ysync, st.pf_t_unperm - st.pf_t_ysync, st.pf_t_setup, st.pf_bytes_w / 1e9, st.pf_t_npu > 0 ? st.pf_bytes_w / 1e9 / st.pf_t_npu : 0.0, (unsigned long long) st.pf_switches, st.pf_bytes_x / 1e9, st.pf_bytes_a / 1e9, st.pf_bytes_y / 1e9);
         }
     }
+    {
+        const ExecStats st = npu_executor().stats();
+        if (st.fa_calls > 0) {
+            XLOG("ggml-xdna2: attention: %llu calls (%.3f s), %llu pairs in %llu dispatches, %llu KV blocks encoded; KV encode %.3f s, Q encode %.3f s, "
+                 "NPU wait %.3f s, output %.3f s, setup %.3f s, %llu hw context switches\n",
+                 (unsigned long long) st.fa_calls, ctx->t_fa, (unsigned long long) st.fa_pairs, (unsigned long long) st.fa_dispatches,
+                 (unsigned long long) st.fa_blocks_enc, st.fa_t_kv, st.fa_t_q, st.fa_t_npu, st.fa_t_out, st.fa_t_setup, (unsigned long long) st.fa_switches);
+        }
+    }
     XLOG("ggml-xdna2: host<->buffer copies since start: set_tensor %llu calls %.1f MB %.3f s, get_tensor %llu calls %.1f MB %.3f s\n",
                   (unsigned long long) g_set_calls.load(), g_set_bytes.load() / 1e6, g_set_ns.load() / 1e9,
                   (unsigned long long) g_get_calls.load(), g_get_bytes.load() / 1e6, g_get_ns.load() / 1e9);
@@ -514,6 +528,140 @@ static void ggml_backend_xdna2_free(ggml_backend_t backend) {
     delete backend;
 }
 
+
+//
+// FLASH_ATTN_EXT (prefill) on the NPU attention kernel
+//
+
+// shapes the attention kernel serves (the runtime conditions -- a causal mask -- are checked in xdna2_fa_causal_p0)
+static bool xdna2_fa_shape_ok(const ggml_tensor * op) {
+    const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
+    if (op->src[4] != nullptr || mask == nullptr || mask->type != GGML_TYPE_F16) return false;
+    if (q->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) return false;
+    if (k->type != v->type || (k->type != GGML_TYPE_F16 && k->type != GGML_TYPE_BF16)) return false;
+    if (q->ne[0] != FA_D || k->ne[0] != FA_D || v->ne[0] != FA_D || op->ne[0] != FA_D) return false;
+    if (q->ne[2] != FA_NH || k->ne[2] != FA_NKV || v->ne[2] != FA_NKV || q->ne[3] != 1 || k->ne[3] != 1 || v->ne[3] != 1) return false;
+    if (op->ne[1] != FA_NH || op->ne[2] != q->ne[1] || op->ne[3] != 1) return false;
+    if (k->ne[1] != v->ne[1] || k->nb[1] != v->nb[1] || k->nb[2] != v->nb[2]) return false;
+    if (q->nb[0] != sizeof(float) || k->nb[0] != ggml_type_size(k->type) || op->nb[0] != sizeof(float)) return false;
+    if (k->nb[1] % 8 || size_t(FA_NKV) * FA_D * 2 > k->nb[1] || k->nb[2] != size_t(FA_D) * 2) return false;   // cells = rows of 4 contiguous heads
+    if (mask->ne[0] != k->ne[1] || mask->ne[1] < q->ne[1] || mask->ne[2] != 1 || mask->ne[3] != 1) return false;
+    float max_bias = 0.0f, softcap = 0.0f;
+    std::memcpy(&max_bias, (const float *) op->op_params + 1, sizeof(float));
+    std::memcpy(&softcap,  (const float *) op->op_params + 2, sizeof(float));
+    return max_bias == 0.0f && softcap == 0.0f;
+}
+
+// The NPU kernel computes plain causal attention over the cells 0 .. p0 + t for query t. Returns p0 if the mask is exactly that
+// (0 on those cells, -inf on all others), else -1. Checked once per mask tensor and graph (all layers share the mask).
+static int64_t xdna2_fa_causal_p0(const ggml_tensor * mask, int64_t n_kv, int64_t n_tok, uint64_t graph_id) {
+    static const void * c_data = nullptr;
+    static uint64_t c_graph = UINT64_MAX;
+    static int64_t c_kv = -1, c_tok = -1, c_p0 = -1;
+    if (c_data == mask->data && c_graph == graph_id && c_kv == n_kv && c_tok == n_tok) return c_p0;
+    const uint16_t zero = 0x0000, ninf = 0xFC00;
+    const uint16_t * row0 = static_cast<const uint16_t *>(mask->data);
+    int64_t p0 = 0;
+    while (p0 < n_kv && row0[p0] == zero) p0++;
+    p0 -= 1;                                    // query 0 sees cells 0 .. p0
+    bool ok = p0 >= 0 && p0 + n_tok <= n_kv;
+    for (int64_t t = 0; ok && t < n_tok; ++t) {
+        const uint16_t * row = reinterpret_cast<const uint16_t *>(static_cast<const char *>(mask->data) + t * mask->nb[1]);
+        const int64_t vis = p0 + t;
+        for (int64_t c = 0; c <= vis && ok; ++c) ok = row[c] == zero;
+        for (int64_t c = vis + 1; c < n_kv && ok; ++c) ok = row[c] == ninf;
+    }
+    c_data = mask->data; c_graph = graph_id; c_kv = n_kv; c_tok = n_tok; c_p0 = ok ? p0 : -1;
+    return c_p0;
+}
+
+// Host attention for the shapes the kernel serves, any mask: softmax(scale * q k^T + mask) v. Only for masks the NPU kernel cannot express
+// (several sequences in one batch, cells not in position order); slow, so it warns once.
+static void xdna2_fa_host(const ggml_tensor * op) {
+    static bool warned = false;
+    if (!warned) {
+        GGML_LOG_WARN("ggml-xdna2: FLASH_ATTN_EXT with a non-causal mask runs on the slow host path (the NPU kernel needs a plain causal mask)\n");
+        warned = true;
+    }
+    const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
+    const int64_t n_kv = k->ne[1], n_tok = q->ne[1];
+    float scale = 1.0f;
+    std::memcpy(&scale, (const float *) op->op_params + 0, sizeof(float));
+    const bool bf16 = k->type == GGML_TYPE_BF16;
+    std::vector<float> kf(size_t(n_kv) * FA_D), vf(size_t(n_kv) * FA_D);
+    for (int g = 0; g < FA_NKV; ++g) {
+        for (int64_t c = 0; c < n_kv; ++c) {
+            const char * kr = static_cast<const char *>(k->data) + c * k->nb[1] + g * k->nb[2];
+            const char * vr = static_cast<const char *>(v->data) + c * v->nb[1] + g * v->nb[2];
+            if (bf16) { ggml_bf16_to_fp32_row((const ggml_bf16_t *) kr, &kf[c * FA_D], FA_D); ggml_bf16_to_fp32_row((const ggml_bf16_t *) vr, &vf[c * FA_D], FA_D); }
+            else      { ggml_fp16_to_fp32_row((const ggml_fp16_t *) kr, &kf[c * FA_D], FA_D); ggml_fp16_to_fp32_row((const ggml_fp16_t *) vr, &vf[c * FA_D], FA_D); }
+        }
+#if defined(_OPENMP)
+        #pragma omp parallel for collapse(2) schedule(dynamic, 8) num_threads(pf_threads())
+#endif
+        for (int hh = 0; hh < FA_NH / FA_NKV; ++hh) {
+            for (int64_t t = 0; t < n_tok; ++t) {
+                const int h = g * (FA_NH / FA_NKV) + hh;
+                const float * qr = (const float *) ((const char *) q->data + t * q->nb[1] + h * q->nb[2]);
+                const ggml_fp16_t * mr = (const ggml_fp16_t *) ((const char *) mask->data + t * mask->nb[1]);
+                std::vector<float> sc((size_t) n_kv);
+                float mx = -INFINITY;
+                for (int64_t c = 0; c < n_kv; ++c) {
+                    const float m = ggml_fp16_to_fp32(mr[c]);
+                    if (m == -INFINITY) { sc[c] = -INFINITY; continue; }
+                    float d = 0.0f;
+                    for (int e = 0; e < FA_D; ++e) d += qr[e] * kf[c * FA_D + e];
+                    sc[c] = d * scale + m;
+                    mx = std::max(mx, sc[c]);
+                }
+                float acc[FA_D] = {}, sum = 0.0f;
+                for (int64_t c = 0; c < n_kv && mx != -INFINITY; ++c) {
+                    if (sc[c] == -INFINITY) continue;
+                    const float p = std::exp(sc[c] - mx);
+                    sum += p;
+                    for (int e = 0; e < FA_D; ++e) acc[e] += p * vf[c * FA_D + e];
+                }
+                float * d = (float *) ((char *) op->data + t * op->nb[2] + h * op->nb[1]);
+                for (int e = 0; e < FA_D; ++e) d[e] = sum > 0.0f ? acc[e] / sum : 0.0f;
+            }
+        }
+    }
+}
+
+static void ggml_backend_xdna2_flash_attn(ggml_backend_xdna2_context * ctx, ggml_tensor * op) {
+    xdna2_flush(ctx);      // queued mul_mats first (graph order)
+    const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
+    const int64_t p0 = xdna2_fa_causal_p0(mask, k->ne[1], q->ne[1], ctx->n_graphs);
+    if (p0 < 0) {
+        xdna2_fa_host(op);
+        return;
+    }
+    const ggml_tensor * kc = k->view_src ? k->view_src : k;
+    AttnJob j;
+    j.q = (const float *) q->data;
+    j.q_tok_stride = q->nb[1];
+    j.q_head_stride = q->nb[2];
+    j.n_tok = q->ne[1];
+    j.p0 = p0;
+    j.k = k->data;
+    j.v = v->data;
+    j.bf16 = k->type == GGML_TYPE_BF16;
+    j.kv_row_stride = k->nb[1];
+    j.kv_head_stride = k->nb[2];
+    j.kv_cap = int64_t(ggml_nbytes(kc) / k->nb[1]);
+    j.kv_id = kc->data;
+    j.dst = (float *) op->data;
+    j.dst_tok_stride = op->nb[2];
+    j.dst_head_stride = op->nb[1];
+    std::memcpy(&j.scale, (const float *) op->op_params + 0, sizeof(float));
+    const double t0 = xdna2_now();
+    if (!npu_executor().run_attention(j)) {
+        GGML_ABORT("ggml-xdna2: NPU attention failed");
+    }
+    ctx->t_fa += xdna2_now() - t0;
+    ctx->n_fa++;
+}
+
 static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
     auto * ctx = static_cast<ggml_backend_xdna2_context *>(backend->context);
     const double t_start = xdna2_now();
@@ -529,6 +677,10 @@ static enum ggml_status ggml_backend_xdna2_graph_compute(ggml_backend_t backend,
         switch (node->op) {
             case GGML_OP_MUL_MAT:
                 ggml_backend_xdna2_mul_mat(ctx, node);
+                break;
+
+            case GGML_OP_FLASH_ATTN_EXT:
+                ggml_backend_xdna2_flash_attn(ctx, node);
                 break;
 
             case GGML_OP_NONE:
@@ -768,6 +920,15 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             // placement policy: only weights that can really run on the NPU (a kernel exists or can be built)
             // may live in our buffer; everything else must stay in CPU buffers
             return placement_ok(layout::make_geom(fmt, src0->ne[1], src0->ne[0])) || xdna2_reject(99);
+        }
+
+        case GGML_OP_FLASH_ATTN_EXT:
+        {
+            // prefill only (decode stays on the CPU), and only with enough keys to pay for the two hw context switches of the layer
+            if (!attention_enabled() || reference_mode()) return xdna2_reject(20);
+            if (!xdna2_fa_shape_ok(op)) return xdna2_reject(21);
+            if (op->src[0]->ne[1] < attention_min_tokens() || op->src[1]->ne[1] < attention_min_kv()) return xdna2_reject(22);
+            return npu_executor().attention_available() || xdna2_reject(23);
         }
 
         default:

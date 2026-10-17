@@ -40,6 +40,24 @@ struct PrefillJob {
     size_t          dst_row_stride = 0;
 };
 
+// One FLASH_ATTN_EXT (prefill) on the attention kernel: head dim 256, 16 q heads, 4 kv heads, causal over the cache cells 0 .. p0 + t for query t
+// (the mask was checked by the caller), cells = positions.  The executor keeps a bfp16 shadow of the layer's KV cache (identified by kv_id).
+struct AttnJob {
+    const float * q = nullptr;           // query t of head h at (char *) q + t * q_tok_stride + h * q_head_stride (256 floats)
+    size_t        q_tok_stride = 0, q_head_stride = 0;
+    int64_t       n_tok = 0;             // queries
+    int64_t       p0 = 0;                // cell (position) of query 0
+    const void *  k = nullptr;           // cache views: cell c of kv head g at (char *) k + c * kv_row_stride + g * kv_head_stride (256 f16/bf16)
+    const void *  v = nullptr;
+    bool          bf16 = false;
+    size_t        kv_row_stride = 0, kv_head_stride = 0;
+    int64_t       kv_cap = 0;            // cells of the cache
+    const void *  kv_id = nullptr;       // identity of the layer's cache (shadow key)
+    float *       dst = nullptr;         // output of query t, head h at (char *) dst + t * dst_tok_stride + h * dst_head_stride
+    size_t        dst_tok_stride = 0, dst_head_stride = 0;
+    float         scale = 1.0f;
+};
+
 struct ExecStats {
     uint64_t runs = 0;            // xrt runs (tokens x matmuls)
     // decode split
@@ -66,6 +84,13 @@ struct ExecStats {
     double   pf_bytes_w = 0;      // weight bytes streamed by the prefill kernel (all tiles)
     double   pf_bytes_x = 0, pf_bytes_a = 0, pf_bytes_y = 0;   // host bytes: f32 activations encoded, A tiles written, Y tiles unpermuted
     uint64_t pf_switches = 0;     // hw context switches (decode <-> prefill)
+    // attention path
+    uint64_t fa_calls = 0, fa_dispatches = 0, fa_pairs = 0, fa_blocks_enc = 0, fa_switches = 0;
+    double   fa_t_kv = 0;         // shadow KV encode (incl. fingerprint checks)
+    double   fa_t_q = 0;          // Q encode + BO sync
+    double   fa_t_npu = 0;        // start .. wait
+    double   fa_t_out = 0;        // output sync + normalize/scatter
+    double   fa_t_setup = 0;
 };
 
 class NpuExecutor {
@@ -89,6 +114,11 @@ public:
     // run n independent prefill jobs, blocking. false = failure.
     virtual bool run_prefill(const PrefillJob * jobs, size_t n_jobs) { (void) jobs; (void) n_jobs; return false; }
 
+    // attention kernel available (built or buildable) and enabled
+    virtual bool attention_available() { return false; }
+    // run one attention job, blocking. false = failure.
+    virtual bool run_attention(const AttnJob & job) { (void) job; return false; }
+
     // Decode split (GGML_XDNA2_DECODE=split): start the NPU part (CpuDecodeJob::plan) of n independent jobs -- the activations are the quantized ones of
     // cpu_decode_act(j) -- and return without waiting; decode_split_end() waits and merges the NPU rows into dst. The jobs must use distinct weights.
     virtual bool decode_split_begin(const CpuDecodeJob * jobs, size_t n) { (void) jobs; (void) n; return false; }
@@ -108,6 +138,7 @@ ComputePath & npu_path();
 // Global kernel caches (honour GGML_XDNA2_CACHE_DIR). Never null.
 KernelCache & kernel_cache();            // decode kernel
 KernelCache & prefill_kernel_cache();    // prefill kernel
+KernelCache & attention_kernel_cache();  // flash-attention kernel
 
 // GGML_XDNA2_REFERENCE=1: run the host reference emulation instead of the NPU (tests/debug only).
 bool reference_mode();
@@ -115,6 +146,12 @@ bool reference_mode();
 // Prefill kernel policy: GGML_XDNA2_PF_DISABLE=1 turns it off; MUL_MATs with at least prefill_min_tokens() activation rows (GGML_XDNA2_PF_MIN, default 2) use it.
 bool prefill_enabled();
 int  prefill_min_tokens();
+
+// Attention policy: GGML_XDNA2_FA=0 turns it off; FLASH_ATTN_EXT with at least attention_min_tokens() queries (GGML_XDNA2_FA_MIN_TOK, default 32)
+// and attention_min_kv() keys (GGML_XDNA2_FA_MIN_KV, default 1024: below that the two hw context switches per layer cost more than the CPU) run on the NPU.
+bool    attention_enabled();
+int64_t attention_min_tokens();
+int64_t attention_min_kv();
 
 // Decode (M = 1) execution mode, GGML_XDNA2_DECODE: "npu" (unified NPU decode kernel), "cpu" (AVX-512 GEMV straight from the NPU layout,
 // ggml-xdna2-cpu.cpp, DEFAULT), "split" (NPU prefix + CPU suffix of every matrix, concurrently).

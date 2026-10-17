@@ -107,6 +107,20 @@ KernelCache & prefill_kernel_cache() {
     return c;
 }
 
+KernelCache & attention_kernel_cache() {
+    static KernelCache c([] {
+        KernelCache::Config cfg;
+        cfg.cache_dir      = default_cache_dir();
+        cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
+        cfg.toolchain_env  = GGML_XDNA2_MLIR_AIE_ENV;
+        cfg.product        = Product::Attention;
+        cfg.max_jobs       = 4;
+        cfg.log            = kernel_log;
+        return cfg;
+    }());
+    return c;
+}
+
 bool reference_mode() {
     const char * e = std::getenv("GGML_XDNA2_REFERENCE");
     return e && *e && std::strcmp(e, "0") != 0;
@@ -123,6 +137,19 @@ int prefill_min_tokens() {
     }
     return 2;      // measured (Qwen3.5-4B): the prefill kernel beats n per-token decode dispatches from 2 rows on (pp2 18.3 vs 13.2, pp16 122.5 vs 15.0 t/s)
 }
+
+bool attention_enabled() {
+    const char * e = std::getenv("GGML_XDNA2_FA");
+    return !(e && *e && std::strcmp(e, "0") == 0);
+}
+
+static int64_t env_i64(const char * name, int64_t def) {
+    const char * e = std::getenv(name);
+    return e && *e ? std::max<int64_t>(1, std::atoll(e)) : def;
+}
+
+int64_t attention_min_tokens() { return env_i64("GGML_XDNA2_FA_MIN_TOK", 32); }
+int64_t attention_min_kv() { return env_i64("GGML_XDNA2_FA_MIN_KV", 1024); }
 
 DecodeMode decode_mode() {
     static const DecodeMode m = [] {
@@ -152,6 +179,7 @@ void request_kernels(const layout::Geom & geom) {
     if (KernelCache::supports(geom)) {
         kernel_cache().request();
         if (prefill_enabled()) prefill_kernel_cache().request();
+        if (attention_enabled()) attention_kernel_cache().request();
     }
 }
 

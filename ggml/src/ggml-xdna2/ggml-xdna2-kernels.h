@@ -45,7 +45,11 @@ constexpr int64_t kRefRep   = 2;          // prefill (genp.py --a_rep): superblo
 // The two NPU kernels (two xclbins, two hw contexts; switching costs ~2.5 ms, so only at the prefill/decode boundary):
 //   Decode   M = 1 GEMV kernel (qku.cc + genu.py): third stream parameter = groups per core
 //   Prefill  64-token tile GEMM kernel (pf.cc + genp.py): third stream parameter = output words per column
-enum class Product { Decode, Prefill };
+//   Attention  flash-attention prefill kernel (fa.cc + genfa.py): per pair count R (1 2 4 8 16) the streams base / nb (affine) / kvmax (linear)
+enum class Product { Decode, Prefill, Attention };
+
+constexpr int64_t kRefFaNb  = 2;          // attention (genfa.py --nb): K/V blocks of the first pair (base 2, var 4; affine)
+constexpr int64_t kRefFaKv  = 4096;       // attention (genfa.py --kvmax): shadow cache rows per kv head (base 4096, var 8192; linear)
 
 class KernelCache {
 public:
@@ -84,6 +88,8 @@ public:
     // like patch_param, for a word that is affine in the parameter (e.g. a DMA repeat count stored as count - 1): w(p) = base + (var - base) * (p - p0) / (p1 - p0)
     static bool patch_affine(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
                              std::vector<uint32_t> & inout);
+    // Attention only: the stream of a dispatch of `pairs` pairs (1 2 4 8 16) whose first pair streams nb blocks, shadow cache of kvmax rows.
+    bool fa_insts_for(int pairs, int64_t nb, int64_t kvmax, std::vector<uint32_t> & out);
     std::string src_hash() const { return hash_; }
 
     // queue a background build if the kernel is not cached (no-op otherwise)

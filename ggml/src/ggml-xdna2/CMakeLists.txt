@@ -19,6 +19,7 @@ ggml_add_backend_library(ggml-xdna2
     ggml-xdna2-compute.cpp
     ggml-xdna2-cpu.cpp
     ggml-xdna2-bfp.cpp
+    ggml-xdna2-attn.cpp
     ggml-xdna2-kernels.cpp
     ggml-xdna2-npu.cpp
 )
@@ -40,6 +41,7 @@ target_include_directories(ggml-xdna2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_source_files_properties(ggml-xdna2-compute.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 
 set_source_files_properties(ggml-xdna2-bfp.cpp PROPERTIES COMPILE_OPTIONS "-O3")
+set_source_files_properties(ggml-xdna2-attn.cpp PROPERTIES COMPILE_OPTIONS "-O3")
 set_source_files_properties(ggml-xdna2-cpu.cpp PROPERTIES COMPILE_OPTIONS "-O3")
 
 if (GGML_OPENMP_ENABLED)
