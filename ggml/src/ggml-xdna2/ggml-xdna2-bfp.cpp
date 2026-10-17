@@ -161,6 +161,37 @@ void pf_encode_tile(uint8_t * slabs, const float * x, size_t row_stride_bytes, i
     }
 }
 
+// all slabs of `ntiles` consecutive tiles in one parallel region: work item = (tile, k slab); each token row of the slab is read once
+// (256 contiguous floats) and its 32 blocks go to their places in the slab (same bytes as pf_encode_tile)
+void pf_encode_tiles(uint8_t * slabs, size_t tile_stride, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile0, int ntiles) {
+    const int64_t nbk = k / 256;
+#if defined(_OPENMP)
+    #pragma omp parallel for schedule(static) num_threads(pf_threads())
+#endif
+    for (int64_t it = 0; it < int64_t(ntiles) * nbk; ++it) {
+        const int t = int(it / nbk);
+        const int64_t kb = it % nbk;
+        uint8_t * slab = slabs + size_t(t) * tile_stride + size_t(kb) * PF_SLAB_BYTES;
+        for (int r = 0; r < PF_TILE_TOK; ++r) {                 // token row r = rb*8 + m8, rb = 2z + mb
+            const int rb = r / 8, m8 = r % 8, z = rb / 2, mb = rb % 2;
+            const int64_t tok = int64_t(tile0 + t) * PF_TILE_TOK + r;
+            uint8_t * base = slab + (size_t(z * 32) * 2 + size_t(mb)) * 72 + size_t(m8) * 9;
+            if (tok >= n_tok) {
+                for (int kb32 = 0; kb32 < 32; ++kb32) std::memset(base + size_t(kb32) * 2 * 72, 0, 9);
+                continue;
+            }
+            const float * src = reinterpret_cast<const float *>(reinterpret_cast<const char *>(x) + size_t(tok) * row_stride_bytes) + kb * 256;
+#ifdef XDNA2_HAVE_AVX512
+            if (g_have_avx512) {
+                for (int kb32 = 0; kb32 < 32; ++kb32) enc8_avx(src + kb32 * 8, base + size_t(kb32) * 2 * 72);
+                continue;
+            }
+#endif
+            for (int kb32 = 0; kb32 < 32; ++kb32) enc8(src + kb32 * 8, base + size_t(kb32) * 2 * 72);
+        }
+    }
+}
+
 void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups) {
     const int32_t hdr[4] = { int32_t(nsb), int32_t(nbk), int32_t(qtype), int32_t(groups) };
     std::memcpy(a_tile, hdr, sizeof(hdr));              // the header object (the rest of it is never read)
@@ -172,52 +203,68 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
     }
 }
 
-void pf_unpermute_tile(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride) {
+namespace {
+// one (tile, column, superblock) of the unpermute: the 4 cores x gc groups of 16 rows
+inline void unpermute_part(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride,
+                           int64_t c, int64_t sb) {
     using namespace layout;
     const int64_t Gs = g.sp_groups(split), nsb = g.sp_nsb(split), row_base = g.sp_row0(split);
     const int64_t tok0 = int64_t(tile) * PF_TILE_TOK;
     const int ntok = int(std::min<int64_t>(PF_TILE_TOK, n_tok - tok0));
+    const int64_t gc = g.sb_groups(split, sb);
+    for (int64_t k = 0; k < 4; ++k) {
+        for (int64_t gl = 0; gl < gc; ++gl) {
+            const int64_t row0 = row_base + ((c * 4 + k) * Gs + sb * GSB + gl) * 16;
+            if (row0 >= g.n) continue;
+            const float * blk = y + (((c * nsb + sb) * 4 + k) * GSB + gl) * 1024;     // [mb 8][nb 2][m8 8][n8 8]
+            const bool full = row0 + 16 <= g.n;
+            for (int mb = 0; mb < 8; ++mb) {
+                for (int m8 = 0; m8 < 8; ++m8) {
+                    const int t = mb * 8 + m8;
+                    if (t >= ntok) continue;
+                    float * d = reinterpret_cast<float *>(reinterpret_cast<char *>(dst) + size_t(tok0 + t) * dst_row_stride) + row0;
+                    const float * s0 = blk + (mb * 2 + 0) * 64 + m8 * 8, * s1 = blk + (mb * 2 + 1) * 64 + m8 * 8;
+                    if (full) {
+#ifdef XDNA2_HAVE_AVX512
+                        if (g_have_avx512 && ((uintptr_t) d & 63) == 0) { store_line_nt(d, s0, s1); continue; }
+#endif
+                        std::memcpy(d, s0, 32);
+                        std::memcpy(d + 8, s1, 32);
+                    } else {
+                        const int64_t cnt = g.n - row0;
+                        for (int64_t i = 0; i < cnt; ++i) d[i] = i < 8 ? s0[i] : s1[i - 8];
+                    }
+                }
+            }
+        }
+    }
+}
+} // namespace
+
+void pf_unpermute_tile(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride) {
+    pf_unpermute_tiles(y, 0, tile, 1, n_tok, g, split, dst, dst_row_stride);
+}
+
+void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
+                        size_t dst_row_stride) {
+    const int64_t nsb = g.sp_nsb(split);
+    const int64_t items = int64_t(ntiles) * 8 * nsb;
 #if defined(_OPENMP)
     #pragma omp parallel num_threads(pf_threads())
 #endif
     {
 #if defined(_OPENMP)
-    #pragma omp for schedule(static) collapse(2) nowait
+    #pragma omp for schedule(static) nowait
 #endif
-    for (int64_t c = 0; c < 8; ++c) {
-        for (int64_t sb = 0; sb < nsb; ++sb) {
-            const int64_t gc = g.sb_groups(split, sb);
-            for (int64_t k = 0; k < 4; ++k) {
-                for (int64_t gl = 0; gl < gc; ++gl) {
-                    const int64_t row0 = row_base + ((c * 4 + k) * Gs + sb * GSB + gl) * 16;
-                    if (row0 >= g.n) continue;
-                    const float * blk = y + (((c * nsb + sb) * 4 + k) * GSB + gl) * 1024;     // [mb 8][nb 2][m8 8][n8 8]
-                    const bool full = row0 + 16 <= g.n;
-                    for (int mb = 0; mb < 8; ++mb) {
-                        for (int m8 = 0; m8 < 8; ++m8) {
-                            const int t = mb * 8 + m8;
-                            if (t >= ntok) continue;
-                            float * d = reinterpret_cast<float *>(reinterpret_cast<char *>(dst) + size_t(tok0 + t) * dst_row_stride) + row0;
-                            const float * s0 = blk + (mb * 2 + 0) * 64 + m8 * 8, * s1 = blk + (mb * 2 + 1) * 64 + m8 * 8;
-                            if (full) {
-#ifdef XDNA2_HAVE_AVX512
-                                if (g_have_avx512 && ((uintptr_t) d & 63) == 0) { store_line_nt(d, s0, s1); continue; }
-#endif
-                                std::memcpy(d, s0, 32);
-                                std::memcpy(d + 8, s1, 32);
-                            } else {
-                                const int64_t cnt = g.n - row0;
-                                for (int64_t i = 0; i < cnt; ++i) d[i] = i < 8 ? s0[i] : s1[i - 8];
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    for (int64_t it = 0; it < items; ++it) {
+        const int t = int(it / (8 * nsb));
+        const int64_t c = (it / nsb) % 8, sb = it % nsb;
+        unpermute_part(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, c, sb);
     }
 #ifdef XDNA2_HAVE_AVX512
     _mm_sfence();      // make this thread's non-temporal stores globally visible before the region ends
 #endif
     }
 }
+
 } // namespace xdna2

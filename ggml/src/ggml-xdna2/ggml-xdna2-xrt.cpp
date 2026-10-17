@@ -684,7 +684,7 @@ private:
         std::vector<PfSplits *> js;
         for (size_t i = 0; i < n_jobs; ++i) js.push_back(&get_pf_job(jobs[i], c));
         // jobs sharing the same input rows share the encoded slabs (per tile, encoded on first use)
-        struct Enc { const float * x; size_t stride; int64_t n_tok, k; std::vector<std::vector<uint8_t>> tiles; std::vector<char> done; };
+        struct Enc { const float * x; size_t stride; int64_t n_tok, k; std::vector<uint8_t> slabs; std::vector<char> done; };   // slabs: [tile][nbk][slab]
         std::vector<Enc> encs;
         std::vector<size_t> enc_of(n_jobs);
         for (size_t i = 0; i < n_jobs; ++i) {
@@ -694,7 +694,8 @@ private:
             }
             if (e == encs.size()) {
                 const int64_t nt = (jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK;
-                encs.push_back(Enc{ jobs[i].x, jobs[i].x_stride, jobs[i].n_tok, jobs[i].geom.k, std::vector<std::vector<uint8_t>>(nt), std::vector<char>(nt, 0) });
+                encs.push_back(Enc{ jobs[i].x, jobs[i].x_stride, jobs[i].n_tok, jobs[i].geom.k, std::vector<uint8_t>(size_t(nt) * size_t(jobs[i].geom.nbk) * PF_SLAB_BYTES),
+                                    std::vector<char>(nt, 0) });
             }
             enc_of[i] = e;
         }
@@ -721,9 +722,7 @@ private:
             st_.pf_t_ysync += now_s() - t0;
             const PrefillJob & pj = jobs[u.job];
             const float * y = pool.y.map<const float *>() + (pool.y_slot / sizeof(float)) * size_t(u.slot);
-            for (int t = 0; t < u.tiles; ++t) {
-                pf_unpermute_tile(y + (pool.y_tile / sizeof(float)) * size_t(t), u.tile0 + t, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride);
-            }
+            pf_unpermute_tiles(y, pool.y_tile / sizeof(float), u.tile0, u.tiles, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride);
             st_.pf_t_unperm += now_s() - t0;
             st_.pf_bytes_y += double(pool.y_tile) * u.tiles;
         };
@@ -738,13 +737,14 @@ private:
             // 1. encode (once per input and tile)
             double t0 = now_s();
             Enc & en = encs[enc_of[u.job]];
-            for (int t = u.tile0; t < u.tile0 + u.tiles; ++t) {
-                if (!en.done[t]) {
-                    en.tiles[t].resize(size_t(g.nbk) * PF_SLAB_BYTES);
-                    pf_encode_tile(en.tiles[t].data(), pj.x, pj.x_stride, pj.n_tok, g.k, t);
-                    en.done[t] = 1;
-                    st_.pf_bytes_x += double(g.k) * PF_TILE_TOK * sizeof(float);
-                }
+            const size_t tile_bytes = size_t(g.nbk) * PF_SLAB_BYTES;
+            for (int t = u.tile0; t < u.tile0 + u.tiles;) {            // runs of not yet encoded tiles, each in one parallel region
+                if (en.done[t]) { ++t; continue; }
+                int e = t;
+                while (e < u.tile0 + u.tiles && !en.done[e]) en.done[e++] = 1;
+                pf_encode_tiles(en.slabs.data() + tile_bytes * size_t(t), tile_bytes, pj.x, pj.x_stride, pj.n_tok, g.k, t, e - t);
+                st_.pf_bytes_x += double(g.k) * PF_TILE_TOK * sizeof(float) * (e - t);
+                t = e;
             }
             st_.pf_t_encode += now_s() - t0;
             // 2. A BO slot: the tiles back to back (stride a_tile)
@@ -753,7 +753,8 @@ private:
             next_slot ^= 1;
             uint8_t * abase = pool.a.map<uint8_t *>() + pool.a_slot * size_t(u.slot);
             for (int t = 0; t < u.tiles; ++t) {
-                pf_build_a_tile(abase + pool.a_tile * size_t(t), en.tiles[u.tile0 + t].data(), g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(u.sp->split));
+                pf_build_a_tile(abase + pool.a_tile * size_t(t), en.slabs.data() + tile_bytes * size_t(u.tile0 + t), g.nbk, nsb, layout::fmt_info(g.fmt).qt,
+                                g.sp_groups(u.sp->split));
             }
             st_.pf_t_abuild += now_s() - t0;
             st_.pf_bytes_a += double(pool.a_tile) * u.tiles;

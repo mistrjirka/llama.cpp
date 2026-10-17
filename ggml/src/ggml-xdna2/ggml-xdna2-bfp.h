@@ -38,11 +38,17 @@ void pf_enc8_fast(const float * x, uint8_t * out);
 // (one pass; tokens >= n_tok are zero). Threaded over the k slabs.
 void pf_encode_tile(uint8_t * slabs, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile);
 
+// Same, for ntiles consecutive tiles starting at tile0 in ONE parallel region; tile t's slabs at slabs + t * tile_stride.
+void pf_encode_tiles(uint8_t * slabs, size_t tile_stride, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile0, int ntiles);
+
 // Fill the A BO region of one tile (pf_a_tile_bytes) from its one-pass slabs: header object + the slabs.
 // hdr: i32 [nsb, nbk, qtype, G (groups per core)].
 void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups);
 
 // Copy the fp32 outputs of one tile of one split into dst (row j at dst + j*dst_row_stride bytes, g.n floats per row).
 void pf_unpermute_tile(const float * y_tile, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride);
+// Same, for ntiles consecutive tiles (tile t's Y at y + t * y_tile_floats) in ONE parallel region.
+void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
+                        size_t dst_row_stride);
 
 } // namespace xdna2
