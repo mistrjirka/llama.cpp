@@ -661,11 +661,23 @@ const CoreMap & core_map() {
     return m;
 }
 
-// Pin the OpenMP team to one hardware thread per physical core (so the L2 of a core keeps what its helper loaded).
+// Pin the OpenMP team to one hardware thread per physical core (so the L2 of a core keeps what its helper loaded). The master is unpinned
+// again at the end of every flush (cpu_decode_run): OpenMP creates the threads of a larger team later (the prefill loops use pf_threads(), the CPU
+// backend -t) as children of the master, and they would inherit its one-core mask (pp512 at -t 6: 10 instead of 516 t/s).
+cpu_set_t g_master_mask;
+bool      g_master_pinned = false;
+
 void pin_team_thread(int tid) {
-    thread_local bool pinned = false;
-    if (pinned || env_int("XD_PIN", 1) == 0) return;
-    pinned = true;
+    thread_local int pinned_tid = -1;
+    if (env_int("XD_PIN", 1) == 0) return;
+    if (tid == 0) {
+        if (g_master_pinned) return;
+        if (sched_getaffinity(0, sizeof(g_master_mask), &g_master_mask) != 0) return;
+        g_master_pinned = true;
+    } else {
+        if (pinned_tid == tid) return;
+        pinned_tid = tid;
+    }
     const CoreMap & cm = core_map();
     if (cm.first.empty()) return;
     cpu_set_t set;
@@ -843,6 +855,10 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<vo
         g_busy_ns.fetch_add(uint64_t((te - tb) * 1e9));
         if (tail_dbg) { g_tend[tid] = te; g_tbeg[tid] = tb; }
         if (nxt) helper_request(tid, nxt);
+    }
+    if (g_master_pinned) {
+        sched_setaffinity(0, sizeof(g_master_mask), &g_master_mask);
+        g_master_pinned = false;
     }
     g_wall_ns.fetch_add(uint64_t((now_s() - tw0) * 1e9));
     if (tail_dbg) {
