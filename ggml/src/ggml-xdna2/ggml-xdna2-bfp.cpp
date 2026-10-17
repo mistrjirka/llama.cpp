@@ -204,27 +204,27 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
 }
 
 namespace {
-// one (tile, column, superblock) of the unpermute: the 4 cores x gc groups of 16 rows
-inline void unpermute_part(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride,
-                           int64_t c, int64_t sb) {
+// 8 tokens (mb) of one tile, the rows of one column c: per token 4 contiguous runs (core k) of Gs * 16 rows, so the stores stream whole lines
+// (the scattered side are the 32 B reads of the Y blocks, which stay in L2 across the 8 tokens)
+inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride,
+                           int mb, int64_t c) {
     using namespace layout;
     const int64_t Gs = g.sp_groups(split), nsb = g.sp_nsb(split), row_base = g.sp_row0(split);
     const int64_t tok0 = int64_t(tile) * PF_TILE_TOK;
     const int ntok = int(std::min<int64_t>(PF_TILE_TOK, n_tok - tok0));
-    const int64_t gc = g.sb_groups(split, sb);
-    for (int64_t k = 0; k < 4; ++k) {
-        for (int64_t gl = 0; gl < gc; ++gl) {
-            const int64_t row0 = row_base + ((c * 4 + k) * Gs + sb * GSB + gl) * 16;
-            if (row0 >= g.n) continue;
-            const float * blk = y + (((c * nsb + sb) * 4 + k) * GSB + gl) * 1024;     // [mb 8][nb 2][m8 8][n8 8]
-            const bool full = row0 + 16 <= g.n;
-            for (int mb = 0; mb < 8; ++mb) {
-                for (int m8 = 0; m8 < 8; ++m8) {
-                    const int t = mb * 8 + m8;
-                    if (t >= ntok) continue;
-                    float * d = reinterpret_cast<float *>(reinterpret_cast<char *>(dst) + size_t(tok0 + t) * dst_row_stride) + row0;
-                    const float * s0 = blk + (mb * 2 + 0) * 64 + m8 * 8, * s1 = blk + (mb * 2 + 1) * 64 + m8 * 8;
-                    if (full) {
+    for (int m8 = 0; m8 < 8; ++m8) {
+        const int t = mb * 8 + m8;
+        if (t >= ntok) break;
+        float * drow = reinterpret_cast<float *>(reinterpret_cast<char *>(dst) + size_t(tok0 + t) * dst_row_stride);
+        for (int64_t k = 0; k < 4; ++k) {
+            for (int64_t sb = 0; sb < nsb; ++sb) {
+                const int64_t gc = g.sb_groups(split, sb);
+                for (int64_t gl = 0; gl < gc; ++gl) {
+                    const int64_t row0 = row_base + ((c * 4 + k) * Gs + sb * GSB + gl) * 16;
+                    if (row0 >= g.n) break;
+                    const float * s0 = y + (((c * nsb + sb) * 4 + k) * GSB + gl) * 1024 + (mb * 2) * 64 + m8 * 8, * s1 = s0 + 64;
+                    float * d = drow + row0;
+                    if (row0 + 16 <= g.n) {
 #ifdef XDNA2_HAVE_AVX512
                         if (g_have_avx512 && ((uintptr_t) d & 63) == 0) { store_line_nt(d, s0, s1); continue; }
 #endif
@@ -247,8 +247,7 @@ void pf_unpermute_tile(const float * y, int tile, int64_t n_tok, const layout::G
 
 void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int ntiles, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst,
                         size_t dst_row_stride) {
-    const int64_t nsb = g.sp_nsb(split);
-    const int64_t items = int64_t(ntiles) * 8 * nsb;
+    const int64_t items = int64_t(ntiles) * 64;
 #if defined(_OPENMP)
     #pragma omp parallel num_threads(pf_threads())
 #endif
@@ -257,9 +256,9 @@ void pf_unpermute_tiles(const float * y, size_t y_tile_floats, int tile0, int nt
     #pragma omp for schedule(static) nowait
 #endif
     for (int64_t it = 0; it < items; ++it) {
-        const int t = int(it / (8 * nsb));
-        const int64_t c = (it / nsb) % 8, sb = it % nsb;
-        unpermute_part(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, c, sb);
+        const int t = int(it / 64), mb = int(it / 8 % 8);
+        const int64_t c = it % 8;
+        unpermute_rows(y + y_tile_floats * size_t(t), tile0 + t, n_tok, g, split, dst, dst_row_stride, mb, c);
     }
 #ifdef XDNA2_HAVE_AVX512
     _mm_sfence();      // make this thread's non-temporal stores globally visible before the region ends
