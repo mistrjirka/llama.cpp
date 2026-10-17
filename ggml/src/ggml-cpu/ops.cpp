@@ -11226,6 +11226,84 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
 }
 
 // ggml_compute_forward_gated_delta_net
+
+#if defined(__AVX512F__)
+// GDN_B tokens of one head (scalar gate) in two passes over the transposed state T[i][j] = S[i][j] instead of two passes per token.
+// With the cumulative log decays G_t = g_1 + .. + g_t and the block-start state S_0:
+//   S'_t^T k_t = e^G_t S_0^T k_t + sum_{s<t} e^(G_t-G_s) (k_s.k_t) delta_s        delta_t = beta_t (v_t - S'_t^T k_t)
+//   o_t        = e^G_t S_0^T q_t + sum_{s<=t} e^(G_t-G_s) (k_s.q_t) delta_s
+//   S_B        = e^G_B S_0 + sum_s e^(G_B-G_s) k_s delta_s^T
+// pass 1 reads T once for the 2 GDN_B products S_0^T k_s, S_0^T q_s (accumulators in registers), pass 2 is the rank-GDN_B update.
+#define GDN_B 8
+static void gdn_block(float * GGML_RESTRICT st_T, int64_t S_v, const float * const * q, const float * const * k, const float * const * v,
+                      const float * beta, const float * g, float * const * out, float scale, float * GGML_RESTRICT scr) {
+    float * ak = scr, * aq = ak + GDN_B * S_v, * dl = aq + GDN_B * S_v, * cf = dl + GDN_B * S_v;   // [GDN_B][S_v] each
+    for (int64_t jc = 0; jc < S_v; jc += 16) {
+        __m512 sk[GDN_B], sq[GDN_B];
+        for (int b = 0; b < GDN_B; ++b) { sk[b] = _mm512_setzero_ps(); sq[b] = _mm512_setzero_ps(); }
+        for (int64_t i = 0; i < S_v; ++i) {
+            const __m512 r = _mm512_loadu_ps(st_T + i * S_v + jc);
+            for (int b = 0; b < GDN_B; ++b) {
+                sk[b] = _mm512_fmadd_ps(r, _mm512_set1_ps(k[b][i]), sk[b]);
+                sq[b] = _mm512_fmadd_ps(r, _mm512_set1_ps(q[b][i]), sq[b]);
+            }
+        }
+        for (int b = 0; b < GDN_B; ++b) { _mm512_storeu_ps(ak + b * S_v + jc, sk[b]); _mm512_storeu_ps(aq + b * S_v + jc, sq[b]); }
+    }
+    float G[GDN_B], kk[GDN_B][GDN_B], kq[GDN_B][GDN_B];
+    for (int t = 0; t < GDN_B; ++t) {
+        G[t] = (t ? G[t - 1] : 0.0f) + g[t];
+        for (int s = 0; s <= t; ++s) {
+            __m512 a = _mm512_setzero_ps(), c = _mm512_setzero_ps();
+            for (int64_t i = 0; i < S_v; i += 16) {
+                const __m512 ks = _mm512_loadu_ps(k[s] + i);
+                a = _mm512_fmadd_ps(ks, _mm512_loadu_ps(k[t] + i), a);
+                c = _mm512_fmadd_ps(ks, _mm512_loadu_ps(q[t] + i), c);
+            }
+            kk[s][t] = _mm512_reduce_add_ps(a);
+            kq[s][t] = _mm512_reduce_add_ps(c);
+        }
+    }
+    for (int t = 0; t < GDN_B; ++t) {
+        const __m512 At = _mm512_set1_ps(expf(G[t])), bt = _mm512_set1_ps(beta[t]), sc = _mm512_set1_ps(scale);
+        __m512 wk[GDN_B], wq[GDN_B];
+        for (int s = 0; s <= t; ++s) {
+            const float r = expf(G[t] - G[s]);
+            wk[s] = _mm512_set1_ps(r * kk[s][t]);
+            wq[s] = _mm512_set1_ps(r * kq[s][t]);
+        }
+        for (int64_t j = 0; j < S_v; j += 16) {
+            __m512 x = _mm512_fnmadd_ps(At, _mm512_loadu_ps(ak + t * S_v + j), _mm512_loadu_ps(v[t] + j));
+            __m512 o = _mm512_mul_ps(At, _mm512_loadu_ps(aq + t * S_v + j));
+            for (int s = 0; s < t; ++s) {
+                const __m512 ds = _mm512_loadu_ps(dl + s * S_v + j);
+                x = _mm512_fnmadd_ps(wk[s], ds, x);
+                o = _mm512_fmadd_ps(wq[s], ds, o);
+            }
+            const __m512 d = _mm512_mul_ps(bt, x);
+            _mm512_storeu_ps(dl + t * S_v + j, d);
+            _mm512_storeu_ps(out[t] + j, _mm512_mul_ps(_mm512_fmadd_ps(wq[t], d, o), sc));
+        }
+    }
+    const float AB = expf(G[GDN_B - 1]);
+    for (int s = 0; s < GDN_B; ++s) {
+        const float r = expf(G[GDN_B - 1] - G[s]);
+        for (int64_t i = 0; i < S_v; ++i) cf[s * S_v + i] = r * k[s][i];
+    }
+    const __m512 vab = _mm512_set1_ps(AB);
+    for (int64_t jc = 0; jc < S_v; jc += 16) {
+        __m512 dv[GDN_B];
+        for (int s = 0; s < GDN_B; ++s) dv[s] = _mm512_loadu_ps(dl + s * S_v + jc);
+        for (int64_t i = 0; i < S_v; ++i) {
+            float * row = st_T + i * S_v + jc;
+            __m512 r = _mm512_mul_ps(_mm512_loadu_ps(row), vab);
+            for (int s = 0; s < GDN_B; ++s) r = _mm512_fmadd_ps(_mm512_set1_ps(cf[s * S_v + i]), dv[s], r);
+            _mm512_storeu_ps(row, r);
+        }
+    }
+}
+#endif
+
 static void ggml_compute_forward_gated_delta_net_one_chunk(
     const ggml_compute_params * params,
     ggml_tensor * dst,
@@ -11272,8 +11350,8 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     // per-seq stride in floats (seq s starts at state + s * seq_stride)
     const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
 
-    // scratch per thread: delta [S_v] | state_work [S_v*S_v] (K > 1) | transposed state [S_v*S_v] + 3 vectors [S_v] (fast path)
-    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0) + S_v * S_v + 3 * S_v;
+    // scratch per thread: delta [S_v] | state_work [S_v*S_v] (K > 1) | transposed state [S_v*S_v] + 3 vectors [S_v] + gdn_block [32*S_v] (fast path)
+    const int64_t per_thread = S_v + (K > 1 ? S_v * S_v : 0) + S_v * S_v + 3 * S_v + 32 * S_v;
     const int ith = params->ith;
 
     float * delta       = (float *)params->wdata + ith * per_thread + CACHE_LINE_SIZE_F32;
@@ -11340,7 +11418,28 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
                 }
             }
             float * attn_t = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
-            for (int64_t t = 0; t < n_tokens; t++) {
+            int64_t t = 0;
+#if defined(__AVX512F__)
+            if (!kda && S_v % 16 == 0) {
+                for (; t + GDN_B <= n_tokens; t += GDN_B) {
+                    const float * qb[GDN_B], * kb[GDN_B], * vb[GDN_B];
+                    float * ob[GDN_B];
+                    float bb[GDN_B], gb[GDN_B];
+                    for (int b = 0; b < GDN_B; ++b) {
+                        const int64_t tt = t + b;
+                        qb[b] = (const float *)((const char *)src_q->data + iq3 * nbq3 + tt * nbq2 + iq1 * nbq1);
+                        kb[b] = (const float *)((const char *)src_k->data + ik3 * nbk3 + tt * nbk2 + ik1 * nbk1);
+                        vb[b] = (const float *)((const char *)src_v->data + iv3 * nbv3 + tt * nbv2 + iv1 * nbv1);
+                        bb[b] = *(const float *)((const char *)src_beta->data + iv3 * nbb3 + tt * nbb2 + iv1 * nbb1);
+                        gb[b] = *(const float *)((const char *)src_g->data    + iv3 * nbg3 + tt * nbg2 + iv1 * nbg1);
+                        ob[b] = attn_t + b * S_v * H;
+                    }
+                    gdn_block(st_T, S_v, qb, kb, vb, bb, gb, ob, scale, eg + S_v);
+                    attn_t += GDN_B * S_v * H;
+                }
+            }
+#endif
+            for (; t < n_tokens; t++) {
                 const float * q_d = (const float *)((const char *)src_q->data + iq3 * nbq3 + t * nbq2 + iq1 * nbq1);
                 const float * k_d = (const float *)((const char *)src_k->data + ik3 * nbk3 + t * nbk2 + ik1 * nbk1);
                 const float * v_d = (const float *)((const char *)src_v->data + iv3 * nbv3 + t * nbv2 + iv1 * nbv1);
