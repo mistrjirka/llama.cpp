@@ -332,15 +332,37 @@ struct ActRef {
     const Q8Kblk *  k8 = nullptr;     // K-quants: K/256 blocks
     const uint8_t * q0 = nullptr;     // Q8_0: K biased bytes
     const float *   d0 = nullptr;     // Q8_0: K/32 scales
+    int             nt = 1;           // tokens; token t's activations are tstride bytes after token 0's
+    size_t          tstride = 0;
+    XD_TGT ActRef tok(int t) const {
+        ActRef r = *this;
+        const size_t o = size_t(t) * tstride;
+        if (k8) r.k8 = reinterpret_cast<const Q8Kblk *>(reinterpret_cast<const uint8_t *>(k8) + o);
+        if (q0) { r.q0 = q0 + o; r.d0 = reinterpret_cast<const float *>(reinterpret_cast<const uint8_t *>(d0) + o); }
+        r.nt = 1;
+        return r;
+    }
 };
 
 
 // One item = (split, chain, first lane, nl lanes, superblock sb): the nl lanes (cores) of a chain are processed slab by slab, so that the
 // memory is consumed as consecutive 4*CHUNK pages (linear streams, much friendlier to the hardware prefetcher than one lane at a time:
 // 55 -> 85 GB/s), and the lines of the next slab are prefetched in address order, spread over the records of the current slab.
+template <Fmt F, class R>
+XD_TGT inline __m512 rec_any(const R & rv, const ActRef & act, int64_t kb, const Tabs & T) {
+    if (F == Fmt::Q4_K)      return rec_q4(rv, act.k8 + kb, T);
+    else if (F == Fmt::Q5_K) return rec_q5(rv, act.k8 + kb, T);
+    else if (F == Fmt::Q6_K) return rec_q6(rv, act.k8 + kb, T);
+    else if (F == Fmt::Q4_0) return rec_q40<false>(rv, act.q0 + kb * 256, act.d0 + kb * 8, T);
+    else if (F == Fmt::Q4_1) return rec_q40<true>(rv, act.q0 + kb * 256, act.d0 + kb * 8, T);
+    else                     return rec_q8(rv, act.q0 + kb * 256, act.d0 + kb * 8, T);
+}
+
+// out: token t's rows at out + t * ostride (floats); partial: the scratch [t][lane][gc][16] (ostride = N_LANES * gc * 16)
 template <Fmt F>
 XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, int64_t s, int64_t chain, int64_t lane0, int64_t nl, int64_t sb,
-                       int64_t kb0, int64_t kb1, float * out, bool partial, const Tabs & T) {
+                       int64_t kb0, int64_t kb1, float * out, bool partial, const Tabs & T, size_t ostride) {
+    const int nt = act.nt;
     const int64_t Gs = g.sp_groups(s);
     const int64_t gc = g.sb_groups(s, sb);
     const uint8_t * cb = w + g.sp_off(s) + size_t(chain) * g.sp_chain_bytes(s);
@@ -349,6 +371,12 @@ XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, in
     const size_t RB = g.rec_bytes;
     __m512 y[N_LANES][GSB];
     for (int l = 0; l < N_LANES; ++l) for (int i = 0; i < GSB; ++i) y[l][i] = _mm512_setzero_ps();
+    alignas(64) float yt[CPU_MAX_TOK][N_LANES][GSB][GROUP_ROWS];     // nt > 1: the accumulators of every token (the record stays in L1)
+    ActRef at[CPU_MAX_TOK];
+    if (nt > 1) {
+        std::memset(yt, 0, sizeof(float) * size_t(nt) * N_LANES * GSB * GROUP_ROWS);
+        for (int t = 0; t < nt; ++t) at[t] = act.tok(t);
+    }
     const size_t slab_pages = slab / CHUNK;       // pages (4 lanes x CHUNK) per slab
     const size_t pf_lines = slab_pages * size_t(nl) * (CHUNK / 64);
     const size_t per_rec = (pf_lines + size_t(nl * gc) - 1) / size_t(nl * gc);
@@ -370,39 +398,44 @@ XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, in
                     }
                 }
                 const RV<F == Fmt::Q6_K> rv{ cb + size_t(lane0 + l) * CHUNK, so + size_t(gl) * RB };
-                if (F == Fmt::Q4_K)      y[l][gl] = _mm512_add_ps(y[l][gl], rec_q4(rv, act.k8 + kb, T));
-                else if (F == Fmt::Q5_K) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q5(rv, act.k8 + kb, T));
-                else if (F == Fmt::Q6_K) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q6(rv, act.k8 + kb, T));
-                else if (F == Fmt::Q4_0) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q40<false>(rv, act.q0 + kb * 256, act.d0 + kb * 8, T));
-                else if (F == Fmt::Q4_1) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q40<true>(rv, act.q0 + kb * 256, act.d0 + kb * 8, T));
-                else                     y[l][gl] = _mm512_add_ps(y[l][gl], rec_q8(rv, act.q0 + kb * 256, act.d0 + kb * 8, T));
+                if (nt == 1) {
+                    y[l][gl] = _mm512_add_ps(y[l][gl], rec_any<F>(rv, act, kb, T));
+                } else {
+                    for (int t = 0; t < nt; ++t) {
+                        float * yp = yt[t][l][gl];
+                        _mm512_store_ps(yp, _mm512_add_ps(_mm512_load_ps(yp), rec_any<F>(rv, at[t], kb, T)));
+                    }
+                }
             }
         }
     }
-    for (int64_t l = 0; l < nl; ++l) {
-        if (partial) {          // out = this part's scratch [lane][gc][16]
-            for (int64_t i = 0; i < gc; ++i) _mm512_storeu_ps(out + (l * gc + i) * GROUP_ROWS, y[l][i]);
-            continue;
-        }
-        const int64_t row0 = g.sp_row0(s) + (chain * N_LANES + lane0 + l) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS;
-        for (int64_t i = 0; i < gc; ++i) {
-            const int64_t r = row0 + i * GROUP_ROWS;
-            if (r >= g.n) break;
-            const int64_t cnt = std::min<int64_t>(GROUP_ROWS, g.n - r);
-            _mm512_mask_storeu_ps(out + r, __mmask16((1u << cnt) - 1u), y[l][i]);
+    for (int t = 0; t < nt; ++t) {
+        float * o = out + size_t(t) * ostride;
+        for (int64_t l = 0; l < nl; ++l) {
+            if (partial) {          // out = this part's scratch [t][lane][gc][16]
+                for (int64_t i = 0; i < gc; ++i) _mm512_storeu_ps(o + (l * gc + i) * GROUP_ROWS, nt == 1 ? y[l][i] : _mm512_load_ps(yt[t][l][i]));
+                continue;
+            }
+            const int64_t row0 = g.sp_row0(s) + (chain * N_LANES + lane0 + l) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS;
+            for (int64_t i = 0; i < gc; ++i) {
+                const int64_t r = row0 + i * GROUP_ROWS;
+                if (r >= g.n) break;
+                const int64_t cnt = std::min<int64_t>(GROUP_ROWS, g.n - r);
+                _mm512_mask_storeu_ps(o + r, __mmask16((1u << cnt) - 1u), nt == 1 ? y[l][i] : _mm512_load_ps(yt[t][l][i]));
+            }
         }
     }
 }
 
 XD_TGT void run_item(const Geom & g, const uint8_t * w, const ActRef & act, int64_t s, int64_t chain, int64_t lane0, int64_t nl, int64_t sb,
-                     int64_t kb0, int64_t kb1, float * out, bool partial, const Tabs & T) {
+                     int64_t kb0, int64_t kb1, float * out, bool partial, const Tabs & T, size_t ostride) {
     switch (g.fmt) {
-        case Fmt::Q4_K: run_item_t<Fmt::Q4_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
-        case Fmt::Q5_K: run_item_t<Fmt::Q5_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
-        case Fmt::Q6_K: run_item_t<Fmt::Q6_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
-        case Fmt::Q4_0: run_item_t<Fmt::Q4_0>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
-        case Fmt::Q4_1: run_item_t<Fmt::Q4_1>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
-        default:        run_item_t<Fmt::Q8_0>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
+        case Fmt::Q4_K: run_item_t<Fmt::Q4_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T, ostride); break;
+        case Fmt::Q5_K: run_item_t<Fmt::Q5_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T, ostride); break;
+        case Fmt::Q6_K: run_item_t<Fmt::Q6_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T, ostride); break;
+        case Fmt::Q4_0: run_item_t<Fmt::Q4_0>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T, ostride); break;
+        case Fmt::Q4_1: run_item_t<Fmt::Q4_1>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T, ostride); break;
+        default:        run_item_t<Fmt::Q8_0>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T, ostride); break;
     }
 }
 
@@ -413,7 +446,7 @@ static std::atomic<uint64_t> g_busy_ns{0}, g_wall_ns{0};
 // each part writes its partial sums to the scratch of the group; the last part to finish adds them up into dst.
 struct Item { int32_t job, split, chain, lane0, nl, sb, kb0, kb1, part, grp; };
 struct Grp { int32_t nparts; size_t scr; };     // scratch offset (floats) of the parts, laid out [part][lane][gc][16]
-struct InAct { const float * x; int64_t k; bool q80; size_t off; size_t bytes; };
+struct InAct { const float * x; int64_t k; bool q80; size_t off; size_t bytes; int nt; size_t xs; size_t tstride; };
 
 std::vector<uint8_t> g_act_store;     // activation scratch (grows, never shrinks); used by one cpu_decode_run at a time
 const Grp *          g_grps = nullptr;       // groups of the running flush
@@ -427,24 +460,30 @@ uint8_t *            g_store = nullptr;
 XD_TGT void process_item(const Item & m, const CpuDecodeJob & jb, const ActRef & act, const Tabs & T) {
     const Grp & gr = g_grps[m.grp];
     const Geom & g = jb.geom;
+    const int nt = jb.n_tok;
+    const size_t dstride = nt > 1 ? jb.dst_stride / sizeof(float) : 0;
     if (gr.nparts == 1) {
-        run_item(g, jb.w, act, m.split, m.chain, m.lane0, m.nl, m.sb, m.kb0, m.kb1, jb.dst, false, T);
+        run_item(g, jb.w, act, m.split, m.chain, m.lane0, m.nl, m.sb, m.kb0, m.kb1, jb.dst, false, T, dstride);
     } else {
         const int64_t gc = g.sb_groups(m.split, m.sb);
-        const size_t psz = size_t(N_LANES * gc * GROUP_ROWS);
+        const size_t tsz = size_t(N_LANES * gc * GROUP_ROWS), psz = tsz * size_t(nt);
         float * scr = g_scratch.data() + gr.scr;
-        run_item(g, jb.w, act, m.split, m.chain, m.lane0, m.nl, m.sb, m.kb0, m.kb1, scr + size_t(m.part) * psz, true, T);
+        run_item(g, jb.w, act, m.split, m.chain, m.lane0, m.nl, m.sb, m.kb0, m.kb1, scr + size_t(m.part) * psz, true, T, tsz);
         if (g_done[m.grp].fetch_add(1, std::memory_order_acq_rel) == gr.nparts - 1) {      // last part: reduce
             const int64_t Gs = g.sp_groups(m.split);
-            for (int64_t l = 0; l < N_LANES; ++l) {
-                const int64_t row0 = g.sp_row0(m.split) + (m.chain * N_LANES + l) * GROUP_ROWS * Gs + m.sb * GSB * GROUP_ROWS;
-                for (int64_t i = 0; i < gc; ++i) {
-                    const int64_t r = row0 + i * GROUP_ROWS;
-                    if (r >= g.n) break;
-                    __m512 sum = _mm512_loadu_ps(scr + (l * gc + i) * GROUP_ROWS);
-                    for (int32_t p = 1; p < gr.nparts; ++p) sum = _mm512_add_ps(sum, _mm512_loadu_ps(scr + size_t(p) * psz + (l * gc + i) * GROUP_ROWS));
-                    const int64_t cnt = std::min<int64_t>(GROUP_ROWS, g.n - r);
-                    _mm512_mask_storeu_ps(jb.dst + r, __mmask16((1u << cnt) - 1u), sum);
+            for (int t = 0; t < nt; ++t) {
+                float * dst = jb.dst + size_t(t) * dstride;
+                const float * st = scr + size_t(t) * tsz;
+                for (int64_t l = 0; l < N_LANES; ++l) {
+                    const int64_t row0 = g.sp_row0(m.split) + (m.chain * N_LANES + l) * GROUP_ROWS * Gs + m.sb * GSB * GROUP_ROWS;
+                    for (int64_t i = 0; i < gc; ++i) {
+                        const int64_t r = row0 + i * GROUP_ROWS;
+                        if (r >= g.n) break;
+                        __m512 sum = _mm512_loadu_ps(st + (l * gc + i) * GROUP_ROWS);
+                        for (int32_t p = 1; p < gr.nparts; ++p) sum = _mm512_add_ps(sum, _mm512_loadu_ps(st + size_t(p) * psz + (l * gc + i) * GROUP_ROWS));
+                        const int64_t cnt = std::min<int64_t>(GROUP_ROWS, g.n - r);
+                        _mm512_mask_storeu_ps(dst + r, __mmask16((1u << cnt) - 1u), sum);
+                    }
                 }
             }
         }
@@ -482,22 +521,27 @@ XD_TGT static void prepare_acts(const CpuDecodeJob * jobs, size_t nj) {
         const bool q80 = blocks32(jobs[j].geom.fmt);
         size_t e = g_ins.size();
         for (size_t q = 0; q < g_ins.size(); ++q) {
-            if (g_ins[q].x == jobs[j].x && g_ins[q].k == jobs[j].geom.k && g_ins[q].q80 == q80) { e = q; break; }
+            if (g_ins[q].x == jobs[j].x && g_ins[q].k == jobs[j].geom.k && g_ins[q].q80 == q80 && g_ins[q].nt == jobs[j].n_tok &&
+                g_ins[q].xs == jobs[j].x_stride) { e = q; break; }
         }
         if (e == g_ins.size()) {
             const int64_t k = jobs[j].geom.k;
             const size_t bytes = q80 ? size_t(k) + size_t(k / 32) * 4 : size_t(k / 256) * sizeof(Q8Kblk);
-            g_ins.push_back(InAct{ jobs[j].x, k, q80, total, bytes });
-            total += (bytes + 63) / 64 * 64;
+            const size_t ts = (bytes + 63) / 64 * 64;
+            g_ins.push_back(InAct{ jobs[j].x, k, q80, total, bytes, jobs[j].n_tok, jobs[j].x_stride, ts });
+            total += ts * size_t(jobs[j].n_tok);
         }
         g_in_of[j] = e;
     }
     if (g_act_store.size() < total + 64) g_act_store.resize(total + 64);
     g_store = reinterpret_cast<uint8_t *>((reinterpret_cast<uintptr_t>(g_act_store.data()) + 63) & ~uintptr_t(63));
     for (const InAct & ia : g_ins) {
-        uint8_t * p = g_store + ia.off;
-        if (ia.q80) quant_q80(ia.x, p, reinterpret_cast<float *>(p + ia.k), ia.k / 32);
-        else        quant_q8k(ia.x, reinterpret_cast<Q8Kblk *>(p), ia.k / 256);
+        for (int t = 0; t < ia.nt; ++t) {
+            uint8_t * p = g_store + ia.off + size_t(t) * ia.tstride;
+            const float * x = reinterpret_cast<const float *>(reinterpret_cast<const char *>(ia.x) + size_t(t) * ia.xs);
+            if (ia.q80) quant_q80(x, p, reinterpret_cast<float *>(p + ia.k), ia.k / 32);
+            else        quant_q8k(x, reinterpret_cast<Q8Kblk *>(p), ia.k / 256);
+        }
     }
 }
 
@@ -578,6 +622,7 @@ uint64_t flush_sig(const CpuDecodeJob * jobs, size_t nj) {
     mix(nj);
     for (size_t j = 0; j < nj; ++j) {
         mix(reinterpret_cast<uintptr_t>(jobs[j].w)); mix(uint64_t(jobs[j].geom.n)); mix(uint64_t(jobs[j].geom.k)); mix(uint64_t(jobs[j].geom.fmt));
+        mix(uint64_t(jobs[j].n_tok));
         if (jobs[j].plan) for (int64_t sp = 0; sp < jobs[j].geom.nsplit; ++sp) { mix(uint64_t(jobs[j].plan[sp].sb_npu)); mix(uint64_t(jobs[j].plan[sp].kb_npu)); }
         else mix(0x9e3779b97f4a7c15ull);
     }
@@ -648,7 +693,7 @@ void build_plan(const CpuDecodeJob * jobs, size_t nj, FlushPlan & P) {
                     const int64_t gc = g.sb_groups(s, sb);
                     const int32_t grp = int32_t(P.grps.size());
                     P.grps.push_back(Grp{ int32_t(P_), scr_total });
-                    if (P_ > 1) scr_total += size_t(P_) * size_t(N_LANES * gc * GROUP_ROWS);
+                    if (P_ > 1) scr_total += size_t(P_) * size_t(N_LANES * gc * GROUP_ROWS) * size_t(jobs[j].n_tok);
                     for (int64_t part = 0; part < P_; ++part) {
                         P.items.push_back(Item{ int32_t(j), int32_t(s), int32_t(chain), 0, N_LANES, int32_t(sb),
                                                 int32_t(k0 + (k1 - k0) * part / P_), int32_t(k0 + (k1 - k0) * (part + 1) / P_), int32_t(part), grp });
@@ -882,6 +927,8 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t nj, const std::function<vo
             const uint8_t * p = g_store + ia.off;
             if (ia.q80) { act.q0 = p; act.d0 = reinterpret_cast<const float *>(p + ia.k); }
             else        { act.k8 = reinterpret_cast<const Q8Kblk *>(p); }
+            act.nt = ia.nt;
+            act.tstride = ia.tstride;
             process_item(m, jb, act, T);
         };
         for (size_t k = size_t(tid); k < n_static; k += size_t(nth)) run(P.items[k]);

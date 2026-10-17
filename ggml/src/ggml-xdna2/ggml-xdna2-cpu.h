@@ -38,12 +38,17 @@ class Arena;
 struct CpuDecodeJob {
     layout::Geom        geom;
     const uint8_t *     w = nullptr;      // matrix region (layout v2), g.bytes
-    const float *       x = nullptr;      // K floats
-    float *             dst = nullptr;    // g.n floats
+    const float *       x = nullptr;      // K floats per token
+    float *             dst = nullptr;    // g.n floats per token
+    int                 n_tok = 1;        // tokens (<= CPU_MAX_TOK): the weights are read once for all of them
+    size_t              x_stride = 0;     // bytes between the tokens of x
+    size_t              dst_stride = 0;   // bytes between the tokens of dst
     const SplitPlan *   plan = nullptr;   // geom.nsplit entries; nullptr = the CPU computes the whole matrix
     const Arena *       arena = nullptr;  // for the NPU part
     size_t              w_off = 0;
 };
+
+constexpr int CPU_MAX_TOK = 8;
 
 // AVX-512 VNNI/VBMI available (and not disabled with GGML_XDNA2_CPU_ISA=0)
 bool cpu_decode_available();

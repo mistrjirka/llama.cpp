@@ -392,7 +392,9 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
         }
     }
 
-    const bool use_cpu = !reference_mode() && ne11 == 1 && decode_mode() != DecodeMode::Npu && cpu_decode_available();
+    // decode and small batches (speculative verification, short prompts): the CPU GEMV reads the weights once for all ne11 tokens
+    static const int64_t cpu_max_tok = [] { const char * e = std::getenv("GGML_XDNA2_CPU_MAXTOK"); return e && *e ? std::max(1, std::min(CPU_MAX_TOK, std::atoi(e))) : CPU_MAX_TOK; }();
+    const bool use_cpu = !reference_mode() && ne11 <= cpu_max_tok && decode_mode() != DecodeMode::Npu && cpu_decode_available();
     const bool use_pf = !reference_mode() && ne11 >= prefill_min_tokens() && xdna2_pf_supports(geom.fmt) && npu_executor().prefill_available();
 
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
@@ -405,9 +407,12 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
                 cj.w    = arena->base() + base_off + size_t(i03 * ne02 + i02) * geom.bytes;
                 cj.x    = reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + i12 * nb12 + i13 * nb13);
                 cj.dst  = reinterpret_cast<float *>(static_cast<char *>(dst->data) + i12 * nb2 + i13 * nb3);
+                cj.n_tok      = int(ne11);
+                cj.x_stride   = nb11;
+                cj.dst_stride = nb1;
                 cj.arena = arena;
                 cj.w_off = base_off + size_t(i03 * ne02 + i02) * geom.bytes;
-                cj.plan  = decode_mode() == DecodeMode::Split ? xdna2_split_plan(geom) : nullptr;
+                cj.plan  = decode_mode() == DecodeMode::Split && ne11 == 1 ? xdna2_split_plan(geom) : nullptr;
                 ctx->cpu_pending.push_back(cj);
                 continue;
             }
