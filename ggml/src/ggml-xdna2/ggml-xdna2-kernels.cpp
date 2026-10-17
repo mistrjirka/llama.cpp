@@ -112,7 +112,7 @@ static const char * product_dir(Product p) { return p == Product::Prefill ? "pre
 std::string KernelCache::dir() const { return cfg_.cache_dir + "/" + hash_ + "/" + product_dir(cfg_.product); }
 
 static const std::vector<const char *> kInstFilesDecode  = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin", "insts_sw.bin" };
-static const std::vector<const char *> kInstFilesPrefill = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_ow.bin" };
+static const std::vector<const char *> kInstFilesPrefill = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_ow.bin", "insts_rw.bin" };
 static const std::vector<const char *> & inst_files(Product p) { return p == Product::Prefill ? kInstFilesPrefill : kInstFilesDecode; }
 
 bool KernelCache::cached() const {
@@ -148,6 +148,21 @@ bool KernelCache::patch_param(const std::vector<uint32_t> & base, const std::vec
     return true;
 }
 
+bool KernelCache::patch_affine(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
+                               std::vector<uint32_t> & inout) {
+    if (base.size() != var.size() || inout.size() != base.size() || p1 == p0) return false;
+    for (size_t i = 0; i < base.size(); ++i) {
+        if (base[i] == var[i]) continue;
+        const int64_t d = int64_t(var[i]) - int64_t(base[i]);
+        if (d % (p1 - p0) != 0) return false;
+        if (inout[i] != base[i]) return false;            // a word must depend on ONE parameter only
+        const int64_t v = int64_t(base[i]) + d / (p1 - p0) * (p - p0);
+        if (v < 0 || v > int64_t(UINT32_MAX)) return false;
+        inout[i] = uint32_t(v);
+    }
+    return true;
+}
+
 static bool read_words(const std::string & path, std::vector<uint32_t> & w) {
     std::string s = read_file(path);
     if (s.empty() || s.size() % 4) return false;
@@ -156,7 +171,7 @@ static bool read_words(const std::string & path, std::vector<uint32_t> & w) {
     return true;
 }
 
-bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out, int64_t stride_words) {
+bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out, int64_t stride_words, int64_t a_rep) {
     const int64_t refThird = cfg_.product == Product::Prefill ? kRefO : kRefG;
     if (!cached()) return false;
     std::lock_guard<std::mutex> lk(mu_);
@@ -174,6 +189,9 @@ bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std
     if (ok && cfg_.product == Product::Decode) {
         // the offsets of the chains (i * stride) are linear in the stride parameter, the lengths in chain_words
         ok = patch_param(refs_[0], refs_[4], kRefChain, 2 * kRefChain, stride_words > 0 ? stride_words : chain_words, out);
+    }
+    if (ok && cfg_.product == Product::Prefill) {
+        ok = a_rep >= 1 && a_rep <= 64 && patch_affine(refs_[0], refs_[4], kRefRep, 2 * kRefRep, a_rep, out);     // the BD repeat field is 6 bits
     }
     return ok;
 }

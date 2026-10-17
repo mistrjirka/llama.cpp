@@ -52,7 +52,7 @@ struct PfCtx {
     xrt::xclbin                       xb;
     xrt::hw_context                   hw;
     xrt::kernel                       kern;
-    std::map<std::tuple<int64_t, int64_t, int64_t>, xrt::bo> instr;
+    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, xrt::bo> instr;     // (chain_words, a_words, a_rep, o_words)
 };
 
 // Activation + output BOs shared by all prefill dispatches of one shape (a dispatch is a tile; PF_MAX_TILES tiles per wave).
@@ -564,12 +564,13 @@ private:
         return *pf_pools_.emplace(key, std::move(p)).first->second;
     }
 
-    const xrt::bo & get_pf_instr(PfCtx & c, int64_t chain_words, int64_t a_words, int64_t o_words, uint32_t & nwords) {
-        const auto key = std::make_tuple(chain_words, a_words, o_words);
+    // a_words: A slab words of one superblock pass (read a_rep = nsb times by the DMA)
+    const xrt::bo & get_pf_instr(PfCtx & c, int64_t chain_words, int64_t a_words, int64_t a_rep, int64_t o_words, uint32_t & nwords) {
+        const auto key = std::make_tuple(chain_words, a_words, a_rep, o_words);
         auto it = c.instr.find(key);
         if (it == c.instr.end()) {
             std::vector<uint32_t> w;
-            if (!prefill_kernel_cache().insts_for(chain_words, a_words, o_words, w)) {
+            if (!prefill_kernel_cache().insts_for(chain_words, a_words, o_words, w, 0, a_rep)) {
                 throw std::runtime_error("cannot derive the instruction stream of the prefill kernel for chain_words=" + std::to_string(chain_words));
             }
             xrt::bo bi(dev_, w.size() * 4, xrt::bo::flags::cacheable, c.kern.group_id(1));
@@ -598,7 +599,7 @@ private:
             j->split = s;
             j->w = xrt::bo(xa->bo(), g.sp_bytes(s), pj.w_off + g.sp_off(s));
             const int64_t nsb = g.sp_nsb(s);
-            j->pool = &get_pf_pool(c, pf_a_tile_bytes(g.nbk, nsb), pf_y_tile_bytes(nsb));
+            j->pool = &get_pf_pool(c, pf_a_tile_bytes(g.nbk), pf_y_tile_bytes(nsb));
             j->runs.resize(PF_MAX_TILES);
             sj.push_back(std::move(j));
         }
@@ -611,7 +612,7 @@ private:
         const layout::Geom & g = j.geom;
         const int64_t nsb = g.sp_nsb(j.split);
         uint32_t nw = 0;
-        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(j.pool->a_tile / 4), nsb * 4 * layout::GSB * 1024, nw);
+        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(g.nbk * PF_SLAB_BYTES / 4), nsb, nsb * 4 * layout::GSB * 1024, nw);
         xrt::run r(c.kern);
         r.set_arg(0, 3);
         r.set_arg(1, bi);
@@ -732,7 +733,7 @@ private:
     std::unique_ptr<PfCtx> pf_ctx_;
     std::map<std::pair<size_t, size_t>, std::unique_ptr<PfPool>> pf_pools_;
     std::map<JobKey, PfSplits> pf_jobs_;
-    std::map<std::tuple<int64_t, int64_t, int64_t>, uint32_t> pf_instr_words_;
+    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, uint32_t> pf_instr_words_;
     int last_ctx_ = 0;      // 0 none, 1 decode, 2 prefill
     ExecStats st_;
 };

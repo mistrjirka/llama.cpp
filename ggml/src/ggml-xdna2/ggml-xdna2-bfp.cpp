@@ -165,10 +165,10 @@ void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64
     const int32_t hdr[4] = { int32_t(nsb), int32_t(nbk), int32_t(qtype), int32_t(groups) };
     std::memcpy(a_tile, hdr, sizeof(hdr));              // the header object (the rest of it is never read)
 #if defined(_OPENMP)
-    #pragma omp parallel for schedule(static) if(nsb * nbk >= 32) num_threads(pf_threads())
+    #pragma omp parallel for schedule(static) if(nbk >= 8) num_threads(pf_threads())
 #endif
-    for (int64_t s = 0; s < nsb; ++s) {
-        std::memcpy(a_tile + PF_SLAB_BYTES + size_t(s) * size_t(nbk) * PF_SLAB_BYTES, slabs, size_t(nbk) * PF_SLAB_BYTES);
+    for (int64_t kb = 0; kb < nbk; ++kb) {
+        std::memcpy(a_tile + PF_SLAB_BYTES + size_t(kb) * PF_SLAB_BYTES, slabs + size_t(kb) * PF_SLAB_BYTES, PF_SLAB_BYTES);
     }
 }
 

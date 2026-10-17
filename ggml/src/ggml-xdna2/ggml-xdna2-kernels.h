@@ -40,6 +40,7 @@ constexpr int64_t kRefChain = 2048;   // reference values of the instruction str
 constexpr int64_t kRefA     = 2048;
 constexpr int64_t kRefG     = 2;          // decode: groups per core
 constexpr int64_t kRefO     = 2048;       // prefill (genp.py --o_words): f32 words drained per column
+constexpr int64_t kRefRep   = 2;          // prefill (genp.py --a_rep): superblock passes over the A slabs (base 2, var 4; affine)
 
 // The two NPU kernels (two xclbins, two hw contexts; switching costs ~2.5 ms, so only at the prefill/decode boundary):
 //   Decode   M = 1 GEMV kernel (qku.cc + genu.py): third stream parameter = groups per core
@@ -74,11 +75,15 @@ public:
 
     // Instruction stream (words) of a dispatch, derived from the reference streams. third = groups per core (decode) / output words per column (prefill).
     // Decode only: stride_words = words between the starts of the chains in the W BO (0 = chain_words; chain_words < stride_words streams a PREFIX of every chain).
-    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out, int64_t stride_words = 0);
+    // Prefill only: a_rep = superblock passes over the A slabs (the DMA repeat count).
+    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out, int64_t stride_words = 0, int64_t a_rep = 0);
     // the pure patching rule (also used by the tool/tests): the words where base and var differ are linear in the parameter
     // (zero intercept): w(p) = base * p / p0. Applied on top of `inout`.
     static bool patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
                             std::vector<uint32_t> & inout);
+    // like patch_param, for a word that is affine in the parameter (e.g. a DMA repeat count stored as count - 1): w(p) = base + (var - base) * (p - p0) / (p1 - p0)
+    static bool patch_affine(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
+                             std::vector<uint32_t> & inout);
     std::string src_hash() const { return hash_; }
 
     // queue a background build if the kernel is not cached (no-op otherwise)

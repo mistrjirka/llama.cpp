@@ -26,8 +26,8 @@ constexpr size_t PF_SLAB_BYTES = 18432;       // 64 tokens x 256 k in bfp16ebs8
 constexpr int    PF_TILE_TOK   = 64;
 constexpr int    PF_MAX_TILES  = 8;           // tiles per wave (512 tokens)
 
-// A BO bytes of one tile of a split with nsb superblock passes
-inline size_t pf_a_tile_bytes(int64_t nbk, int64_t nsb) { return (1 + size_t(nsb) * size_t(nbk)) * PF_SLAB_BYTES; }
+// A BO bytes of one tile: header object + the nbk slabs, stored once (the shim DMA re-reads the slabs for every superblock pass)
+inline size_t pf_a_tile_bytes(int64_t nbk) { return (1 + size_t(nbk)) * PF_SLAB_BYTES; }
 // Y bytes of one tile of a split: [col 8][nsb][core 4][GSB groups][1024 f32]
 inline size_t pf_y_tile_bytes(int64_t nsb) { return size_t(8) * size_t(nsb) * 4 * layout::GSB * 1024 * sizeof(float); }
 
@@ -39,7 +39,7 @@ void pf_enc8_fast(const float * x, uint8_t * out);
 // (one pass; tokens >= n_tok are zero). Threaded over the k slabs.
 void pf_encode_tile(uint8_t * slabs, const float * x, size_t row_stride_bytes, int64_t n_tok, int64_t k, int tile);
 
-// Fill the A BO region of one tile (pf_a_tile_bytes) from its one-pass slabs: header object + nsb copies of the slabs.
+// Fill the A BO region of one tile (pf_a_tile_bytes) from its one-pass slabs: header object + the slabs.
 // hdr: i32 [nsb, nbk, qtype, G (groups per core)].
 void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups);
 

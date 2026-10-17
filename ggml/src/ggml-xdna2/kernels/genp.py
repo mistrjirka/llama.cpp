@@ -2,7 +2,9 @@
 #   W (weights, layout v2 chain region of a column: [n_w][4 lanes][1 KB]) : one shim channel per column -> memtile (4 KB objects) -> split to the 4 cores (1 KB chunks)
 #   A (activation tile, bfp16ebs8; [hdr object][nsb x nbk slabs of 18432 B]) : shim col 0 -> memtile col 0 -> broadcast to all 32 cores
 #   Y (fp32): per core nsb objects of GSB*1024 floats (the C accumulators live in the output object) -> joined per column -> shim
-# Instruction stream depends on three host values (each linear, zero intercept): chain_words (W words per column), a_words, o_words (Y words per column)
+# Instruction stream depends on four host values: chain_words (W words per column), a_words (A slab words of ONE superblock: nbk slabs), o_words
+# (Y words per column), each linear with zero intercept, and a_rep (superblocks per core, nsb): the A slabs are stored once and the shim DMA re-reads
+# them a_rep times (zero-stride repeat dimension; its BD field holds a_rep - 1, so that word is affine in a_rep)
 import argparse, sys
 import numpy as np
 from aie.iron import ObjectFifo, Program, Runtime, Worker, Kernel, Buffer
@@ -18,6 +20,7 @@ p.add_argument("--wdepth", type=int, default=4)       # core side chunk fifo dep
 p.add_argument("--mdepth", type=int, default=2)       # memtile side
 p.add_argument("--chain_words", type=int, required=True)
 p.add_argument("--a_words", type=int, required=True)
+p.add_argument("--a_rep", type=int, required=True)
 p.add_argument("--o_words", type=int, required=True)  # f32 words drained per column
 a = p.parse_args()
 C = 8; CPC = 4; S = 1024; GSB = 5; AOBJ = 18432
@@ -71,11 +74,13 @@ for c in range(C):
                                         Buffer(wrec_ty, name=f"wrec{c}_{i}"), Buffer(bt_ty, name=f"bt{c}_{i}")],
                               tile=t, stack_size=a.stack))
 W_el = a.chain_words * C
-A_el = a.a_words
+HDR_W = AOBJ // 4                                     # the header object (first A object), sent once
+A_el = HDR_W + a.a_words
 O_el = a.o_words * C
 def sequence(wbuf, abuf, obuf, *hs):
     wp = hs[:C]; ap = hs[C]; oc_ = hs[C + 1:]
-    ap.fill(abuf, tap=TensorAccessPattern((A_el,), 0, [1, 1, 1, A_el], [0, 0, 0, 1]), wait=False)
+    ap.fill(abuf, tap=TensorAccessPattern((A_el,), 0, [1, 1, 1, HDR_W], [0, 0, 0, 1]), wait=False)
+    ap.fill(abuf, tap=TensorAccessPattern((A_el,), HDR_W, [a.a_rep, 1, 1, a.a_words], [0, 0, 0, 1]), wait=False)
     for i in range(C):
         wp[i].fill(wbuf, tap=TensorAccessPattern((W_el,), i * a.chain_words, [1, 1, 1, a.chain_words], [0, 0, 0, 1]), wait=False)
     for i in range(C):
@@ -83,4 +88,4 @@ def sequence(wbuf, abuf, obuf, *hs):
 rt = Runtime(sequence, [np.ndarray[(W_el,), np.dtype[np.int32]], np.ndarray[(A_el,), np.dtype[np.int32]],
                         np.ndarray[(O_el,), np.dtype[np.float32]], *w_prods, a_prod, *out_conses])
 print(Program(NPU2(), rt, workers=workers).resolve_program())
-sys.stderr.write(f"META chain_words={a.chain_words} a_words={a.a_words} o_words={a.o_words} wdepth={a.wdepth}\n")
+sys.stderr.write(f"META chain_words={a.chain_words} a_words={a.a_words} a_rep={a.a_rep} o_words={a.o_words} wdepth={a.wdepth}\n")
