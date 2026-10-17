@@ -42,6 +42,18 @@ static inline aie::vector<float, 16> h2f(const uint16_t *p) {
   return aie::select(r, aie::neg(r), isneg);
 }
 
+// SV[j][nb] / BV[j][nb] (64 bf16, [n][k] replicated) from ABF / BBF [j][n]
+__attribute__((noinline)) static void fill_sv_bv() {
+  AIE_LOOP_UNROLL(4)
+  for (int i = 0; i < 16; i++) {           // i = j*2 + nb
+    aie::vector<bfloat16, 8> a8 = aie::load_v<8>(ABF + i * 8), b8 = aie::load_v<8>(BBF + i * 8);
+    aie::vector<bfloat16, 64> av = aie::transpose(a8.grow_replicate<64>(), 8, 8);
+    aie::vector<bfloat16, 64> bv = aie::transpose(b8.grow_replicate<64>(), 8, 8);
+    aie::store_v(&SV[0][0][0] + i * 64, av);
+    aie::store_v(&BV[0][0][0] + i * 64, bv);
+  }
+}
+
 // ---- scale prep v4: SV[j][nb] = bf16(d*sc_j) replicated [n][k]; BV[j][nb] = bf16(-dmin*m_j) replicated (the expand forms -b - 128*a)
 template <int SCO, int DO, int DMO>
 static inline void prep_scales_k(const int8_t *__restrict rec) {
@@ -87,14 +99,24 @@ static inline void prep_scales_k(const int8_t *__restrict rec) {
     aie::vector<bfloat16, 16> b_bf = bb.to_vector<bfloat16>();
     aie::store_v(ABF + j * 16, a_bf); aie::store_v(BBF + j * 16, b_bf);
   }
-  AIE_LOOP_UNROLL(4)
-  for (int i = 0; i < 16; i++) {           // i = j*2 + nb
-    aie::vector<bfloat16, 8> a8 = aie::load_v<8>(ABF + i * 8), b8 = aie::load_v<8>(BBF + i * 8);
-    aie::vector<bfloat16, 64> av = aie::transpose(a8.grow_replicate<64>(), 8, 8);
-    aie::vector<bfloat16, 64> bv = aie::transpose(b8.grow_replicate<64>(), 8, 8);
-    aie::store_v(&SV[0][0][0] + i * 64, av);
-    aie::store_v(&BV[0][0][0] + i * 64, bv);
+  fill_sv_bv();
+}
+
+// ---- Q4_0 / Q4_1 scale prep: the Q4_K form w = a*q + b per 32-k block j with a = d, b = -8 d (Q4_0) or m (Q4_1)
+__attribute__((noinline)) static void prep_q40(const int8_t *__restrict rec, bool q41) {
+  // i < 8: a_j = d_j (fp16 at 2048);  i >= 8: b_j = -8 d_j (Q4_0, from 2048) or m_j (Q4_1, fp16 at 2304).  One fp16 decode (program memory).
+  const float sb = q41 ? 1.0f : -8.0f;
+  const int ob = q41 ? 2304 : 2048;
+  AIE_LOOP_NO_UNROLL
+  for (int i = 0; i < 16; i++) {
+    const int j = i & 7, hi = i >> 3;
+    aie::vector<float, 16> v = h2f((const uint16_t *)(rec + (hi ? ob : 2048) + j * 32));
+    v = aie::mul(v, aie::broadcast<float, 16>(hi ? sb : 1.0f)).to_vector<float>();
+    aie::accum<accfloat, 16> t;
+    t.from_vector(v);
+    aie::store_v((hi ? BBF : ABF) + j * 16, t.to_vector<bfloat16>());
   }
+  fill_sv_bv();
 }
 
 // ---- expand v2: x = bf16(128+q) built by byte-zip with 0x43 (no int->float convert); w = a*x - 128*a - b via 2 macs
@@ -301,7 +323,7 @@ static inline void mm_blocks(const int8_t *__restrict A, const int8_t *__restric
 }
 
 
-static inline int rec_bytes(int qt) { return qt == 4 ? 2304 : qt == 5 ? 2816 : qt == 6 ? 3360 : 4352; }
+static inline int rec_bytes(int qt) { return qt == 4 ? 2304 : qt == 5 ? 2816 : qt == 6 ? 3360 : qt == 40 ? 2304 : qt == 41 ? 2560 : 4352; }
 
 static int st_kb = 0, st_sb = 0, st_gl = 0, st_gc = 0, st_fill = 0;
 
@@ -340,7 +362,10 @@ static inline void copy_bytes32(int8_t *__restrict dst, const int8_t *__restrict
   for (int i = 0; i < n; i += 32) aie::store_v(dst + i, aie::load_v<32>(src + i));
 }
 static inline void expand_rec(const int8_t *__restrict rec, int8_t *__restrict Bt, int qt) {
-  if (qt == 4) { prep_scales_k<2048, 2240, 2272>(rec); expand_q4(rec, Bt); }
+  if (qt == 4 || qt == 40 || qt == 41) {          // one inlined copy of expand_q4 (program memory)
+    if (qt == 4) prep_scales_k<2048, 2240, 2272>(rec); else prep_q40(rec, qt == 41);
+    expand_q4(rec, Bt);
+  }
   else if (qt == 5) { prep_scales_k<2560, 2752, 2784>(rec); expand_q5(rec, Bt); }
   else if (qt == 6) { prep_q6(rec); expand_q6(rec, Bt); }
   else { prep_q8(rec); expand_q8(rec, Bt); }

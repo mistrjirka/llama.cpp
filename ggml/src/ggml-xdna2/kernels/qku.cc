@@ -234,7 +234,38 @@ static void rec_q8(const int8_t *__restrict rec, float *__restrict out, const in
   if (last) aie::store_v(out, y); else aie::store_v(yst[gl], y);
 }
 
-static inline int rec_bytes(int qt) { return qt == 4 ? 2304 : qt == 5 ? 2816 : qt == 6 ? 3360 : 4352; }
+// ================= Q4_0 (REC 2304) / Q4_1 (REC 2560): nibbles in the Q4_K tiles, fp16 d [b][n] at 2048, Q4_1 fp16 m [b][n] at 2304 =================
+// Q8_0-style activations (int8, f32 d per 32).  Q4_0: w = (q - 8) d;  Q4_1: w = q d + m.
+static void rec_q40(const int8_t *__restrict rec, float *__restrict out, const int8_t *__restrict act_, int K, bool last, bool q41) {
+  const int8_t *aq = act_ + 64;
+  const float *dact = (const float *)(aq + K);
+  aie::vector<float, 16> y = (blk == 0) ? aie::zeros<float, 16>() : aie::load_v<16>(yst[gl]);
+  for (int b = 0; b < 8; b++) {
+    aie::mmul<4, 16, 16, int8, uint4> mm0, mm1;
+    aie::vector<int8, 32> a32 = aie::load_v<32>(aq + blk * 256 + b * 32);
+    for (int hf = 0; hf < 2; hf++) {
+      aie::vector<int8, 16> a16 = a32.extract<16>(hf);
+      aie::vector<int8, 64> A = aie::concat(aie::concat(a16, a16), aie::concat(a16, a16));
+      aie::vector<uint4, 256> B = aie::load_v<256>((const uint4 *)(rec + (2 * b + hf) * 128));
+      if (hf == 0) mm0.mul(A, B); else mm1.mul(A, B);
+    }
+    const int asum = aie::reduce_add(aie::vector<int16, 32>(aie::unpack(a32)));
+    aie::vector<int32, 16> dot = aie::add(aie::unpack(mm0.to_vector<int16>().extract<16>(0)), aie::unpack(mm1.to_vector<int16>().extract<16>(0)));
+    aie::vector<float, 16> dw = h2f((const uint16_t *)(rec + 2048 + b * 32));
+    aie::vector<float, 16> t1;
+    if (q41) {
+      aie::vector<float, 16> mw = h2f((const uint16_t *)(rec + 2304 + b * 32));
+      t1 = aie::add(aie::mul(aie::to_float(dot), dw).to_vector<float>(), aie::mul(mw, aie::broadcast<float, 16>((float)asum)).to_vector<float>());
+    } else {
+      dot = aie::sub(dot, aie::broadcast<int32, 16>(8 * asum));
+      t1 = aie::mul(aie::to_float(dot), dw).to_vector<float>();
+    }
+    y = aie::add(y, aie::mul(t1, aie::broadcast<float, 16>(dact[blk * 8 + b])).to_vector<float>());
+  }
+  if (last) aie::store_v(out, y); else aie::store_v(yst[gl], y);
+}
+
+static inline int rec_bytes(int qt) { return qt == 4 ? 2304 : qt == 5 ? 2816 : qt == 6 ? 3360 : qt == 40 ? 2304 : qt == 41 ? 2560 : 4352; }
 
 static inline void process(const int8_t *rec, const int8_t *act, float *ost, int qt, int K, int G) {
   const int NBK = K >> 8;
@@ -243,6 +274,7 @@ static inline void process(const int8_t *rec, const int8_t *act, float *ost, int
   if (qt == 4) rec_q4(rec, out, act, K, last);
   else if (qt == 5) rec_q5(rec, out, act, K, last);
   else if (qt == 6) rec_q6(rec, out, act, K, last);
+  else if (qt == 40 || qt == 41) rec_q40(rec, out, act, K, last, qt == 41);
   else rec_q8(rec, out, act, K, last);
   recs_done++;
   if (++gl == gc) {                     // slab complete (the rest of its last chunk is padding)

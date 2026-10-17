@@ -15,7 +15,7 @@ namespace xdna2 {
 using namespace layout;
 
 ActKind act_kind(Fmt fmt) {
-    return fmt == Fmt::Q8_0 ? ActKind::Q8_0F : ActKind::Q8_K;
+    return blocks32(fmt) ? ActKind::Q8_0F : ActKind::Q8_K;
 }
 
 void quantize_acts(ActQ & out, const Geom & g, const float * src, int64_t n_tok, size_t row_stride_bytes) {
@@ -136,7 +136,8 @@ struct DecRec {
     int32_t mn[8][16];      // Q4_K/Q5_K
     float   d[16];
     float   dmin[16];
-    float   dw[8][16];      // Q8_0: per-block fp16 scale as f32
+    float   dw[8][16];      // Q8_0/Q4_0/Q4_1: per-block fp16 scale as f32
+    float   mw[8][16];      // Q4_1: per-block fp16 min as f32
 };
 
 inline int nib_at(const uint8_t * rec, int tile, int kk, int n) {      // Q4_K ("A") tiles
@@ -150,6 +151,15 @@ void decode_q8_0(const uint8_t * rec, DecRec & r) {
         for (int k = 0; k < 32; ++k)
             for (int n = 0; n < 16; ++n) r.w[b * 32 + k][n] = int8_t(rec[detail::q8_0_off(b, k, n)]);
     }
+}
+void decode_q4_0(const uint8_t * rec, DecRec & r, bool q41) {    // Q4_0: w = q - 8 (times d); Q4_1: w = q (times d, plus m)
+    for (int b = 0; b < 8; ++b)
+        for (int n = 0; n < 16; ++n) {
+            r.dw[b][n] = fp16_to_f32_qk_kernel(u16(rec + 2048 + (b * 16 + n) * 2));
+            r.mw[b][n] = q41 ? fp16_to_f32_qk_kernel(u16(rec + 2304 + (b * 16 + n) * 2)) : 0.0f;
+        }
+    for (int i = 0; i < 256; ++i)
+        for (int n = 0; n < 16; ++n) r.w[i][n] = int8_t(nib_at(rec, i / 16, i % 16, n) - (q41 ? 0 : 8));
 }
 void decode_scales_k(const uint8_t * scp, DecRec & r) {   // scp: 12 planes [p][n]; ggml get_scale_min_k4
     for (int n = 0; n < 16; ++n) {
@@ -204,19 +214,21 @@ void decode_q6_k(const uint8_t * rec, DecRec & r) {
 
 // ---- per-token accumulation of one decoded record into y[16] -----------------------------------------------------
 // 32-element blocks (Q4_0, Q8_0): rec holds up to 8 consecutive blocks along K starting at block kb0
-void acc_blocks32(const DecRec & r, int nblk, const ActQ & a, int64_t t, int64_t kb0, float * y) {   // Q8_0
+void acc_blocks32(const DecRec & r, int nblk, const ActQ & a, int64_t t, int64_t kb0, float * y, bool mins = false) {   // Q8_0, Q4_0, Q4_1
     const int8_t * aq = a.q_row(t);
     const float  * ad = a.d_row(t);
     for (int b = 0; b < nblk; ++b) {
         const int8_t * av = aq + (kb0 + b) * QK32;
-        int32_t acc[16] = {};
+        int32_t acc[16] = {}, asum = 0;
         for (int k = 0; k < 32; ++k) {
             const int32_t x = av[k];
+            asum += x;
             for (int n = 0; n < 16; ++n) acc[n] += int32_t(r.w[b * 32 + k][n]) * x;
         }
         const float da = ad[kb0 + b];
         for (int n = 0; n < 16; ++n) {
-            const float t1 = float(acc[n]) * r.dw[b][n];
+            float t1 = float(acc[n]) * r.dw[b][n];
+            if (mins) t1 += r.mw[b][n] * float(asum);
             y[n] = y[n] + t1 * da;
         }
     }
@@ -300,6 +312,8 @@ public:
                     const int nblk = g.rec_blocks;
                     switch (g.fmt) {
                         case Fmt::Q8_0: decode_q8_0(rec, rec_dec); break;
+                        case Fmt::Q4_0: decode_q4_0(rec, rec_dec, false); break;
+                        case Fmt::Q4_1: decode_q4_0(rec, rec_dec, true); break;
                         case Fmt::Q4_K: decode_q4_k(rec, rec_dec); break;
                         case Fmt::Q5_K: decode_q5_k(rec, rec_dec); break;
                         case Fmt::Q6_K: decode_q6_k(rec, rec_dec); break;
@@ -308,7 +322,9 @@ public:
                     for (int64_t t = 0; t < a.n_tok; ++t) {
                         float * yt = &y[size_t(t) * 16];
                         switch (g.fmt) {
-                            case Fmt::Q8_0: acc_blocks32(rec_dec, nblk, a, t, kb0, yt); break;
+                            case Fmt::Q8_0:
+                            case Fmt::Q4_0: acc_blocks32(rec_dec, nblk, a, t, kb0, yt); break;
+                            case Fmt::Q4_1: acc_blocks32(rec_dec, nblk, a, t, kb0, yt, true); break;
                             case Fmt::Q4_K:
                             case Fmt::Q5_K: acc_kmin(rec_dec, a, t, kb0, yt); break;
                             case Fmt::Q6_K: acc_q6k(rec_dec, a, t, kb0, yt); break;

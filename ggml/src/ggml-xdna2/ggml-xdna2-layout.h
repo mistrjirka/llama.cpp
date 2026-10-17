@@ -12,7 +12,8 @@
 //   Fmt::Q5_K   record 2816 B
 //   Fmt::Q6_K   record 3360 B
 //   Fmt::Q8_0   record 4352 B = 16 rows x 8 GGUF blocks of 32
-//   (Q4_0 is not supported: its lab kernel uses the older stage0 ABI.)
+//   Fmt::Q4_0   record 2304 B = 16 rows x 8 GGUF blocks of 32 (nibbles in the Q4_K tiles)
+//   Fmt::Q4_1   record 2560 B
 //
 // Matrix: N rows (output features) x K columns, K % 256 == 0, K <= KMAX, NBK = K/256 records per row.
 //   N_pad = roundup(N, 512), G_total = N_pad/512 groups of 16 rows per core.
@@ -47,7 +48,7 @@
 namespace xdna2 {
 namespace layout {
 
-enum class Fmt : int { Q8_0 = 0, Q4_K, Q5_K, Q6_K, COUNT };
+enum class Fmt : int { Q8_0 = 0, Q4_K, Q5_K, Q6_K, Q4_0, Q4_1, COUNT };
 
 struct FmtInfo {
     const char * name;
@@ -64,6 +65,8 @@ inline const FmtInfo & fmt_info(Fmt f) {
         { "Q4_K", 256, 144, 1, 16 * 1 * 144, 4 },
         { "Q5_K", 256, 176, 1, 16 * 1 * 176, 5 },
         { "Q6_K", 256, 210, 1, 16 * 1 * 210, 6 },
+        { "Q4_0",  32,  18, 8, 16 * 8 *  18, 40 },
+        { "Q4_1",  32,  20, 8, 16 * 8 *  20, 41 },
     };
     return t[int(f)];
 }
@@ -122,9 +125,12 @@ struct Geom {
     size_t  sp_chain_words(int64_t s) const { return sp_chain_bytes(s) / 4; }   // instruction stream parameter
 };
 
+// formats with 32-weight blocks: their activations are Q8_0-like (int8 + one scale per 32), the K-quants use Q8_K
+inline bool blocks32(Fmt f) { return f == Fmt::Q8_0 || f == Fmt::Q4_0 || f == Fmt::Q4_1; }
+
 // Activation chunks of one dispatch (64 B header + the quantized vector), see compute.h
 inline size_t act_chunks(Fmt fmt, int64_t k) {
-    const size_t sv = fmt == Fmt::Q8_0 ? size_t(k) + size_t(k) / 8 : size_t(k) + size_t(k / 256) * 4 + size_t(k) / 8;
+    const size_t sv = blocks32(fmt) ? size_t(k) + size_t(k) / 8 : size_t(k) + size_t(k / 256) * 4 + size_t(k) / 8;
     return (64 + sv + CHUNK - 1) / CHUNK;
 }
 
@@ -342,12 +348,39 @@ inline void q8_0_unpack(const RecPtr & rec, int b, int n, uint8_t * blk) {
     for (int k = 0; k < 32; ++k) blk[2 + k] = (*rec(q8_0_off(b, k, n)));
 }
 
+// ---- Q4_0 (QK_T=40): record = 8 GGUF blocks (fp16 d, qs[16]: weight l = qs[l] & 15, weight 16 + l = qs[l] >> 4; value (q - 8) d) per row
+//   weight w = b*32 + k32 in the Q4_K nibble tiles (A addressing)   |   [2048,2304) fp16 d: 2048 + (b*16 + n)*2
+// ---- Q4_1 (QK_T=41): fp16 d, fp16 m, qs[16]; value q d + m   |   nibbles as Q4_0, [2048,2304) d, [2304,2560) m
+inline void q4_0_pack(const RecPtr & rec, int b, int n, const uint8_t * blk, bool q41) {
+    const int shift = (n & 1) * 4;
+    std::memcpy(rec(2048 + (size_t(b) * 16 + size_t(n)) * 2), blk, 2);
+    if (q41) std::memcpy(rec(2304 + (size_t(b) * 16 + size_t(n)) * 2), blk + 2, 2);
+    const uint8_t * qs = blk + (q41 ? 4 : 2);
+    for (int l = 0; l < 16; ++l) {
+        const int wl = b * 32 + l, wh = b * 32 + 16 + l;
+        put_nib(tile_a(rec, wl / 16, wl % 16, n), shift, qs[l] & 15);
+        put_nib(tile_a(rec, wh / 16, wh % 16, n), shift, qs[l] >> 4);
+    }
+}
+inline void q4_0_unpack(const RecPtr & rec, int b, int n, uint8_t * blk, bool q41) {
+    const int shift = (n & 1) * 4;
+    std::memcpy(blk, rec(2048 + (size_t(b) * 16 + size_t(n)) * 2), 2);
+    if (q41) std::memcpy(blk + 2, rec(2304 + (size_t(b) * 16 + size_t(n)) * 2), 2);
+    uint8_t * qs = blk + (q41 ? 4 : 2);
+    for (int l = 0; l < 16; ++l) {
+        const int wl = b * 32 + l, wh = b * 32 + 16 + l;
+        qs[l] = uint8_t(get_nib(tile_a(rec, wl / 16, wl % 16, n), shift) | (get_nib(tile_a(rec, wh / 16, wh % 16, n), shift) << 4));
+    }
+}
+
 inline void pack_block(Fmt f, const RecPtr & rec, int b, int n, const uint8_t * blk) {
     switch (f) {
         case Fmt::Q8_0: q8_0_pack(rec, b, n, blk); break;
         case Fmt::Q4_K: q4k_pack(rec, n, blk); break;
         case Fmt::Q5_K: q5k_pack(rec, n, blk); break;
         case Fmt::Q6_K: q6k_pack(rec, n, blk); break;
+        case Fmt::Q4_0: q4_0_pack(rec, b, n, blk, false); break;
+        case Fmt::Q4_1: q4_0_pack(rec, b, n, blk, true); break;
         default: break;
     }
 }
@@ -357,6 +390,8 @@ inline void unpack_block(Fmt f, const RecPtr & rec, int b, int n, uint8_t * blk)
         case Fmt::Q4_K: q4k_unpack(rec, n, blk); break;
         case Fmt::Q5_K: q5k_unpack(rec, n, blk); break;
         case Fmt::Q6_K: q6k_unpack(rec, n, blk); break;
+        case Fmt::Q4_0: q4_0_unpack(rec, b, n, blk, false); break;
+        case Fmt::Q4_1: q4_0_unpack(rec, b, n, blk, true); break;
         default: break;
     }
 }

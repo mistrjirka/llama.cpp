@@ -267,6 +267,37 @@ XD_TGT inline __m512 rec_q6(const R & rv, const Q8Kblk * a, const Tabs & T) {
     return _mm512_mul_ps(_mm512_mul_ps(d, _mm512_cvtepi32_ps(sumi)), _mm512_set1_ps(a->d));
 }
 
+// Q4_0 / Q4_1 (Q41): a = 256 biased u8 (8 blocks of 32), ad = 8 f32 block scales; nibbles in the Q4_K tiles, fp16 d [b][n] at 2048, m at 2304
+template <bool Q41, class R>
+XD_TGT inline __m512 rec_q40(const R & rv, const uint8_t * a, const float * ad, const Tabs & T) {
+    const __m512i sv = ldz(T.sv), m0F = _mm512_set1_epi32(0x0F0F0F0F), flip = _mm512_set1_epi32(int(0x80808080u));
+    const __m512i ia0 = ldz(T.idx_a[0]), ia1 = ldz(T.idx_a[1]);
+    __m512 y = _mm512_setzero_ps();
+    for (int b = 0; b < 8; ++b) {
+        __m512i acc = _mm512_setzero_si512();
+        for (int t = 0; t < 2; ++t) {
+            const size_t tp = size_t(2 * b + t) * 128;
+            for (int hf = 0; hf < 2; ++hf) {
+                const __m512i Z = rv.ld64(tp + hf * 64);
+                for (int h = 0; h < 2; ++h) {
+                    const __m512i p = _mm512_permutexvar_epi8(h ? ia1 : ia0, Z);
+                    const __m512i w = _mm512_and_si512(_mm512_srlv_epi32(p, sv), m0F);
+                    const int kk = b * 32 + t * 16 + hf * 8 + h * 4;
+                    acc = _mm512_dpbusd_epi32(acc, w, _mm512_xor_si512(_mm512_set1_epi32(ld_i32(a + kk)), flip));
+                }
+            }
+        }
+        int asum = -128 * 32;
+        for (int k = 0; k < 32; ++k) asum += a[b * 32 + k];
+        const __m512 dw = rv.f16(2048 + b * 32);
+        __m512 t;
+        if (Q41) t = _mm512_fmadd_ps(_mm512_cvtepi32_ps(acc), dw, _mm512_mul_ps(rv.f16(2304 + b * 32), _mm512_set1_ps(float(asum))));
+        else     t = _mm512_mul_ps(_mm512_cvtepi32_ps(_mm512_sub_epi32(acc, _mm512_set1_epi32(8 * asum))), dw);
+        y = _mm512_fmadd_ps(t, _mm512_set1_ps(ad[b]), y);
+    }
+    return y;
+}
+
 // Q8_0: a = 256 biased u8 (8 blocks of 32), ad = 8 f32 block scales
 template <class R>
 XD_TGT inline __m512 rec_q8(const R & rv, const uint8_t * a, const float * ad, const Tabs & T) {
@@ -342,6 +373,8 @@ XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, in
                 if (F == Fmt::Q4_K)      y[l][gl] = _mm512_add_ps(y[l][gl], rec_q4(rv, act.k8 + kb, T));
                 else if (F == Fmt::Q5_K) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q5(rv, act.k8 + kb, T));
                 else if (F == Fmt::Q6_K) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q6(rv, act.k8 + kb, T));
+                else if (F == Fmt::Q4_0) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q40<false>(rv, act.q0 + kb * 256, act.d0 + kb * 8, T));
+                else if (F == Fmt::Q4_1) y[l][gl] = _mm512_add_ps(y[l][gl], rec_q40<true>(rv, act.q0 + kb * 256, act.d0 + kb * 8, T));
                 else                     y[l][gl] = _mm512_add_ps(y[l][gl], rec_q8(rv, act.q0 + kb * 256, act.d0 + kb * 8, T));
             }
         }
@@ -367,6 +400,8 @@ XD_TGT void run_item(const Geom & g, const uint8_t * w, const ActRef & act, int6
         case Fmt::Q4_K: run_item_t<Fmt::Q4_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
         case Fmt::Q5_K: run_item_t<Fmt::Q5_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
         case Fmt::Q6_K: run_item_t<Fmt::Q6_K>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
+        case Fmt::Q4_0: run_item_t<Fmt::Q4_0>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
+        case Fmt::Q4_1: run_item_t<Fmt::Q4_1>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
         default:        run_item_t<Fmt::Q8_0>(g, w, act, s, chain, lane0, nl, sb, kb0, kb1, out, partial, T); break;
     }
 }
@@ -444,7 +479,7 @@ XD_TGT static void prepare_acts(const CpuDecodeJob * jobs, size_t nj) {
     g_in_of.assign(nj, 0);
     size_t total = 0;
     for (size_t j = 0; j < nj; ++j) {
-        const bool q80 = jobs[j].geom.fmt == Fmt::Q8_0;
+        const bool q80 = blocks32(jobs[j].geom.fmt);
         size_t e = g_ins.size();
         for (size_t q = 0; q < g_ins.size(); ++q) {
             if (g_ins[q].x == jobs[j].x && g_ins[q].k == jobs[j].geom.k && g_ins[q].q80 == q80) { e = q; break; }
@@ -499,7 +534,7 @@ void cpu_pack_npu_act(Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, in
     const int32_t hdr[6] = { int32_t(groups), int32_t(k_use), int32_t(fmt_info(fmt).qt), int32_t(nact - 1), int32_t(n_w), int32_t(groups * nbk) };
     std::memcpy(a.data(), hdr, sizeof(hdr));
     uint8_t * p = a.data() + 64;
-    if (fmt == Fmt::Q8_0) {       // q[K] signed | f32 d[K/32]   (CPU format: q + 128, then f32 d[K/32])
+    if (blocks32(fmt)) {          // q[K] signed | f32 d[K/32]   (CPU format: q + 128, then f32 d[K/32])
         const uint8_t * q = static_cast<const uint8_t *>(act);
         for (int64_t i = 0; i < k_use; ++i) p[i] = uint8_t(q[i] ^ 0x80);
         std::memcpy(p + k_use, q + k_full, size_t(k_use / 32) * 4);

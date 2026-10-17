@@ -48,6 +48,8 @@ static bool xdna2_fmt_of(ggml_type type, layout::Fmt & fmt) {
         case GGML_TYPE_Q4_K: fmt = layout::Fmt::Q4_K; return true;
         case GGML_TYPE_Q5_K: fmt = layout::Fmt::Q5_K; return true;
         case GGML_TYPE_Q6_K: fmt = layout::Fmt::Q6_K; return true;
+        case GGML_TYPE_Q4_0: fmt = layout::Fmt::Q4_0; return true;
+        case GGML_TYPE_Q4_1: fmt = layout::Fmt::Q4_1; return true;
         default:             return false;
     }
 }
