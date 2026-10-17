@@ -2,20 +2,20 @@
 # Build the NPU flash-attention kernel (fa.cc + genfa.py) for ggml-xdna2: one xclbin; per supported pair count R (1 2 4 8 16) three reference
 # instruction streams: base (nb 2, kvmax 4096), nb (nb 4: affine), kv (kvmax 8192: linear).  Does not touch the NPU.
 #
-# usage: build_fa.sh <mlir-aie-env-dir> <outdir>
+# usage: build_fa.sh <mlir-aie-env-dir> <outdir> [D (128|256, default 256)] [kv heads (4|8, default 4)]
 # writes <outdir>/kernel.xclbin, insts_r<R>_{base,nb,kv}.bin, meta.txt
 export LC_ALL=C
 H=$(cd "$(dirname "$0")" && pwd)
-TOOL=$1; OUT=$2
+TOOL=$1; OUT=$2; D=${3:-256}; NKV=${4:-4}
 . "$H/env.sh" "$TOOL" || exit 10
 mkdir -p "$OUT/work" && cd "$OUT/work" || exit 11
 STACK=4096
-$PEANOCC -fstack-usage -I"$H" -c "$H/fa.cc" -o k.o || { echo CCFAIL; exit 12; }
+$PEANOCC -fstack-usage -DD=$D -I"$H" -c "$H/fa.cc" -o k.o || { echo CCFAIL; exit 12; }
 # stack guard: the deepest kernel frame plus the IRON core main must fit the core stack (an overflow silently corrupts the fifo buffers)
 SU=$(awk '{print $2}' k.su | sort -n | tail -1)
 [ $((SU + 1024)) -le $STACK ] || { echo "STACK GUARD: kernel frame $SU B + 1 KB > stack $STACK"; exit 17; }
 build() {   # name pairs nb kvmax
-  python "$H/genfa.py" --obj k.o --pairs $2 --nb $3 --kvmax $4 --stack $STACK > $1.mlir 2> $1.meta || { echo GENFAIL $1; cat $1.meta; return 13; }
+  python "$H/genfa.py" --obj k.o --pairs $2 --nb $3 --kvmax $4 --D $D --nkv $NKV --stack $STACK > $1.mlir 2> $1.meta || { echo GENFAIL $1; cat $1.meta; return 13; }
   if [ $1 = r16_base ]; then XB="--get-xclbin --xclbin-name=$1.xclbin --dump-intermediates"; else XB=""; fi
   aiecc --no-xchesscc --peano=$PEANO_INSTALL_DIR $XB --get-npu-insts --npu-insts-name=$1.insts.bin $1.mlir > $1.log 2>&1 || { echo AIECCFAIL $1; tail -c 2000 $1.log; return 14; }
 }

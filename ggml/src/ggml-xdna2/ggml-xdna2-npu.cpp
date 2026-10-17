@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <cstring>
 
 #include <sys/stat.h>
@@ -107,8 +109,12 @@ KernelCache & prefill_kernel_cache() {
     return c;
 }
 
-KernelCache & attention_kernel_cache() {
-    static KernelCache c([] {
+KernelCache & attention_kernel_cache(const FaShape & shape) {
+    static std::mutex mu;
+    static std::map<std::string, std::unique_ptr<KernelCache>> caches;
+    std::lock_guard<std::mutex> lk(mu);
+    auto & c = caches[shape.variant()];
+    if (!c) {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
         cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
@@ -116,9 +122,11 @@ KernelCache & attention_kernel_cache() {
         cfg.product        = Product::Attention;
         cfg.max_jobs       = 4;
         cfg.log            = kernel_log;
-        return cfg;
-    }());
-    return c;
+        cfg.variant        = shape.variant();
+        cfg.build_args     = { std::to_string(shape.d), std::to_string(shape.nkv) };
+        c = std::make_unique<KernelCache>(cfg);
+    }
+    return *c;
 }
 
 bool reference_mode() {
@@ -179,7 +187,6 @@ void request_kernels(const layout::Geom & geom) {
     if (KernelCache::supports(geom)) {
         kernel_cache().request();
         if (prefill_enabled()) prefill_kernel_cache().request();
-        if (attention_enabled()) attention_kernel_cache().request();
     }
 }
 

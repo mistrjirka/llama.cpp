@@ -59,6 +59,8 @@ public:
         Product     product = Product::Decode;
         std::string toolchain_env;    // mlir-aie python environment (bin/aiecc, bin/python, lib/python*/site-packages/llvm-aie)
         int         max_jobs = 4;     // unused (one kernel), kept for tools
+        std::string variant;          // build variant (its own cache directory), e.g. the attention shape "d128k8"
+        std::vector<std::string> build_args;   // extra arguments of the build script
         std::function<void(int level /*0 info, 1 warn, 2 error*/, const std::string &)> log;
     };
 

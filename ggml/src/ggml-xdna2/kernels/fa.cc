@@ -1,14 +1,14 @@
-// Flash-attention prefill core kernel (AIE2P), head dim 256: one core = 16 queries (2 tiles of 8) of one q head, K/V streamed in 16-key blocks.
+// Flash-attention prefill core kernel (AIE2P), head dim D (-DD=128 or 256, default 256): one core = 16 queries (2 tiles of 8) of one q head, K/V streamed in 16-key blocks.
 // Both matmuls in bfp16ebs8 (mac_8x8_8x8T, fp32 accumulate); the softmax works in the log2 domain (the host pre-scales Q by log2(e) * scale).
 // Lazy max: the running max m is only raised when a row max exceeds it by more than TH, so P <= 2^TH.  The row sums l are a matmul of the
 // same bfp16 P with a ones tile (LT, every column = l), so O and l see identical P and identical rescales; the host divides O by l.
 // m only has to be used consistently, so it is kept in bf16 (row max and row broadcast use the bf16 8x8 transpose).
 //
 // Inputs are host-encoded bfp16ebs8 (72-byte 8x8 tiles = 8 rows of [shared exponent][8 x int8]), in consumption order:
-//   Q object  : [dt 32][qt 2] tiles  [8 q][8 d]           (4608 B)
-//   K block   : [dt 32][kt 2] tiles  [8 keys][8 d]        (16 keys, 4608 B; the host's bfp16 shadow of the KV cache)
-//   V block   : [dt 32][kt 2] tiles  [8 d][8 keys]        (V^T)
-//   O (f32)   : [qt 2][dt 32][8 q][8 d] unnormalized, then l: [qt 2][64] (the LT tiles)
+//   Q object  : [dt D/8][qt 2] tiles  [8 q][8 d]          (D * 18 B)
+//   K block   : [dt D/8][kt 2] tiles  [8 keys][8 d]       (16 keys; the host's bfp16 shadow of the KV cache)
+//   V block   : [dt D/8][kt 2] tiles  [8 d][8 keys]       (V^T)
+//   O (f32)   : [qt 2][dt D/8][8 q][8 d] unnormalized, then l: [qt 2][64] (the LT tiles)
 // Header (first object of the V stream, i32): 0 nb (blocks in the stream), 1 d0 (block index of the q tile of the qi = 0 cores)
 // Identity (per core, i32): 0 me (index of this core's Q in the Q prefix of the K stream), 1 qi (q tile of the pair: 0 or 1)
 // Causality: the q tile of a core is block d = d0 + qi; blocks j < d are fully visible, j == d is the diagonal (masked per 8x8 tile),
@@ -17,7 +17,9 @@
 #include "aie_kernel_utils.h"
 #include <stdint.h>
 
+#ifndef D
 #define D 256
+#endif
 #define NDT (D / 8)
 #define OBJB (NDT * 2 * 72)
 #define TH 8.0f

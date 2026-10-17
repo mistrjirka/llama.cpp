@@ -536,17 +536,28 @@ static void ggml_backend_xdna2_free(ggml_backend_t backend) {
 //
 
 // shapes the attention kernel serves (the runtime conditions -- a causal mask -- are checked in xdna2_fa_causal_p0)
+static FaShape xdna2_fa_shape(const ggml_tensor * op) {
+    FaShape sh;
+    sh.d   = int(op->src[0]->ne[0]);
+    sh.nh  = int(op->src[0]->ne[2]);
+    sh.nkv = int(op->src[1]->ne[2]);
+    return sh;
+}
 static bool xdna2_fa_shape_ok(const ggml_tensor * op) {
     const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
     if (op->src[4] != nullptr || mask == nullptr || mask->type != GGML_TYPE_F16) return false;
+    if (std::strstr(mask->name, "swa") != nullptr) return false;        // sliding-window masks are never plain causal (the host path is slow)
     if (q->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) return false;
     if (k->type != v->type || (k->type != GGML_TYPE_F16 && k->type != GGML_TYPE_BF16)) return false;
-    if (q->ne[0] != FA_D || k->ne[0] != FA_D || v->ne[0] != FA_D || op->ne[0] != FA_D) return false;
-    if (q->ne[2] != FA_NH || k->ne[2] != FA_NKV || v->ne[2] != FA_NKV || q->ne[3] != 1 || k->ne[3] != 1 || v->ne[3] != 1) return false;
-    if (op->ne[1] != FA_NH || op->ne[2] != q->ne[1] || op->ne[3] != 1) return false;
+    const FaShape sh = xdna2_fa_shape(op);
+    if (!sh.supported()) return false;
+    const int64_t D = sh.d;
+    if (k->ne[0] != D || v->ne[0] != D || op->ne[0] != D) return false;
+    if (v->ne[2] != sh.nkv || q->ne[3] != 1 || k->ne[3] != 1 || v->ne[3] != 1) return false;
+    if (op->ne[1] != sh.nh || op->ne[2] != q->ne[1] || op->ne[3] != 1) return false;
     if (k->ne[1] != v->ne[1] || k->nb[1] != v->nb[1] || k->nb[2] != v->nb[2]) return false;
     if (q->nb[0] != sizeof(float) || k->nb[0] != ggml_type_size(k->type) || op->nb[0] != sizeof(float)) return false;
-    if (k->nb[1] % 8 || size_t(FA_NKV) * FA_D * 2 > k->nb[1] || k->nb[2] != size_t(FA_D) * 2) return false;   // cells = rows of 4 contiguous heads
+    if (k->nb[1] % 8 || size_t(sh.nkv) * D * 2 > k->nb[1] || k->nb[2] != size_t(D) * 2) return false;   // cells = rows of nkv contiguous heads
     if (mask->ne[0] != k->ne[1] || mask->ne[1] < q->ne[1] || mask->ne[2] != 1 || mask->ne[3] != 1) return false;
     float max_bias = 0.0f, softcap = 0.0f;
     std::memcpy(&max_bias, (const float *) op->op_params + 1, sizeof(float));
@@ -577,57 +588,46 @@ static int64_t xdna2_fa_causal_p0(const ggml_tensor * mask, int64_t n_kv, int64_
     return c_p0;
 }
 
-// Host attention for the shapes the kernel serves, any mask: softmax(scale * q k^T + mask) v. Only for masks the NPU kernel cannot express
-// (several sequences in one batch, cells not in position order); slow, so it warns once.
+// FLASH_ATTN_EXT whose mask is not plain causal: ggml's CPU flash attention (the CPU backend from the registry) on the same tensors.
 static void xdna2_fa_host(const ggml_tensor * op) {
+    static ggml_backend_t cpu = [] {
+        ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+        ggml_backend_t b = dev ? ggml_backend_dev_init(dev, nullptr) : nullptr;
+        if (b) {
+            ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+            auto set_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
+            if (set_threads) set_threads(b, pf_threads());
+        }
+        return b;
+    }();
+    GGML_ASSERT(cpu && "ggml-xdna2: no CPU backend for the attention fallback");
     static bool warned = false;
     if (!warned) {
-        GGML_LOG_WARN("ggml-xdna2: FLASH_ATTN_EXT with a non-causal mask runs on the slow host path (the NPU kernel needs a plain causal mask)\n");
+        GGML_LOG_WARN("ggml-xdna2: FLASH_ATTN_EXT with a non-causal mask runs on the CPU (the NPU kernel needs a plain causal mask)\n");
         warned = true;
     }
-    const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
-    const int64_t n_kv = k->ne[1], n_tok = q->ne[1];
-    float scale = 1.0f;
-    std::memcpy(&scale, (const float *) op->op_params + 0, sizeof(float));
-    const bool bf16 = k->type == GGML_TYPE_BF16;
-    std::vector<float> kf(size_t(n_kv) * FA_D), vf(size_t(n_kv) * FA_D);
-    for (int g = 0; g < FA_NKV; ++g) {
-        for (int64_t c = 0; c < n_kv; ++c) {
-            const char * kr = static_cast<const char *>(k->data) + c * k->nb[1] + g * k->nb[2];
-            const char * vr = static_cast<const char *>(v->data) + c * v->nb[1] + g * v->nb[2];
-            if (bf16) { ggml_bf16_to_fp32_row((const ggml_bf16_t *) kr, &kf[c * FA_D], FA_D); ggml_bf16_to_fp32_row((const ggml_bf16_t *) vr, &vf[c * FA_D], FA_D); }
-            else      { ggml_fp16_to_fp32_row((const ggml_fp16_t *) kr, &kf[c * FA_D], FA_D); ggml_fp16_to_fp32_row((const ggml_fp16_t *) vr, &vf[c * FA_D], FA_D); }
-        }
-#if defined(_OPENMP)
-        #pragma omp parallel for collapse(2) schedule(dynamic, 8) num_threads(pf_threads())
-#endif
-        for (int hh = 0; hh < FA_NH / FA_NKV; ++hh) {
-            for (int64_t t = 0; t < n_tok; ++t) {
-                const int h = g * (FA_NH / FA_NKV) + hh;
-                const float * qr = (const float *) ((const char *) q->data + t * q->nb[1] + h * q->nb[2]);
-                const ggml_fp16_t * mr = (const ggml_fp16_t *) ((const char *) mask->data + t * mask->nb[1]);
-                std::vector<float> sc((size_t) n_kv);
-                float mx = -INFINITY;
-                for (int64_t c = 0; c < n_kv; ++c) {
-                    const float m = ggml_fp16_to_fp32(mr[c]);
-                    if (m == -INFINITY) { sc[c] = -INFINITY; continue; }
-                    float d = 0.0f;
-                    for (int e = 0; e < FA_D; ++e) d += qr[e] * kf[c * FA_D + e];
-                    sc[c] = d * scale + m;
-                    mx = std::max(mx, sc[c]);
-                }
-                float acc[FA_D] = {}, sum = 0.0f;
-                for (int64_t c = 0; c < n_kv && mx != -INFINITY; ++c) {
-                    if (sc[c] == -INFINITY) continue;
-                    const float p = std::exp(sc[c] - mx);
-                    sum += p;
-                    for (int e = 0; e < FA_D; ++e) acc[e] += p * vf[c * FA_D + e];
-                }
-                float * d = (float *) ((char *) op->data + t * op->nb[2] + h * op->nb[1]);
-                for (int e = 0; e < FA_D; ++e) d[e] = sum > 0.0f ? acc[e] / sum : 0.0f;
-            }
-        }
-    }
+    ggml_init_params ip = { 8 * ggml_tensor_overhead() + ggml_graph_overhead_custom(8, false), nullptr, true };
+    ggml_context * ctx = ggml_init(ip);
+    auto alias = [&](const ggml_tensor * t) {
+        ggml_tensor * r = ggml_new_tensor(ctx, t->type, GGML_MAX_DIMS, t->ne);
+        for (int i = 0; i < GGML_MAX_DIMS; ++i) r->nb[i] = t->nb[i];
+        r->data = t->data;
+        return r;
+    };
+    float scale, max_bias, softcap;
+    std::memcpy(&scale,    (const float *) op->op_params + 0, sizeof(float));
+    std::memcpy(&max_bias, (const float *) op->op_params + 1, sizeof(float));
+    std::memcpy(&softcap,  (const float *) op->op_params + 2, sizeof(float));
+    ggml_tensor * r = ggml_flash_attn_ext(ctx, alias(op->src[0]), alias(op->src[1]), alias(op->src[2]), op->src[3] ? alias(op->src[3]) : nullptr,
+                                          scale, max_bias, softcap);
+    std::memcpy(r->op_params, op->op_params, sizeof(op->op_params));
+    GGML_ASSERT(ggml_are_same_shape(r, op));
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) r->nb[i] = op->nb[i];
+    r->data = op->data;
+    ggml_cgraph * gf = ggml_new_graph_custom(ctx, 8, false);
+    ggml_build_forward_expand(gf, r);
+    ggml_backend_graph_compute(cpu, gf);
+    ggml_free(ctx);
 }
 
 static void ggml_backend_xdna2_flash_attn(ggml_backend_xdna2_context * ctx, ggml_tensor * op) {
@@ -640,6 +640,7 @@ static void ggml_backend_xdna2_flash_attn(ggml_backend_xdna2_context * ctx, ggml
     }
     const ggml_tensor * kc = k->view_src ? k->view_src : k;
     AttnJob j;
+    j.shape = xdna2_fa_shape(op);
     j.q = (const float *) q->data;
     j.q_tok_stride = q->nb[1];
     j.q_head_stride = q->nb[2];
@@ -1028,7 +1029,9 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             if (!attention_enabled() || reference_mode()) return xdna2_reject(20);
             if (!xdna2_fa_shape_ok(op)) return xdna2_reject(21);
             if (op->src[0]->ne[1] < attention_min_tokens() || op->src[1]->ne[1] < attention_min_kv()) return xdna2_reject(22);
-            return npu_executor().attention_available() || xdna2_reject(23);
+            if (!npu_executor().attention_available(xdna2_fa_shape(op))) return xdna2_reject(23);
+            attention_kernel_cache(xdna2_fa_shape(op)).request();      // built in the background; the first run waits for it
+            return true;
         }
 
         case GGML_OP_GLU:

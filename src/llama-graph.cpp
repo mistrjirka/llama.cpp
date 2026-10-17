@@ -3012,6 +3012,7 @@ llm_graph_input_attn_no_cache * llm_graph_context::build_attn_inp_no_cache() con
     if (hparams.swa_type != LLAMA_SWA_TYPE_NONE) {
         inp->self_kq_mask_swa = ggml_new_tensor_4d(ctx0, type_mask, n_kv, n_tokens, 1, 1);
         ggml_set_input(inp->self_kq_mask_swa);
+        ggml_set_name(inp->self_kq_mask_swa, "attn_inp_kq_mask_swa");
 
         inp->self_kq_mask_swa_cnv = inp->self_kq_mask_swa;
     } else {
@@ -3636,6 +3637,7 @@ llm_graph_input_attn_k_dsa_iswa * llm_graph_context::build_attn_inp_k_dsa_iswa()
     inp_swa->self_k_idxs = mctx_cur->get_swa()->build_input_k_idxs(ctx0, ubatch);
 
     inp_swa->self_kq_mask = build_attn_inp_kq_mask(ctx0, mctx_cur->get_swa(), ubatch, cparams);
+    ggml_set_name(inp_swa->self_kq_mask, "attn_inp_kq_mask_swa");     // sliding-window: not a plain causal mask (backends may tell them apart)
     inp_swa->self_kq_mask_cnv = inp_swa->self_kq_mask;
 
     auto inp = std::make_unique<llm_graph_input_attn_k_dsa_iswa>(std::move(inp_dsa), std::move(inp_swa), mctx_cur);
@@ -3694,6 +3696,7 @@ llm_graph_input_attn_kv_iswa * llm_graph_context::build_attn_inp_kv_iswa() const
         inp->self_v_idxs_swa = mctx_cur->get_swa()->build_input_v_idxs(ctx0, ubatch);
 
         inp->self_kq_mask_swa = build_attn_inp_kq_mask(ctx0, mctx_cur->get_swa(), ubatch, cparams);
+        ggml_set_name(inp->self_kq_mask_swa, "attn_inp_kq_mask_swa");     // sliding-window: not a plain causal mask (backends may tell them apart)
         inp->self_kq_mask_swa_cnv = inp->self_kq_mask_swa;
     }
 
@@ -3724,6 +3727,7 @@ llm_graph_input_attn_k_iswa * llm_graph_context::build_attn_inp_k_iswa() const {
         inp->self_k_idxs_swa = mctx_cur->get_swa()->build_input_k_idxs(ctx0, ubatch);
 
         inp->self_kq_mask_swa = build_attn_inp_kq_mask(ctx0, mctx_cur->get_swa(), ubatch, cparams);
+        ggml_set_name(inp->self_kq_mask_swa, "attn_inp_kq_mask_swa");     // sliding-window: not a plain causal mask (backends may tell them apart)
         inp->self_kq_mask_swa_cnv = inp->self_kq_mask_swa;
     }
 
@@ -3938,6 +3942,7 @@ llm_graph_input_mem_hybrid_iswa * llm_graph_context::build_inp_mem_hybrid_iswa()
         inp_attn->self_v_idxs_swa = attn_ctx->get_swa()->build_input_v_idxs(ctx0, ubatch);
 
         inp_attn->self_kq_mask_swa = build_attn_inp_kq_mask(ctx0, attn_ctx->get_swa(), ubatch, cparams);
+        ggml_set_name(inp_attn->self_kq_mask_swa, "attn_inp_kq_mask_swa");     // sliding-window: not a plain causal mask (backends may tell them apart)
         inp_attn->self_kq_mask_swa_cnv = inp_attn->self_kq_mask_swa;
     }
 

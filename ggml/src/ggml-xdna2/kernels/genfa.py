@@ -1,12 +1,14 @@
-# Flash-attention prefill design (IRON, fa.cc): GQA with 4 kv heads x 4 q heads per kv head, head dim 256.  One "pair" = 32 queries (2 q tiles
-# of 16) x 16 q heads; a dispatch runs `pairs` consecutive pairs (pair r: nb + 2r K/V blocks of 16 keys).
-#   kv head g owns columns 2g, 2g+1; its 8 cores are (qi = column parity: q tile of the pair, hh = q head within the group).
-#   K stream (shim 2g -> memtile 2g -> broadcast to the 8 cores):   per pair the Q prefix (8 objects, one per core), then the K blocks
-#   V stream (shim 2g+1 -> memtile 2g+1 -> broadcast):              per pair the header object, then the V blocks
-#   O: each core 2 x 32 tiles of 8x8 f32 + 128 row sums -> joined per column -> shim
-# Buffers (all bfp16ebs8 host-encoded, 4608 B objects): qbuf [pair][g 4][core 8][4608] + [pair][header object 4608 (i32 nb, d0 at its start)];
-# kbuf/vbuf = the bfp16 shadow of one layer's KV cache [kv head 4][kvmax/16 blocks][4608]; obuf f32 [pair][col 8][core 4][OC].
-# The instruction stream depends on two host values: nb (BD lengths (nb + 2r) * 4608: affine) and kvmax (kv head offsets g * kvmax/16 * 4608: linear).
+# Flash-attention prefill design (IRON, fa.cc): GQA with NKV kv heads (4 or 8) x up to 4 q heads per kv head, head dim D (128 or 256).
+# One "unit" = 16 * CPK queries (CPK = 8 / NKV q tiles of 16) x all q heads; a dispatch runs `pairs` consecutive units (unit r: nb + CPK r K/V blocks).
+#   kv head g owns columns CPK g .. CPK g + CPK - 1; its 4 CPK cores are (qi = column within the kv head: q tile of the unit, hh = row: q head
+#   within the group).
+#   NKV 4: K stream shim 2g -> memtile 2g, V stream shim 2g+1 -> memtile 2g+1 (one channel each), both broadcast to the 8 cores of the kv head.
+#   NKV 8: K and V streams on the two MM2S channels of shim g -> memtile g -> broadcast to the 4 cores of column g.
+#   K stream: per unit the Q prefix (NC objects, one per core), then the K blocks.  V stream: per unit the header object, then the V blocks.
+#   O: each core 2 x D/8 tiles of 8x8 f32 + 128 row sums -> joined per column -> shim
+# Buffers (all bfp16ebs8 host-encoded, D * 18 B objects): qbuf [unit][g][core NC][obj] + [unit][header object (i32 nb, d0 at its start)];
+# kbuf/vbuf = the bfp16 shadow of one layer's KV cache [kv head][kvmax/16 blocks][obj]; obuf f32 [unit][col 8][core 4][OC].
+# The instruction stream depends on two host values: nb (BD lengths (nb + CPK r) * obj: affine) and kvmax (kv head offsets g * kvmax/16 * obj: linear).
 import argparse, sys
 import numpy as np
 from ml_dtypes import bfloat16
@@ -22,11 +24,13 @@ p.add_argument("--obj", required=True)
 p.add_argument("--nb", type=int, required=True)
 p.add_argument("--kvmax", type=int, required=True)    # shadow KV cache rows per kv head
 p.add_argument("--stack", type=int, default=4096)
-p.add_argument("--pairs", type=int, default=1)       # 32-query pairs per dispatch (pair p: nb + 2p blocks)
+p.add_argument("--pairs", type=int, default=1)       # units per dispatch (unit r: nb + CPK r blocks)
+p.add_argument("--D", type=int, default=256)
+p.add_argument("--nkv", type=int, default=4)
 a = p.parse_args()
-G = 4; NKV = 4; D = 256; BQ = 16; BK = 16; NC = 8
+G = NKV = a.nkv; D = a.D; BQ = 16; BK = 16; CPK = 8 // NKV; NC = 4 * CPK
 OBJ = BQ * D * 9 // 8                                 # 4608 B bfp16 (= 16 keys too)
-OC = 2 * 32 * 64 + 128                                # f32 per core: unnormalized O + row sums
+OC = 2 * (D // 8) * 64 + 128                          # f32 per core: unnormalized O + row sums
 obj_ty = np.ndarray[(OBJ,), np.dtype[np.int8]]
 o_core_ty = np.ndarray[(OC,), np.dtype[np.float32]]
 o_col_ty = np.ndarray[(4 * OC,), np.dtype[np.float32]]
@@ -53,15 +57,15 @@ def core_fn(of_k, of_v, of_o, khd, kq, kin, kbl, ken, hdr, ident):
 
 workers, k_prods, v_prods, o_conses = [], [], [], []
 for g in range(G):
-    ck, cv = 2 * g, 2 * g + 1
+    ck, cv = (CPK * g, CPK * g + 1) if CPK == 2 else (g, g)
     ofk = ObjectFifo(obj_ty, name=f"k{g}", depth=2)
     kf = ofk.cons().forward(tile=Tile(col=ck, row=1), obj_type=obj_ty, depth=2, name=f"km{g}")
     k_prods.append(ofk.prod(tile=Tile(col=ck, row=0)))
     ofv = ObjectFifo(obj_ty, name=f"v{g}", depth=2)
     vf = ofv.cons().forward(tile=Tile(col=cv, row=1), obj_type=obj_ty, depth=2, name=f"vm{g}")
     v_prods.append(ofv.prod(tile=Tile(col=cv, row=0)))
-    for qi in range(2):
-        c = 2 * g + qi
+    for qi in range(CPK):
+        c = CPK * g + qi
         of_out = ObjectFifo(o_col_ty, name=f"out{c}", depth=1)
         subs = of_out.prod().join([i * OC for i in range(4)], tile=Tile(col=c, row=1), obj_types=[o_core_ty] * 4,
                                   names=[f"o{c}_{i}" for i in range(4)], depths=[1] * 4)
@@ -78,7 +82,7 @@ Q_EL = R * (G * NC * OBJ + OBJ)                       # per pair: Q objects, the
 HOFF = R * G * NC * OBJ
 KVB = a.kvmax // BK * OBJ                             # bytes per kv head
 KV_EL = NKV * KVB
-O_EL = R * 2 * G * 4 * OC
+O_EL = R * 8 * 4 * OC
 def sequence(qbuf, kbuf, vbuf, obuf, *hs):
     # one task group per pair; pair r - 1 is awaited/freed only after pair r is queued, so the DMAs never run dry
     # and at most two pairs' BDs (3 per shim tile each) are live
@@ -86,14 +90,14 @@ def sequence(qbuf, kbuf, vbuf, obuf, *hs):
     groups = []
     for r in range(R):
         tg = TaskGroup()
-        nb = a.nb + 2 * r
+        nb = a.nb + CPK * r
         for g in range(G):
             kp[g].fill(qbuf, tap=TensorAccessPattern((Q_EL,), (r * G + g) * NC * OBJ, [1, 1, 1, NC * OBJ], [0, 0, 0, 1]), group=tg)
             kp[g].fill(kbuf, tap=TensorAccessPattern((KV_EL,), g * KVB, [1, 1, 1, nb * OBJ], [0, 0, 0, 1]), group=tg)
             vp[g].fill(qbuf, tap=TensorAccessPattern((Q_EL,), HOFF + r * OBJ, [1, 1, 1, OBJ], [0, 0, 0, 1]), group=tg)
             vp[g].fill(vbuf, tap=TensorAccessPattern((KV_EL,), g * KVB, [1, 1, 1, nb * OBJ], [0, 0, 0, 1]), group=tg)
-        for c in range(2 * G):
-            oc[c].drain(obuf, tap=TensorAccessPattern((O_EL,), (r * 2 * G + c) * 4 * OC, [1, 1, 1, 4 * OC], [0, 0, 0, 1]), wait=True, group=tg)
+        for c in range(8):
+            oc[c].drain(obuf, tap=TensorAccessPattern((O_EL,), (r * 8 + c) * 4 * OC, [1, 1, 1, 4 * OC], [0, 0, 0, 1]), wait=True, group=tg)
         groups.append(tg)
         if r >= 1:
             groups[r - 1].finish()
@@ -102,4 +106,4 @@ rt = Runtime(sequence, [np.ndarray[(Q_EL,), np.dtype[np.int8]], np.ndarray[(KV_E
                         np.ndarray[(KV_EL,), np.dtype[np.int8]], np.ndarray[(O_EL,), np.dtype[np.float32]],
                         *k_prods, *v_prods, *o_conses])
 print(Program(NPU2(), rt, workers=workers).resolve_program())
-sys.stderr.write(f"META nb={a.nb} groups={G} kvmax={a.kvmax} pairs={R}\n")
+sys.stderr.write(f"META nb={a.nb} D={D} nkv={NKV} kvmax={a.kvmax} pairs={R}\n")

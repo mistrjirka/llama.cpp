@@ -112,7 +112,9 @@ bool KernelCache::supports(const layout::Geom & g) {
 }
 
 static const char * product_dir(Product p) { return p == Product::Prefill ? "prefill" : p == Product::Attention ? "attention" : "unified"; }
-std::string KernelCache::dir() const { return cfg_.cache_dir + "/" + hash_ + "/" + product_dir(cfg_.product); }
+std::string KernelCache::dir() const {
+    return cfg_.cache_dir + "/" + hash_ + "/" + product_dir(cfg_.product) + (cfg_.variant.empty() ? "" : "-" + cfg_.variant);
+}
 
 static const std::vector<const char *> kInstFilesDecode  = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin", "insts_sw.bin" };
 static const int kPfTiles[] = { 1, 2, 4, 8, 16, 32 };
@@ -277,13 +279,15 @@ bool KernelCache::run_build(double & seconds) {
         std::lock_guard<std::mutex> lk(mu_);
         serial = tmp_counter_++;
     }
-    const std::string tmp = root + "/.tmp." + std::to_string(getpid()) + "." + std::to_string(serial) + "." + product_dir(cfg_.product);
+    const std::string tmp = root + "/.tmp." + std::to_string(getpid()) + "." + std::to_string(serial) + "." + product_dir(cfg_.product) + cfg_.variant;
     const std::string fin = dir();
     mkdirs(tmp);
 
     const std::string script = cfg_.kernel_src_dir + (cfg_.product == Product::Prefill ? "/build_prefill.sh" :
                                                        cfg_.product == Product::Attention ? "/build_fa.sh" : "/build_kernel.sh");
-    const char * argv[] = { "bash", script.c_str(), cfg_.toolchain_env.c_str(), tmp.c_str(), nullptr };
+    std::vector<const char *> argv = { "bash", script.c_str(), cfg_.toolchain_env.c_str(), tmp.c_str() };
+    for (const auto & a : cfg_.build_args) argv.push_back(a.c_str());
+    argv.push_back(nullptr);
 
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
@@ -291,8 +295,8 @@ bool KernelCache::run_build(double & seconds) {
     posix_spawn_file_actions_addopen(&fa, 1, log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     posix_spawn_file_actions_adddup2(&fa, 1, 2);
     pid_t pid = 0;
-    say(0, std::string("building the ") + product_dir(cfg_.product) + " kernel");
-    int rc = posix_spawn(&pid, "/bin/bash", &fa, nullptr, const_cast<char * const *>(argv), environ);
+    say(0, std::string("building the ") + product_dir(cfg_.product) + (cfg_.variant.empty() ? "" : " " + cfg_.variant) + " kernel");
+    int rc = posix_spawn(&pid, "/bin/bash", &fa, nullptr, const_cast<char * const *>(argv.data()), environ);
     posix_spawn_file_actions_destroy(&fa);
     bool ok = false;
     if (rc == 0) {

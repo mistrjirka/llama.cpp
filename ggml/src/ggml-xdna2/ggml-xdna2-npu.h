@@ -26,6 +26,7 @@
 #include "ggml-xdna2-cpu.h"
 #include "ggml-xdna2-kernels.h"
 #include "ggml-xdna2-bfp.h"
+#include "ggml-xdna2-attn.h"
 
 namespace xdna2 {
 
@@ -43,14 +44,15 @@ struct PrefillJob {
     const float *   epi_other = nullptr;
 };
 
-// One FLASH_ATTN_EXT (prefill) on the attention kernel: head dim 256, 16 q heads, 4 kv heads, causal over the cache cells 0 .. p0 + t for query t
+// One FLASH_ATTN_EXT (prefill) on the attention kernel of its shape (FaShape), causal over the cache cells 0 .. p0 + t for query t
 // (the mask was checked by the caller), cells = positions.  The executor keeps a bfp16 shadow of the layer's KV cache (identified by kv_id).
 struct AttnJob {
-    const float * q = nullptr;           // query t of head h at (char *) q + t * q_tok_stride + h * q_head_stride (256 floats)
+    FaShape       shape;
+    const float * q = nullptr;           // query t of head h at (char *) q + t * q_tok_stride + h * q_head_stride (D floats)
     size_t        q_tok_stride = 0, q_head_stride = 0;
     int64_t       n_tok = 0;             // queries
     int64_t       p0 = 0;                // cell (position) of query 0
-    const void *  k = nullptr;           // cache views: cell c of kv head g at (char *) k + c * kv_row_stride + g * kv_head_stride (256 f16/bf16)
+    const void *  k = nullptr;           // cache views: cell c of kv head g at (char *) k + c * kv_row_stride + g * kv_head_stride (D f16/bf16)
     const void *  v = nullptr;
     bool          bf16 = false;
     size_t        kv_row_stride = 0, kv_head_stride = 0;
@@ -118,7 +120,7 @@ public:
     virtual bool run_prefill(const PrefillJob * jobs, size_t n_jobs) { (void) jobs; (void) n_jobs; return false; }
 
     // attention kernel available (built or buildable) and enabled
-    virtual bool attention_available() { return false; }
+    virtual bool attention_available(const FaShape & shape) { (void) shape; return false; }
     // run one attention job, blocking. false = failure.
     virtual bool run_attention(const AttnJob & job) { (void) job; return false; }
 
@@ -141,7 +143,7 @@ ComputePath & npu_path();
 // Global kernel caches (honour GGML_XDNA2_CACHE_DIR). Never null.
 KernelCache & kernel_cache();            // decode kernel
 KernelCache & prefill_kernel_cache();    // prefill kernel
-KernelCache & attention_kernel_cache();  // flash-attention kernel
+KernelCache & attention_kernel_cache(const FaShape & shape);  // flash-attention kernel of one shape
 
 // GGML_XDNA2_REFERENCE=1: run the host reference emulation instead of the NPU (tests/debug only).
 bool reference_mode();
