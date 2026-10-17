@@ -9,6 +9,7 @@ import argparse, sys
 import numpy as np
 from aie.iron import ObjectFifo, Program, Runtime, Worker, Kernel, Buffer
 from aie.iron.controlflow import range_
+from aie.iron.runtime.taskgroup import TaskGroup
 from aie.iron.device import NPU2, Tile
 from aie.helpers.taplib import TensorAccessPattern
 from aie.dialects import arith
@@ -21,7 +22,8 @@ p.add_argument("--mdepth", type=int, default=2)       # memtile side
 p.add_argument("--chain_words", type=int, required=True)
 p.add_argument("--a_words", type=int, required=True)
 p.add_argument("--a_rep", type=int, required=True)
-p.add_argument("--o_words", type=int, required=True)  # f32 words drained per column
+p.add_argument("--o_words", type=int, required=True)  # f32 words drained per column (per tile)
+p.add_argument("--tiles", type=int, default=1)        # 64-token tiles per dispatch (the same weights, one A tile and one Y tile each)
 a = p.parse_args()
 C = 8; CPC = 4; S = 1024; GSB = 5; AOBJ = 18432
 chunk_ty = np.ndarray[(S,), np.dtype[np.int8]]
@@ -75,17 +77,26 @@ for c in range(C):
                               tile=t, stack_size=a.stack))
 W_el = a.chain_words * C
 HDR_W = AOBJ // 4                                     # the header object (first A object), sent once
-A_el = HDR_W + a.a_words
-O_el = a.o_words * C
+A_TILE = HDR_W + a.a_words                            # one tile in the A BO: header object + the slabs (stored once)
+A_el = A_TILE * a.tiles
+O_el = a.o_words * C * a.tiles
 def sequence(wbuf, abuf, obuf, *hs):
+    # one task group per tile; tile t - 1 is awaited/freed after tile t is queued (16 BDs per shim tile), so the cores run the tiles back to back
     wp = hs[:C]; ap = hs[C]; oc_ = hs[C + 1:]
-    ap.fill(abuf, tap=TensorAccessPattern((A_el,), 0, [1, 1, 1, HDR_W], [0, 0, 0, 1]), wait=False)
-    ap.fill(abuf, tap=TensorAccessPattern((A_el,), HDR_W, [a.a_rep, 1, 1, a.a_words], [0, 0, 0, 1]), wait=False)
-    for i in range(C):
-        wp[i].fill(wbuf, tap=TensorAccessPattern((W_el,), i * a.chain_words, [1, 1, 1, a.chain_words], [0, 0, 0, 1]), wait=False)
-    for i in range(C):
-        oc_[i].drain(obuf, tap=TensorAccessPattern((O_el,), i * a.o_words, [1, 1, 1, a.o_words], [0, 0, 0, 1]), wait=True)
+    groups = []
+    for t in range(a.tiles):
+        tg = TaskGroup()
+        ap.fill(abuf, tap=TensorAccessPattern((A_el,), t * A_TILE, [1, 1, 1, HDR_W], [0, 0, 0, 1]), group=tg)
+        ap.fill(abuf, tap=TensorAccessPattern((A_el,), t * A_TILE + HDR_W, [a.a_rep, 1, 1, a.a_words], [0, 0, 0, 1]), group=tg)
+        for i in range(C):
+            wp[i].fill(wbuf, tap=TensorAccessPattern((W_el,), i * a.chain_words, [1, 1, 1, a.chain_words], [0, 0, 0, 1]), group=tg)
+        for i in range(C):
+            oc_[i].drain(obuf, tap=TensorAccessPattern((O_el,), (t * C + i) * a.o_words, [1, 1, 1, a.o_words], [0, 0, 0, 1]), wait=True, group=tg)
+        groups.append(tg)
+        if t >= 1:
+            groups[t - 1].finish()
+    groups[-1].finish()
 rt = Runtime(sequence, [np.ndarray[(W_el,), np.dtype[np.int32]], np.ndarray[(A_el,), np.dtype[np.int32]],
                         np.ndarray[(O_el,), np.dtype[np.float32]], *w_prods, a_prod, *out_conses])
 print(Program(NPU2(), rt, workers=workers).resolve_program())
-sys.stderr.write(f"META chain_words={a.chain_words} a_words={a.a_words} a_rep={a.a_rep} o_words={a.o_words} wdepth={a.wdepth}\n")
+sys.stderr.write(f"META chain_words={a.chain_words} a_words={a.a_words} a_rep={a.a_rep} o_words={a.o_words} tiles={a.tiles} wdepth={a.wdepth}\n")

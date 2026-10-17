@@ -115,7 +115,14 @@ static const char * product_dir(Product p) { return p == Product::Prefill ? "pre
 std::string KernelCache::dir() const { return cfg_.cache_dir + "/" + hash_ + "/" + product_dir(cfg_.product); }
 
 static const std::vector<const char *> kInstFilesDecode  = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_g.bin", "insts_sw.bin" };
-static const std::vector<const char *> kInstFilesPrefill = { "insts_base.bin", "insts_cw.bin", "insts_aw.bin", "insts_ow.bin", "insts_rw.bin" };
+static const int kPfTiles[] = { 1, 2, 4, 8, 16, 32 };
+static const std::vector<const char *> kInstFilesPrefill = {
+    "insts_t1_base.bin",  "insts_t1_cw.bin",  "insts_t1_aw.bin",  "insts_t1_ow.bin",  "insts_t1_rw.bin",
+    "insts_t2_base.bin",  "insts_t2_cw.bin",  "insts_t2_aw.bin",  "insts_t2_ow.bin",  "insts_t2_rw.bin",
+    "insts_t4_base.bin",  "insts_t4_cw.bin",  "insts_t4_aw.bin",  "insts_t4_ow.bin",  "insts_t4_rw.bin",
+    "insts_t8_base.bin",  "insts_t8_cw.bin",  "insts_t8_aw.bin",  "insts_t8_ow.bin",  "insts_t8_rw.bin",
+    "insts_t16_base.bin", "insts_t16_cw.bin", "insts_t16_aw.bin", "insts_t16_ow.bin", "insts_t16_rw.bin",
+    "insts_t32_base.bin", "insts_t32_cw.bin", "insts_t32_aw.bin", "insts_t32_ow.bin", "insts_t32_rw.bin" };
 static const int kFaPairs[] = { 1, 2, 4, 8, 16 };
 static const std::vector<const char *> kInstFilesAttn = {
     "insts_r1_base.bin",  "insts_r1_nb.bin",  "insts_r1_kv.bin",  "insts_r2_base.bin",  "insts_r2_nb.bin",  "insts_r2_kv.bin",
@@ -181,7 +188,8 @@ static bool read_words(const std::string & path, std::vector<uint32_t> & w) {
     return true;
 }
 
-bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out, int64_t stride_words, int64_t a_rep) {
+bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std::vector<uint32_t> & out, int64_t stride_words, int64_t a_rep,
+                            int tiles) {
     const int64_t refThird = cfg_.product == Product::Prefill ? kRefO : kRefG;
     if (!cached()) return false;
     std::lock_guard<std::mutex> lk(mu_);
@@ -192,16 +200,26 @@ bool KernelCache::insts_for(int64_t chain_words, int64_t a_words, int64_t g, std
         }
         refs_ = std::move(r);
     }
+    if (cfg_.product == Product::Prefill) {
+        // per tile count a set of 5 streams; the per-tile A offsets t * (header + a_words) make the a_words words affine, so all
+        // parameters use the affine rule (identical to the linear one for the zero-intercept words)
+        int ti = -1;
+        for (int i = 0; i < 6; ++i) if (kPfTiles[i] == tiles) ti = i;
+        if (ti < 0 || a_rep < 1 || a_rep > 64) return false;     // the BD repeat field is 6 bits
+        const auto * r = &refs_[size_t(5 * ti)];
+        out = r[0];
+        return patch_affine(r[0], r[1], kRefChain, 2 * kRefChain, chain_words, out) &&
+               patch_affine(r[0], r[2], kRefA, 2 * kRefA, a_words, out) &&
+               patch_affine(r[0], r[3], refThird, 2 * refThird, g, out) &&
+               patch_affine(r[0], r[4], kRefRep, 2 * kRefRep, a_rep, out);
+    }
     out = refs_[0];
     bool ok = patch_param(refs_[0], refs_[1], kRefChain, 2 * kRefChain, chain_words, out) &&
               patch_param(refs_[0], refs_[2], kRefA, 2 * kRefA, a_words, out) &&
               patch_param(refs_[0], refs_[3], refThird, 2 * refThird, g, out);
-    if (ok && cfg_.product == Product::Decode) {
+    if (ok) {
         // the offsets of the chains (i * stride) are linear in the stride parameter, the lengths in chain_words
         ok = patch_param(refs_[0], refs_[4], kRefChain, 2 * kRefChain, stride_words > 0 ? stride_words : chain_words, out);
-    }
-    if (ok && cfg_.product == Product::Prefill) {
-        ok = a_rep >= 1 && a_rep <= 64 && patch_affine(refs_[0], refs_[4], kRefRep, 2 * kRefRep, a_rep, out);     // the BD repeat field is 6 bits
     }
     return ok;
 }

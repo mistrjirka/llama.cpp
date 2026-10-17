@@ -24,7 +24,6 @@ int pf_threads();
 
 constexpr size_t PF_SLAB_BYTES = 18432;       // 64 tokens x 256 k in bfp16ebs8
 constexpr int    PF_TILE_TOK   = 64;
-constexpr int    PF_MAX_TILES  = 8;           // tiles per wave (512 tokens)
 
 // A BO bytes of one tile: header object + the nbk slabs, stored once (the shim DMA re-reads the slabs for every superblock pass)
 inline size_t pf_a_tile_bytes(int64_t nbk) { return (1 + size_t(nbk)) * PF_SLAB_BYTES; }

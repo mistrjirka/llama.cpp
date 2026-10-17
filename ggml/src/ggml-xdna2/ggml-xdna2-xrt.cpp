@@ -53,7 +53,7 @@ struct PfCtx {
     xrt::xclbin                       xb;
     xrt::hw_context                   hw;
     xrt::kernel                       kern;
-    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, xrt::bo> instr;     // (chain_words, a_words, a_rep, o_words)
+    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t, int>, xrt::bo> instr;     // (chain_words, a_words, a_rep, o_words, tiles)
 };
 
 // The ATTENTION hw context (third xclbin): instruction BOs per (pairs, nb, kvmax).
@@ -73,21 +73,22 @@ struct FaShadow {
     std::vector<uint64_t> fp;
 };
 
-// Activation + output BOs shared by all prefill dispatches of one shape (a dispatch is a tile; PF_MAX_TILES tiles per wave).
+// Activation + output BOs shared by all prefill dispatches of one shape. A dispatch ("unit") runs up to pf_max_tiles() consecutive 64-token tiles of
+// one split; two units are in flight, so there are two slots, each with room for pf_max_tiles() A tiles and Y tiles.
 struct PfPool {
-    size_t  a_tile = 0, a_stride = 0, y_tile = 0;
-    int     next_slot = 0;                  // round robin over the PF_MAX_TILES tile slots (at most 2 dispatches in flight)
+    size_t  a_tile = 0, y_tile = 0, a_slot = 0, y_slot = 0;
+    int     next_slot = 0;
     xrt::bo a, y;
-    std::vector<xrt::bo> a_sub, y_sub;      // per tile
+    std::vector<xrt::bo> a_sub, y_sub;      // per slot
 };
 
-// One prefill job split: the weight sub-BO and one xrt::run per tile slot (arguments set once).
+// One prefill job split: the weight sub-BO and one xrt::run per (slot, tiles), created lazily (arguments set once).
 struct PfSplit {
     layout::Geom geom;
     int64_t      split = 0;
     xrt::bo      w;
     PfPool *     pool = nullptr;
-    std::vector<xrt::run> runs;             // per tile slot, created lazily
+    std::map<std::pair<int, int>, xrt::run> runs;
 };
 
 // One dispatch: one split of one 2D weight matrix.
@@ -562,35 +563,48 @@ private:
         return *pf_ctx_;
     }
 
+    static int pf_max_tiles() {
+        static const int t = [] {
+            const char * e = std::getenv("GGML_XDNA2_PF_TILES");
+            int v = e && *e ? std::atoi(e) : 4;      // measured: 4 beats 1 (dispatch cost) and 16 (coarser host/NPU overlap)
+            int p = 1;
+            while (p * 2 <= std::min(std::max(v, 1), 32)) p *= 2;
+            return p;
+        }();
+        return t;
+    }
+
     PfPool & get_pf_pool(PfCtx & c, size_t a_tile, size_t y_tile) {
         const auto key = std::make_pair(a_tile, y_tile);
         auto it = pf_pools_.find(key);
         if (it != pf_pools_.end()) return *it->second;
         auto p = std::make_unique<PfPool>();
+        const size_t tm = size_t(pf_max_tiles());
         p->a_tile = a_tile;
-        p->a_stride = (a_tile + 4095) / 4096 * 4096;
         p->y_tile = y_tile;
-        p->a = xrt::ext::bo{dev_, p->a_stride * PF_MAX_TILES};
-        p->y = xrt::ext::bo{dev_, y_tile * PF_MAX_TILES};
-        std::memset(p->a.map<char *>(), 0, p->a_stride * PF_MAX_TILES);
+        p->a_slot = (a_tile * tm + 4095) / 4096 * 4096;
+        p->y_slot = (y_tile * tm + 4095) / 4096 * 4096;
+        p->a = xrt::ext::bo{dev_, p->a_slot * 2};
+        p->y = xrt::ext::bo{dev_, p->y_slot * 2};
+        std::memset(p->a.map<char *>(), 0, p->a_slot * 2);
         p->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        std::memset(p->y.map<char *>(), 0, y_tile * PF_MAX_TILES);
+        std::memset(p->y.map<char *>(), 0, p->y_slot * 2);
         p->y.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        for (int t = 0; t < PF_MAX_TILES; ++t) {
-            p->a_sub.emplace_back(p->a, a_tile, p->a_stride * t);
-            p->y_sub.emplace_back(p->y, y_tile, y_tile * t);
+        for (int t = 0; t < 2; ++t) {
+            p->a_sub.emplace_back(p->a, p->a_slot, p->a_slot * t);
+            p->y_sub.emplace_back(p->y, p->y_slot, p->y_slot * t);
         }
         (void) c;
         return *pf_pools_.emplace(key, std::move(p)).first->second;
     }
 
     // a_words: A slab words of one superblock pass (read a_rep = nsb times by the DMA)
-    const xrt::bo & get_pf_instr(PfCtx & c, int64_t chain_words, int64_t a_words, int64_t a_rep, int64_t o_words, uint32_t & nwords) {
-        const auto key = std::make_tuple(chain_words, a_words, a_rep, o_words);
+    const xrt::bo & get_pf_instr(PfCtx & c, int64_t chain_words, int64_t a_words, int64_t a_rep, int64_t o_words, int tiles, uint32_t & nwords) {
+        const auto key = std::make_tuple(chain_words, a_words, a_rep, o_words, tiles);
         auto it = c.instr.find(key);
         if (it == c.instr.end()) {
             std::vector<uint32_t> w;
-            if (!prefill_kernel_cache().insts_for(chain_words, a_words, o_words, w, 0, a_rep)) {
+            if (!prefill_kernel_cache().insts_for(chain_words, a_words, o_words, w, 0, a_rep, tiles)) {
                 throw std::runtime_error("cannot derive the instruction stream of the prefill kernel for chain_words=" + std::to_string(chain_words));
             }
             xrt::bo bi(dev_, w.size() * 4, xrt::bo::flags::cacheable, c.kern.group_id(1));
@@ -620,28 +634,28 @@ private:
             j->w = xrt::bo(xa->bo(), g.sp_bytes(s), pj.w_off + g.sp_off(s));
             const int64_t nsb = g.sp_nsb(s);
             j->pool = &get_pf_pool(c, pf_a_tile_bytes(g.nbk), pf_y_tile_bytes(nsb));
-            j->runs.resize(PF_MAX_TILES);
             sj.push_back(std::move(j));
         }
         st_.pf_t_setup += now_s() - t0;
         return pf_jobs_.emplace(key, std::move(sj)).first->second;
     }
 
-    xrt::run & get_pf_run(PfCtx & c, PfSplit & j, int t) {
-        if (j.runs[t]) return j.runs[t];
+    xrt::run & get_pf_run(PfCtx & c, PfSplit & j, int slot, int tiles) {
+        const auto key = std::make_pair(slot, tiles);
+        auto it = j.runs.find(key);
+        if (it != j.runs.end()) return it->second;
         const layout::Geom & g = j.geom;
         const int64_t nsb = g.sp_nsb(j.split);
         uint32_t nw = 0;
-        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(g.nbk * PF_SLAB_BYTES / 4), nsb, nsb * 4 * layout::GSB * 1024, nw);
+        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(g.nbk * PF_SLAB_BYTES / 4), nsb, nsb * 4 * layout::GSB * 1024, tiles, nw);
         xrt::run r(c.kern);
         r.set_arg(0, 3);
         r.set_arg(1, bi);
         r.set_arg(2, nw);
         r.set_arg(3, j.w);
-        r.set_arg(4, j.pool->a_sub[t]);
-        r.set_arg(5, j.pool->y_sub[t]);
-        j.runs[t] = std::move(r);
-        return j.runs[t];
+        r.set_arg(4, j.pool->a_sub[slot]);
+        r.set_arg(5, j.pool->y_sub[slot]);
+        return j.runs.emplace(key, std::move(r)).first->second;
     }
 
     bool prefill_available() override {
@@ -659,9 +673,10 @@ private:
         }
     }
 
-    // One dispatch = one 64-token tile of one split of one job. The units of a call are software pipelined: while the NPU runs unit u-1 the host
-    // encodes/replicates the activations of unit u and unpermutes the result of unit u-2 (at most two dispatches are in flight).
-    struct PfUnit { size_t job; PfSplit * sp; int tile; int slot; };
+    // One dispatch ("unit") = up to pf_max_tiles() consecutive 64-token tiles of one split of one job (the NPU re-streams the split's weights per
+    // tile, but the fixed cost of a dispatch is paid once). The units of a call are software pipelined: while the NPU runs unit u-1 the host
+    // encodes/builds the A tiles of unit u and unpermutes the result of unit u-2 (at most two units are in flight, one per pool slot).
+    struct PfUnit { size_t job; PfSplit * sp; int tile0; int tiles; int slot; };
 
     bool run_prefill_locked(const PrefillJob * jobs, size_t n_jobs) {
         PfCtx & c = get_pf_ctx();
@@ -684,24 +699,36 @@ private:
             enc_of[i] = e;
         }
         std::vector<PfUnit> units;
+        const int tmax = pf_max_tiles();
         for (size_t i = 0; i < n_jobs; ++i) {
-            const int64_t nt = (jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK;
-            for (auto & sp : *js[i]) for (int64_t t = 0; t < nt; ++t) units.push_back(PfUnit{ i, sp.get(), int(t), -1 });
+            const int nt = int((jobs[i].n_tok + PF_TILE_TOK - 1) / PF_TILE_TOK);
+            for (auto & sp : *js[i]) {
+                for (int t0 = 0; t0 < nt;) {
+                    int T = tmax;
+                    while (T > nt - t0) T /= 2;
+                    units.push_back(PfUnit{ i, sp.get(), t0, T, -1 });
+                    t0 += T;
+                }
+            }
         }
         auto finish = [&](PfUnit & u) {
             double t0 = now_s();
-            u.sp->runs[u.slot].wait2();
+            get_pf_run(c, *u.sp, u.slot, u.tiles).wait2();
             st_.pf_t_npu += now_s() - t0;      // blocked on the NPU (the host work of the next unit already ran during the dispatch)
             t0 = now_s();
             PfPool & pool = *u.sp->pool;
-            sync_from_device(pool.y, pool.y_tile, pool.y_tile * u.slot);
+            sync_from_device(pool.y, pool.y_tile * size_t(u.tiles), pool.y_slot * size_t(u.slot));
             st_.pf_t_ysync += now_s() - t0;
             const PrefillJob & pj = jobs[u.job];
-            pf_unpermute_tile(pool.y.map<const float *>() + (pool.y_tile / sizeof(float)) * u.slot, u.tile, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride);
+            const float * y = pool.y.map<const float *>() + (pool.y_slot / sizeof(float)) * size_t(u.slot);
+            for (int t = 0; t < u.tiles; ++t) {
+                pf_unpermute_tile(y + (pool.y_tile / sizeof(float)) * size_t(t), u.tile0 + t, pj.n_tok, pj.geom, u.sp->split, pj.dst, pj.dst_row_stride);
+            }
             st_.pf_t_unperm += now_s() - t0;
-            st_.pf_bytes_y += double(pool.y_tile);
+            st_.pf_bytes_y += double(pool.y_tile) * u.tiles;
         };
         PfUnit * prev = nullptr;
+        int next_slot = 0;
         for (size_t ui = 0; ui < units.size(); ++ui) {
             PfUnit & u = units[ui];
             const PrefillJob & pj = jobs[u.job];
@@ -711,27 +738,32 @@ private:
             // 1. encode (once per input and tile)
             double t0 = now_s();
             Enc & en = encs[enc_of[u.job]];
-            if (!en.done[u.tile]) {
-                en.tiles[u.tile].resize(size_t(g.nbk) * PF_SLAB_BYTES);
-                pf_encode_tile(en.tiles[u.tile].data(), pj.x, pj.x_stride, pj.n_tok, g.k, u.tile);
-                en.done[u.tile] = 1;
-                st_.pf_bytes_x += double(g.k) * PF_TILE_TOK * sizeof(float);
+            for (int t = u.tile0; t < u.tile0 + u.tiles; ++t) {
+                if (!en.done[t]) {
+                    en.tiles[t].resize(size_t(g.nbk) * PF_SLAB_BYTES);
+                    pf_encode_tile(en.tiles[t].data(), pj.x, pj.x_stride, pj.n_tok, g.k, t);
+                    en.done[t] = 1;
+                    st_.pf_bytes_x += double(g.k) * PF_TILE_TOK * sizeof(float);
+                }
             }
             st_.pf_t_encode += now_s() - t0;
-            // 2. A BO tile slot
+            // 2. A BO slot: the tiles back to back (stride a_tile)
             t0 = now_s();
-            u.slot = pool.next_slot;
-            pool.next_slot = (pool.next_slot + 1) % PF_MAX_TILES;
-            pf_build_a_tile(pool.a.map<uint8_t *>() + pool.a_stride * u.slot, en.tiles[u.tile].data(), g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(u.sp->split));
+            u.slot = next_slot;
+            next_slot ^= 1;
+            uint8_t * abase = pool.a.map<uint8_t *>() + pool.a_slot * size_t(u.slot);
+            for (int t = 0; t < u.tiles; ++t) {
+                pf_build_a_tile(abase + pool.a_tile * size_t(t), en.tiles[u.tile0 + t].data(), g.nbk, nsb, layout::fmt_info(g.fmt).qt, g.sp_groups(u.sp->split));
+            }
             st_.pf_t_abuild += now_s() - t0;
-            st_.pf_bytes_a += double(pool.a_tile);
-            pool.a.sync(XCL_BO_SYNC_BO_TO_DEVICE, pool.a_tile, pool.a_stride * u.slot);
+            st_.pf_bytes_a += double(pool.a_tile) * u.tiles;
+            pool.a.sync(XCL_BO_SYNC_BO_TO_DEVICE, pool.a_tile * size_t(u.tiles), pool.a_slot * size_t(u.slot));
             st_.pf_t_abo += now_s() - t0;
-            // 3. dispatch
-            get_pf_run(c, *u.sp, u.slot).start();
+            // 3. dispatch (the slot of u was last used by u-2, finished in the previous iteration)
+            get_pf_run(c, *u.sp, u.slot, u.tiles).start();
             st_.pf_dispatches++;
-            st_.pf_bytes_w += double(g.sp_bytes(u.sp->split));
-            // 4. finish the previous dispatch while this one runs
+            st_.pf_bytes_w += double(g.sp_bytes(u.sp->split)) * u.tiles;
+            // 4. finish the previous unit while this one runs
             if (prev) finish(*prev);
             prev = &u;
         }
@@ -740,7 +772,6 @@ private:
         st_.pf_waves++;
         return true;
     }
-
 
     // ---------------------------------------------------------------- attention path
     FaCtx & get_fa_ctx() {
@@ -960,7 +991,7 @@ private:
     std::unique_ptr<PfCtx> pf_ctx_;
     std::map<std::pair<size_t, size_t>, std::unique_ptr<PfPool>> pf_pools_;
     std::map<JobKey, PfSplits> pf_jobs_;
-    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t>, uint32_t> pf_instr_words_;
+    std::map<std::tuple<int64_t, int64_t, int64_t, int64_t, int>, uint32_t> pf_instr_words_;
     std::unique_ptr<FaCtx> fa_ctx_;
     std::map<const void *, FaShadow> fa_shadows_;
     xrt::bo fa_qbuf_, fa_obuf_;

@@ -79,8 +79,9 @@ public:
 
     // Instruction stream (words) of a dispatch, derived from the reference streams. third = groups per core (decode) / output words per column (prefill).
     // Decode only: stride_words = words between the starts of the chains in the W BO (0 = chain_words; chain_words < stride_words streams a PREFIX of every chain).
-    // Prefill only: a_rep = superblock passes over the A slabs (the DMA repeat count).
-    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out, int64_t stride_words = 0, int64_t a_rep = 0);
+    // Prefill only: a_rep = superblock passes over the A slabs (the DMA repeat count), tiles = 64-token tiles per dispatch (1 2 4 8 16 32).
+    bool insts_for(int64_t chain_words, int64_t a_words, int64_t third, std::vector<uint32_t> & out, int64_t stride_words = 0, int64_t a_rep = 0,
+                   int tiles = 1);
     // the pure patching rule (also used by the tool/tests): the words where base and var differ are linear in the parameter
     // (zero intercept): w(p) = base * p / p0. Applied on top of `inout`.
     static bool patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,
