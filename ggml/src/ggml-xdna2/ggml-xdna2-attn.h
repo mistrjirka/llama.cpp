@@ -46,8 +46,9 @@ void fa_encode_q(const FaShape & s, uint8_t * obj, const float * q, size_t tok_s
                  int head, float prescale);
 
 // K and V blocks of block `blk` of kv head `head` from the cache views (row = cell, f16 or bf16): rows >= n_valid are zeros.
+// rot > 0: row r of the shadow is cell (r + rot) % n_cells (a sliding-window cache whose cells wrapped around, see AttnJob::rot).
 void fa_encode_kv_block(const FaShape & s, uint8_t * kblk, uint8_t * vblk, const void * k, const void * v, bool bf16, size_t row_stride,
-                        size_t head_stride, int head, int64_t blk, int64_t n_valid);
+                        size_t head_stride, int head, int64_t blk, int64_t n_valid, int64_t rot = 0, int64_t n_cells = 0);
 
 // Fingerprint of the cache rows of one block (first and last row of K and V, all heads): detects blocks rewritten since they were encoded.
 uint64_t fa_block_fingerprint(const void * k, const void * v, size_t row_stride, size_t row_bytes, int64_t blk);

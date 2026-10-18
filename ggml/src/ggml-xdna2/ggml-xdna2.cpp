@@ -572,7 +572,7 @@ static void ggml_backend_xdna2_free(ggml_backend_t backend) {
 // FLASH_ATTN_EXT (prefill) on the NPU attention kernel
 //
 
-// shapes the attention kernel serves (the runtime conditions -- a causal mask -- are checked in xdna2_fa_causal_p0)
+// shapes the attention kernel serves (the runtime conditions -- a causal or sliding-window mask -- are checked in xdna2_fa_band)
 static FaShape xdna2_fa_shape(const ggml_tensor * op) {
     FaShape sh;
     sh.d   = int(op->src[0]->ne[0]);
@@ -583,7 +583,6 @@ static FaShape xdna2_fa_shape(const ggml_tensor * op) {
 static bool xdna2_fa_shape_ok(const ggml_tensor * op) {
     const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
     if (op->src[4] != nullptr || mask == nullptr || mask->type != GGML_TYPE_F16) return false;
-    if (std::strstr(mask->name, "swa") != nullptr) return false;        // sliding-window masks are never plain causal (the host path is slow)
     if (q->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) return false;
     if (k->type != v->type || (k->type != GGML_TYPE_F16 && k->type != GGML_TYPE_BF16)) return false;
     const FaShape sh = xdna2_fa_shape(op);
@@ -602,30 +601,55 @@ static bool xdna2_fa_shape_ok(const ggml_tensor * op) {
     return max_bias == 0.0f && softcap == 0.0f;
 }
 
-// The NPU kernel computes plain causal attention over the cells 0 .. p0 + t for query t. Returns p0 if the mask is exactly that
-// (0 on those cells, -inf on all others), else -1. Checked once per mask tensor and graph (all layers share the mask).
-static int64_t xdna2_fa_causal_p0(const ggml_tensor * mask, int64_t n_kv, int64_t n_tok, uint64_t graph_id) {
-    static const void * c_data = nullptr;
-    static uint64_t c_graph = UINT64_MAX;
-    static int64_t c_kv = -1, c_tok = -1, c_p0 = -1;
-    if (c_data == mask->data && c_graph == graph_id && c_kv == n_kv && c_tok == n_tok) return c_p0;
-    const uint16_t zero = 0x0000, ninf = 0xFC00;
-    const uint16_t * row0 = static_cast<const uint16_t *>(mask->data);
-    int64_t p0 = 0;
-    while (p0 < n_kv && row0[p0] == zero) p0++;
-    p0 -= 1;                                    // query 0 sees cells 0 .. p0
-    bool ok = p0 >= 0 && p0 + n_tok <= n_kv;
-    for (int64_t t = 0; ok && t < n_tok; ++t) {
-        const uint16_t * row = reinterpret_cast<const uint16_t *>(static_cast<const char *>(mask->data) + t * mask->nb[1]);
-        const int64_t vis = p0 + t;
-        for (int64_t c = 0; c <= vis && ok; ++c) ok = row[c] == zero;
-        for (int64_t c = vis + 1; c < n_kv && ok; ++c) ok = row[c] == ninf;
+// The NPU kernel computes attention over a causal band of cells: query t sees the cells lo(t) .. p0 + t with lo(t) = 0 (causal) or
+// max(0, p0 + t - window + 1) (sliding window, a multiple of 16 cells). Returns p0 and the window (0: causal) if the mask is exactly that
+// (0 on those cells, -inf on all others), else p0 = -1. A sliding-window cache reuses its cells as a ring: when the band only holds in
+// the cell order rotated by rot (cell = (i + rot) % n_kv), rot is returned too (the NPU shadow of the cache is then built in that order).
+// Checked once per mask tensor and graph (all layers of a kind share the mask; two masks are cached: the full and the sliding-window one).
+struct FaBand { int64_t p0 = -1, window = 0, rot = 0; };
+static FaBand xdna2_fa_band(const ggml_tensor * mask, int64_t n_kv, int64_t n_tok, uint64_t graph_id) {
+    struct Entry { const void * data = nullptr; uint64_t graph = UINT64_MAX; int64_t kv = -1, tok = -1; FaBand band; };
+    static Entry cache[2];
+    static int next = 0;
+    for (const Entry & e : cache) {
+        if (e.data == mask->data && e.graph == graph_id && e.kv == n_kv && e.tok == n_tok) return e.band;
     }
-    c_data = mask->data; c_graph = graph_id; c_kv = n_kv; c_tok = n_tok; c_p0 = ok ? p0 : -1;
-    return c_p0;
+    const uint16_t zero = 0x0000, ninf = 0xFC00;
+    auto row = [&](int64_t t) { return reinterpret_cast<const uint16_t *>(static_cast<const char *>(mask->data) + t * mask->nb[1]); };
+    FaBand b;
+    const uint16_t * last = row(n_tok - 1);
+    auto check = [&](int64_t rot) {
+        auto at = [&](const uint16_t * r, int64_t i) { return r[rot ? (i + rot) % n_kv : i]; };
+        // the last query sees the widest band: its last visible cell is p0 + n_tok - 1, its first one gives the window
+        int64_t hi = n_kv - 1;
+        while (hi >= 0 && at(last, hi) != zero) hi--;
+        int64_t lo = hi;
+        while (lo > 0 && at(last, lo - 1) == zero) lo--;
+        const int64_t p0 = hi - (n_tok - 1);
+        const int64_t window = lo == 0 ? 0 : hi - lo + 1;
+        bool ok = hi >= 0 && p0 >= 0 && window % 16 == 0 && (rot == 0 || window > 0);
+        for (int64_t t = 0; ok && t < n_tok; ++t) {
+            const uint16_t * r = row(t);
+            const int64_t vis = p0 + t, first = window ? std::max<int64_t>(0, vis - window + 1) : 0;
+            for (int64_t c = 0; c < first && ok; ++c) ok = at(r, c) == ninf;
+            for (int64_t c = first; c <= vis && ok; ++c) ok = at(r, c) == zero;
+            for (int64_t c = vis + 1; c < n_kv && ok; ++c) ok = at(r, c) == ninf;
+        }
+        if (ok) { b.p0 = p0; b.window = window; b.rot = rot; }
+        return ok;
+    };
+    if (!check(0)) {
+        // ring: the last query's own cell is the one whose cyclic successor it does not see; rotate it to the end
+        int64_t hi = -1;
+        for (int64_t c = 0; c < n_kv && hi < 0; ++c) if (last[c] == zero && last[(c + 1) % n_kv] != zero) hi = c;
+        if (hi >= 0 && (hi + 1) % n_kv != 0) check((hi + 1) % n_kv);
+    }
+    cache[next] = Entry{ mask->data, graph_id, n_kv, n_tok, b };
+    next ^= 1;
+    return b;
 }
 
-// FLASH_ATTN_EXT whose mask is not plain causal: ggml's CPU flash attention (the CPU backend from the registry) on the same tensors.
+// FLASH_ATTN_EXT whose mask is not a causal band: ggml's CPU flash attention (the CPU backend from the registry) on the same tensors.
 static void xdna2_fa_host(const ggml_tensor * op) {
     static ggml_backend_t cpu = [] {
         ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -640,7 +664,7 @@ static void xdna2_fa_host(const ggml_tensor * op) {
     GGML_ASSERT(cpu && "ggml-xdna2: no CPU backend for the attention fallback");
     static bool warned = false;
     if (!warned) {
-        GGML_LOG_WARN("ggml-xdna2: FLASH_ATTN_EXT with a non-causal mask runs on the CPU (the NPU kernel needs a plain causal mask)\n");
+        GGML_LOG_WARN("ggml-xdna2: FLASH_ATTN_EXT with a mask that is not a causal band runs on the CPU\n");
         warned = true;
     }
     ggml_init_params ip = { 8 * ggml_tensor_overhead() + ggml_graph_overhead_custom(8, false), nullptr, true };
@@ -670,7 +694,8 @@ static void xdna2_fa_host(const ggml_tensor * op) {
 static void ggml_backend_xdna2_flash_attn(ggml_backend_xdna2_context * ctx, ggml_tensor * op) {
     xdna2_flush(ctx);      // queued mul_mats first (graph order)
     const ggml_tensor * q = op->src[0], * k = op->src[1], * v = op->src[2], * mask = op->src[3];
-    const int64_t p0 = xdna2_fa_causal_p0(mask, k->ne[1], q->ne[1], ctx->n_graphs);
+    const FaBand band = xdna2_fa_band(mask, k->ne[1], q->ne[1], ctx->n_graphs);
+    const int64_t p0 = band.p0;
     if (p0 < 0) {
         xdna2_fa_host(op);
         return;
@@ -683,6 +708,9 @@ static void ggml_backend_xdna2_flash_attn(ggml_backend_xdna2_context * ctx, ggml
     j.q_head_stride = q->nb[2];
     j.n_tok = q->ne[1];
     j.p0 = p0;
+    j.window = band.window;
+    j.rot = band.rot;
+    j.n_cells = k->ne[1];
     j.k = k->data;
     j.v = v->data;
     j.bf16 = k->type == GGML_TYPE_BF16;

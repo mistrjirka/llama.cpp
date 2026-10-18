@@ -17,6 +17,7 @@
 #include <cstring>
 #include <list>
 #include <map>
+#include <numeric>
 #include <mutex>
 #include <tuple>
 #include <vector>
@@ -67,6 +68,7 @@ struct FaCtx {
 // bfp16 shadow of one layer's KV cache: K and V BOs [kv head][cap_rows / 16 blocks][obj]. A block is `full` once it was encoded from 16 valid
 // cache rows; its fingerprint then detects a later rewrite of those rows (another sequence, a context shift, a new prompt of the same length).
 struct FaShadow {
+    std::string           variant;          // FaShape::variant() of the encoding (a cache address may be reused with another shape)
     int64_t               cap_rows = 0;
     xrt::bo               k, v;
     std::vector<char>     full;
@@ -818,6 +820,10 @@ private:
 
     FaShadow & get_fa_shadow(const FaShape & sh, const void * id, int64_t rows) {
         FaShadow & s = fa_shadows_[id];
+        if (s.variant != sh.variant()) {
+            s = FaShadow{};
+            s.variant = sh.variant();
+        }
         if (s.cap_rows < rows) {
             const double t0 = now_s();
             const int64_t cap = (rows + 255) / 256 * 256;
@@ -871,6 +877,12 @@ private:
         const int64_t d0 = pos0 / FA_BLK;
         const int64_t nb_total = d0 + cpk * units;
         const int64_t n_valid = j.p0 + j.n_tok;                   // cells with data (the mask lets query n_tok-1 see them all)
+        // sliding window: wb blocks before the q block are visible. A dispatch streams K/V from its first needed block, rounded down so that
+        // the sub-BO offset stays 4 KiB aligned; blocks before the window of the first query are never read (and not encoded)
+        const int64_t wb = j.window / FA_BLK;
+        const int64_t b_align = int64_t(4096 / std::gcd<size_t>(sh.obj(), 4096));
+        auto first_block = [&](int64_t d_first) { return wb ? std::max<int64_t>(0, d_first - wb) / b_align * b_align : 0; };
+        const int64_t b_min = first_block(d0);
         FaShadow & s = get_fa_shadow(sh, j.kv_id, std::max(j.kv_cap, nb_total * FA_BLK));
         const int64_t cap_blocks = s.cap_rows / FA_BLK;
 
@@ -881,8 +893,8 @@ private:
 #if defined(_OPENMP)
         #pragma omp parallel for schedule(static) num_threads(pf_threads())
 #endif
-        for (int64_t b = 0; b < nb_total; ++b) {
-            if (!s.full[b] || (b + 1) * FA_BLK > n_valid || b >= j.p0 / FA_BLK) { todo[b] = 1; continue; }
+        for (int64_t b = b_min; b < nb_total; ++b) {
+            if (j.rot > 0 || !s.full[b] || (b + 1) * FA_BLK > n_valid || b >= j.p0 / FA_BLK) { todo[b] = 1; continue; }   // rotated: re-encode all
             if (fa_block_fingerprint(j.k, j.v, j.kv_row_stride, row_bytes, b) != s.fp[b]) todo[b] = 1;
         }
         int64_t lo = nb_total, hi = -1, n_enc = 0;
@@ -896,12 +908,12 @@ private:
                 for (int g = 0; g < sh.nkv; ++g) {
                     if (!todo[b]) continue;
                     const size_t off = (size_t(g) * cap_blocks + size_t(b)) * OBJ;
-                    fa_encode_kv_block(sh, kb + off, vb + off, j.k, j.v, j.bf16, j.kv_row_stride, j.kv_head_stride, g, b, n_valid);
+                    fa_encode_kv_block(sh, kb + off, vb + off, j.k, j.v, j.bf16, j.kv_row_stride, j.kv_head_stride, g, b, n_valid, j.rot, j.n_cells);
                 }
             }
             for (int64_t b = lo; b <= hi; ++b) {
                 if (!todo[b]) continue;
-                s.full[b] = (b + 1) * FA_BLK <= n_valid;
+                s.full[b] = j.rot == 0 && (b + 1) * FA_BLK <= n_valid;       // a rotated encoding is never reused
                 if (s.full[b]) s.fp[b] = fa_block_fingerprint(j.k, j.v, j.kv_row_stride, row_bytes, b);
             }
             for (int g = 0; g < sh.nkv; ++g) {
@@ -915,13 +927,13 @@ private:
 
         // 2. dispatch plan and Q objects + headers
         t0 = now_s();
-        struct Disp { int64_t first; int units; size_t qoff, ooff; xrt::run run; };
+        struct Disp { int64_t first; int units; size_t qoff, ooff; int64_t b0; xrt::run run; };
         std::vector<Disp> ds;
         size_t qoff = 0, ooff = 0;
         for (int64_t p = 0; p < units;) {
             int r = 16;
             while (r > units - p) r /= 2;
-            ds.push_back(Disp{ p, r, qoff, ooff, xrt::run() });
+            ds.push_back(Disp{ p, r, qoff, ooff, first_block(d0 + cpk * p), xrt::run() });
             qoff += fa_q_region(sh, r);
             ooff += size_t(r) * sh.unit_ob();
             p += r;
@@ -946,8 +958,9 @@ private:
         for (auto & d : ds) {
             for (int r = 0; r < d.units; ++r) {
                 int32_t * hdr = reinterpret_cast<int32_t *>(qb + d.qoff + size_t(d.units) * sh.unit_qb() + size_t(r) * OBJ);
-                hdr[0] = int32_t(d0 + cpk * (d.first + r) + cpk);
-                hdr[1] = int32_t(d0 + cpk * (d.first + r));
+                hdr[0] = int32_t(d0 + cpk * (d.first + r) + cpk - d.b0);     // block indices relative to the first streamed block
+                hdr[1] = int32_t(d0 + cpk * (d.first + r) - d.b0);
+                hdr[2] = int32_t(wb);
             }
         }
         fa_qbuf_.sync(XCL_BO_SYNC_BO_TO_DEVICE, qoff, 0);
@@ -956,18 +969,30 @@ private:
         // 3. queue all dispatches, then collect them in order (the scatter of one overlaps the next)
         t0 = now_s();
         std::vector<xrt::bo> subs;
+        subs.reserve(4 * ds.size());
         for (auto & d : ds) {
-            auto & in = get_fa_instr(c, sh, d.units, d0 + cpk * d.first + cpk, s.cap_rows);
+            auto & in = get_fa_instr(c, sh, d.units, d0 + cpk * d.first + cpk - d.b0, s.cap_rows);
             subs.emplace_back(fa_qbuf_, fa_q_region(sh, d.units), d.qoff);
             subs.emplace_back(fa_obuf_, size_t(d.units) * sh.unit_ob(), d.ooff);
+            const size_t kv_off = size_t(d.b0) * OBJ, kv_bytes = size_t(sh.nkv) * size_t(cap_blocks) * OBJ;
+            if (d.b0 > 0) {
+                subs.emplace_back(s.k, kv_bytes - kv_off, kv_off);
+                subs.emplace_back(s.v, kv_bytes - kv_off, kv_off);
+            }
             d.run = xrt::run(c.kern);
             d.run.set_arg(0, 3);
             d.run.set_arg(1, in.first);
             d.run.set_arg(2, in.second);
-            d.run.set_arg(3, subs[subs.size() - 2]);
-            d.run.set_arg(4, s.k);
-            d.run.set_arg(5, s.v);
-            d.run.set_arg(6, subs.back());
+            const size_t qs = subs.size() - (d.b0 > 0 ? 4 : 2);
+            d.run.set_arg(3, subs[qs]);
+            if (d.b0 > 0) {
+                d.run.set_arg(4, subs[qs + 2]);
+                d.run.set_arg(5, subs[qs + 3]);
+            } else {
+                d.run.set_arg(4, s.k);
+                d.run.set_arg(5, s.v);
+            }
+            d.run.set_arg(6, subs[qs + 1]);
             d.run.start();
             st_.fa_dispatches++;
         }

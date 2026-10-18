@@ -41,7 +41,7 @@ void fa_encode_q(const FaShape & s, uint8_t * obj, const float * q, size_t tok_s
 }
 
 void fa_encode_kv_block(const FaShape & s, uint8_t * kblk, uint8_t * vblk, const void * k, const void * v, bool bf16, size_t row_stride,
-                        size_t head_stride, int head, int64_t blk, int64_t n_valid) {
+                        size_t head_stride, int head, int64_t blk, int64_t n_valid, int64_t rot, int64_t n_cells) {
     const int d = s.d, ndt = s.ndt();
     alignas(64) float kf[FA_BLK][D_MAX], vf[FA_BLK][D_MAX];
     for (int i = 0; i < FA_BLK; ++i) {
@@ -51,7 +51,8 @@ void fa_encode_kv_block(const FaShape & s, uint8_t * kblk, uint8_t * vblk, const
             std::memset(vf[i], 0, sizeof(float) * size_t(d));
             continue;
         }
-        const size_t off = size_t(row) * row_stride + size_t(head) * head_stride;
+        const int64_t cell = rot > 0 ? (row + rot) % n_cells : row;
+        const size_t off = size_t(cell) * row_stride + size_t(head) * head_stride;
         row_to_f32(static_cast<const char *>(k) + off, bf16, kf[i], d);
         row_to_f32(static_cast<const char *>(v) + off, bf16, vf[i], d);
     }

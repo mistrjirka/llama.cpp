@@ -9,10 +9,13 @@
 //   K block   : [dt D/8][kt 2] tiles  [8 keys][8 d]       (16 keys; the host's bfp16 shadow of the KV cache)
 //   V block   : [dt D/8][kt 2] tiles  [8 d][8 keys]       (V^T)
 //   O (f32)   : [qt 2][dt D/8][8 q][8 d] unnormalized, then l: [qt 2][64] (the LT tiles)
-// Header (first object of the V stream, i32): 0 nb (blocks in the stream), 1 d0 (block index of the q tile of the qi = 0 cores)
+// Header (first object of the V stream, i32): 0 nb (blocks in the stream), 1 d0 (block index of the q tile of the qi = 0 cores), 2 wb (sliding
+// window in blocks, 0 = none).  Block indices count from the first block of the stream (the host may start the K/V streams past block 0).
 // Identity (per core, i32): 0 me (index of this core's Q in the Q prefix of the K stream), 1 qi (q tile of the pair: 0 or 1)
 // Causality: the q tile of a core is block d = d0 + qi; blocks j < d are fully visible, j == d is the diagonal (masked per 8x8 tile),
 // j > d is skipped (still consumed: the K/V streams are broadcast to the 8 cores of a kv head).
+// Sliding window of wb blocks (key k visible for query q iff q - k < 16 wb): blocks j < d - wb are skipped, j == d - wb is the window edge
+// (the mirror of the diagonal: key tile kt > qt visible, kt < qt masked, kt == qt strictly above the diagonal visible).
 #include <aie_api/aie.hpp>
 #include "aie_kernel_utils.h"
 #include <stdint.h>
@@ -30,6 +33,7 @@ alignas(64) static int8_t ONES[72];                  // bfp16 tile of 1.0
 alignas(64) static int8_t PB[4 * 72];                // bfp16 P tiles [qt][kt]
 alignas(64) static float LT[2][64];                  // row sums, broadcast over the 8 columns
 alignas(64) static float TRI[64];                    // 0 on/below the diagonal, NEG above (lane r*8+c, c > r)
+alignas(64) static float EDG[64];                    // window edge: 0 above the diagonal, NEG on/below (c <= r)
 alignas(64) static float SF[2][2][64];               // S tiles [qt][kt]
 alignas(64) static float MB[2][64], ABC[2][64];      // row-broadcast max, rescale factors
 alignas(64) static bfloat16 MX[2][16];               // running max per q tile (8 used)
@@ -91,7 +95,7 @@ extern "C" void fa_init(float *__restrict o) {
   aie::store_v(&MX[0][0], f2b(aie::broadcast<float, 16>(NEG)));
   aie::store_v(&MX[1][0], f2b(aie::broadcast<float, 16>(NEG)));
   for (int r = 0; r < 8; r++)
-    for (int c = 0; c < 8; c++) TRI[r * 8 + c] = c > r ? NEG : 0.0f;
+    for (int c = 0; c < 8; c++) { TRI[r * 8 + c] = c > r ? NEG : 0.0f; EDG[r * 8 + c] = c > r ? 0.0f : NEG; }
   facc one; one.from_vector(aie::broadcast<bfloat16, 64>(1.0f));
   aie::block_vector_output_buffer_stream<bfp16ebs8, 64> out((bfp16ebs8 *)ONES);
   out.push(bvec(::to_v64bfp16ebs8(one)));
@@ -101,8 +105,8 @@ extern "C" void fa_init(float *__restrict o) {
 extern "C" void fa_blk(const int8_t *__restrict k, const int8_t *__restrict v, float *__restrict o, const int32_t *__restrict hdr,
                        const int32_t *__restrict id) {
   const int j = st_j++;
-  const int d = hdr[1] + id[1];
-  if (j > d) return;
+  const int d = hdr[1] + id[1], wb = hdr[2];
+  if (j > d || (wb > 0 && j < d - wb)) return;
   const auto saved = aie::swap_rounding(aie::rounding_mode::conv_even);
 
   // S[q][key] = Q K^T (log2 units)
@@ -124,6 +128,10 @@ extern "C" void fa_blk(const int8_t *__restrict k, const int8_t *__restrict v, f
     aie::store_v(SF[0][0], aie::add(aie::load_v<64>(SF[0][0]), aie::load_v<64>(TRI)));
     aie::store_v(SF[0][1], aie::broadcast<float, 64>(NEG));
     aie::store_v(SF[1][1], aie::add(aie::load_v<64>(SF[1][1]), aie::load_v<64>(TRI)));
+  } else if (wb > 0 && j == d - wb) {                // window edge block
+    aie::store_v(SF[0][0], aie::add(aie::load_v<64>(SF[0][0]), aie::load_v<64>(EDG)));
+    aie::store_v(SF[1][0], aie::broadcast<float, 64>(NEG));
+    aie::store_v(SF[1][1], aie::add(aie::load_v<64>(SF[1][1]), aie::load_v<64>(EDG)));
   }
   bool resc[2];
   for (int qt = 0; qt < 2; qt++) {
