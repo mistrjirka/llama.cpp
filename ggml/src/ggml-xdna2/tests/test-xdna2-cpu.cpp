@@ -203,6 +203,7 @@ int main(int argc, char ** argv) {
         test_shape(f, 9216, 2560, seed++);
         test_shape(f, 70000, 512, seed++);        // several splits (GMAX groups each)
         test_shape(f, 2560, 12288, seed++);
+        test_shape(f, 3840, 15360, seed++);       // K > KMAX (decode only on the CPU GEMV), e.g. gemma-4-12b ffn_down
         test_shape(f, 9216, 2560, seed++, 1);
         test_shape(f, 9216, 2560, seed++, 3);
         test_shape(f, 70000, 512, seed++, 2);

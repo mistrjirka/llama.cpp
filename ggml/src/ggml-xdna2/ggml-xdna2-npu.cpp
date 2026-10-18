@@ -1,4 +1,5 @@
 #include "ggml-xdna2-npu.h"
+#include "ggml-xdna2-cpu.h"
 
 #include "ggml.h"
 #include "ggml-impl.h"
@@ -175,6 +176,10 @@ bool placement_ok(const layout::Geom & geom) {
         return true;
     }
     if (!npu_executor().available()) {
+        return false;
+    }
+    // K > KMAX: decode needs the CPU GEMV (the NPU decode kernel holds K <= KMAX activations)
+    if (!layout::k_npu_decode(geom.k) && !cpu_decode_available()) {
         return false;
     }
     return KernelCache::supports(geom) && kernel_cache().available();

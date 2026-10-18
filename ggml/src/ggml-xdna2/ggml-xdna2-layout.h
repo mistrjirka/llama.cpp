@@ -84,7 +84,8 @@ constexpr size_t  MAX_BLOCK_BYTES = 210;
 constexpr size_t  MAX_REC_BYTES   = 4352;
 constexpr size_t  CHUNK      = 1024;          // kernel stream chunk (ObjectFifo object) in bytes: ABI constant, see kernels/qku.cc QK_S
 constexpr int64_t GMAX       = 128;           // groups per dispatch (core staging buffer ost[GMAX][16])
-constexpr int64_t KMAX       = 12288;         // activation buffer of the core (kernels/genu.py --kmax)
+constexpr int64_t KMAX       = 12288;         // NPU decode kernel: activation buffer of the core (kernels/genu.py --kmax)
+constexpr int64_t KMAX_PF    = 65536;         // prefill kernel (A streamed slab by slab) and CPU GEMV
 
 constexpr int64_t roundup(int64_t x, int64_t m) { return (x + m - 1) / m * m; }
 
@@ -143,7 +144,9 @@ inline size_t act_chunks(Fmt fmt, int64_t k) {
     return (64 + sv + CHUNK - 1) / CHUNK;
 }
 
-inline bool k_supported(int64_t k) { return k > 0 && k % 256 == 0 && k <= KMAX; }
+inline bool k_supported(int64_t k) { return k > 0 && k % 256 == 0 && k <= KMAX_PF; }
+// the NPU decode kernel holds the whole activation: wider matrices decode on the CPU GEMV only
+inline bool k_npu_decode(int64_t k) { return k <= KMAX; }
 
 inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     const FmtInfo & fi = fmt_info(fmt);

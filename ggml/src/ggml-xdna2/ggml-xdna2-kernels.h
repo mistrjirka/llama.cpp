@@ -69,7 +69,7 @@ public:
 
     // external toolchain + build scripts are installed
     bool toolchain_present() const;
-    // the unified kernel can run this weight geometry (K % 256 == 0, K <= layout::KMAX; any N: larger matrices are split)
+    // the kernels can run this weight geometry (K % 256 == 0, K <= layout::KMAX_PF; any N: larger matrices are split; the decode kernel only K <= KMAX)
     static bool supports(const layout::Geom & geom);
     // the kernel is in the cache
     bool cached() const;
