@@ -2374,6 +2374,10 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
                 // decreases performance with GPU offloading
                 //n_tasks = n_threads;
                 n_tasks = 1;
+                // few wide f32 rows (recurrent states): the copy is split across the threads
+                if (node->src[0]->type == GGML_TYPE_F32 && ggml_nelements(node->src[1]) < n_threads && node->src[0]->ne[0] >= 16384) {
+                    n_tasks = n_threads;
+                }
             } break;
         case GGML_OP_SCALE:
         case GGML_OP_SET:

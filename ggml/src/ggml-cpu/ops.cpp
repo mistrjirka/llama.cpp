@@ -5361,12 +5361,20 @@ static void ggml_compute_forward_get_rows_f32(
     const int ith = params->ith;
     const int nth = params->nth;
 
+    // few wide rows (e.g. recurrent states): split each row across the threads
+    const bool split_cols = nr < nth && nc >= 16384;
+
     // rows per thread
-    const int dr = (nr + nth - 1)/nth;
+    const int dr = split_cols ? nr : (nr + nth - 1)/nth;
 
     // row range for this thread
-    const int ir0 = dr*ith;
+    const int ir0 = split_cols ? 0 : dr*ith;
     const int ir1 = MIN(ir0 + dr, nr);
+
+    // column range for this thread
+    const int64_t dc  = split_cols ? ((nc + nth - 1)/nth + 15) & ~15 : nc;
+    const int64_t ic0 = split_cols ? MIN(dc*ith, nc) : 0;
+    const int64_t ic1 = MIN(ic0 + dc, nc);
 
     for (int64_t i = ir0; i < ir1; ++i) {
         const int64_t i12 = i/(ne11*ne10);
@@ -5376,9 +5384,9 @@ static void ggml_compute_forward_get_rows_f32(
 
         GGML_ASSERT(i01 >= 0 && i01 < ne01);
 
-        ggml_vec_cpy_f32(nc,
-                (float *) ((char *)  dst->data + i10*nb1  + i11*nb2  + i12*nb3),
-                (float *) ((char *) src0->data + i01*nb01 + i11*nb02 + i12*nb03));
+        ggml_vec_cpy_f32(ic1 - ic0,
+                (float *) ((char *)  dst->data + i10*nb1  + i11*nb2  + i12*nb3) + ic0,
+                (float *) ((char *) src0->data + i01*nb01 + i11*nb02 + i12*nb03) + ic0);
     }
 }
 
