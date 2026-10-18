@@ -28,6 +28,11 @@ ggml_add_backend_library(ggml-xdna2
 # GGML_XDNA2_MLIR_AIE_ENV: python environment with mlir_aie + llvm-aie (bin/aiecc, bin/python). Without it, kernels
 # can only come from the cache and weights without a cached kernel stay on the CPU.
 set(GGML_XDNA2_MLIR_AIE_ENV "$ENV{MLIR_AIE_ENV}" CACHE PATH "ggml-xdna2: mlir-aie python environment used to build NPU kernels")
+if (GGML_XDNA2_MLIR_AIE_ENV STREQUAL "")
+    message(WARNING "ggml-xdna2: GGML_XDNA2_MLIR_AIE_ENV is not set: NPU kernels can only come from the cache (set it here or at run time)")
+elseif (NOT EXISTS "${GGML_XDNA2_MLIR_AIE_ENV}/bin/aiecc")
+    message(WARNING "ggml-xdna2: ${GGML_XDNA2_MLIR_AIE_ENV}/bin/aiecc not found: is GGML_XDNA2_MLIR_AIE_ENV a venv with mlir_aie and llvm-aie?")
+endif()
 set(GGML_XDNA2_KERNEL_DEFS
     GGML_XDNA2_KERNEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/kernels"
     GGML_XDNA2_MLIR_AIE_ENV="${GGML_XDNA2_MLIR_AIE_ENV}")

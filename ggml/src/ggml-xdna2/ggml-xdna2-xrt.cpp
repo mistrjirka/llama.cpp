@@ -22,6 +22,8 @@
 #include <tuple>
 #include <vector>
 
+#include <sys/resource.h>
+
 #include "ggml-xdna2-sync.h"
 #include "ggml-xdna2-kernels.h"
 #include "ggml-xdna2-bfp.h"
@@ -118,6 +120,13 @@ public:
             ok_ = true;
         } catch (const std::exception & e) {
             GGML_LOG_ERROR("ggml-xdna2: cannot open the NPU device: %s\n", e.what());
+            // XRT locks a 64 MiB heap when it opens the device; the usual 8 MiB default RLIMIT_MEMLOCK makes that fail
+            rlimit rl{};
+            if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur < (rlim_t(128) << 20)) {
+                GGML_LOG_ERROR("ggml-xdna2: the locked-memory limit is %llu KiB, XRT needs more: run 'ulimit -l unlimited' first "
+                               "(raise the hard limit in /etc/security/limits.d if needed). Falling back to the CPU.\n",
+                               (unsigned long long) (rl.rlim_cur >> 10));
+            }
         }
     }
 

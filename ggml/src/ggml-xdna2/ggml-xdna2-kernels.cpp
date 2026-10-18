@@ -149,7 +149,13 @@ bool KernelCache::cached() const {
 }
 
 bool KernelCache::available() const {
-    return cached() || toolchain_present();
+    if (cached() || toolchain_present()) return true;
+    std::call_once(warn_no_toolchain_, [this] {
+        say(2, "no kernel in " + dir() + " and no toolchain to build it (" +
+               (cfg_.toolchain_env.empty() ? std::string("GGML_XDNA2_MLIR_AIE_ENV is not set") : cfg_.toolchain_env + "/bin/aiecc not found") +
+               "): this work runs on the CPU. Point GGML_XDNA2_MLIR_AIE_ENV at a python venv with mlir_aie and llvm-aie.");
+    });
+    return false;
 }
 
 bool KernelCache::patch_param(const std::vector<uint32_t> & base, const std::vector<uint32_t> & var, int64_t p0, int64_t p1, int64_t p,

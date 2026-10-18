@@ -115,6 +115,7 @@ private:
     std::string                  hash_;
     mutable std::mutex           mu_;
     mutable bool                 known_cached_ = false;
+    mutable std::once_flag       warn_no_toolchain_;
     std::vector<std::vector<uint32_t>> refs_;     // base, cw, aw, g
     std::condition_variable      cv_;
     State                        state_ = State::None;

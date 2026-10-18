@@ -37,6 +37,14 @@ std::string default_cache_dir() {
     return "ggml-xdna2-cache";
 }
 
+// The mlir-aie environment used to build kernels: GGML_XDNA2_MLIR_AIE_ENV at run time, else the one configured at build time.
+std::string toolchain_env() {
+    if (const char * e = std::getenv("GGML_XDNA2_MLIR_AIE_ENV")) {
+        if (*e) return e;
+    }
+    return GGML_XDNA2_MLIR_AIE_ENV;
+}
+
 // Never available: used with the host reference mode, without XRT, or without an NPU.
 class StubExecutor final : public NpuExecutor {
 public:
@@ -88,7 +96,7 @@ KernelCache & kernel_cache() {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
         cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
-        cfg.toolchain_env  = GGML_XDNA2_MLIR_AIE_ENV;
+        cfg.toolchain_env  = toolchain_env();
         cfg.max_jobs       = 4;
         cfg.log            = kernel_log;
         return cfg;
@@ -101,7 +109,7 @@ KernelCache & prefill_kernel_cache() {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
         cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
-        cfg.toolchain_env  = GGML_XDNA2_MLIR_AIE_ENV;
+        cfg.toolchain_env  = toolchain_env();
         cfg.product        = Product::Prefill;
         cfg.max_jobs       = 4;
         cfg.log            = kernel_log;
@@ -119,7 +127,7 @@ KernelCache & attention_kernel_cache(const FaShape & shape) {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
         cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
-        cfg.toolchain_env  = GGML_XDNA2_MLIR_AIE_ENV;
+        cfg.toolchain_env  = toolchain_env();
         cfg.product        = Product::Attention;
         cfg.max_jobs       = 4;
         cfg.log            = kernel_log;
