@@ -27,9 +27,19 @@ ggml_add_backend_library(ggml-xdna2
 # Kernel build step (kernels/: IRON generator + peano kernel sources, run as an external process at model load).
 # GGML_XDNA2_MLIR_AIE_ENV: python environment with mlir_aie + llvm-aie (bin/aiecc, bin/python). Without it, kernels
 # can only come from the cache and weights without a cached kernel stay on the CPU.
-set(GGML_XDNA2_MLIR_AIE_ENV "$ENV{MLIR_AIE_ENV}" CACHE PATH "ggml-xdna2: mlir-aie python environment used to build NPU kernels")
+set(GGML_XDNA2_MLIR_AIE_ENV "$ENV{MLIR_AIE_ENV}" CACHE PATH "ggml-xdna2: mlir-aie python environment used to build NPU kernels (default: the venv made by scripts/xdna2-setup.sh)")
 if (GGML_XDNA2_MLIR_AIE_ENV STREQUAL "")
-    message(WARNING "ggml-xdna2: GGML_XDNA2_MLIR_AIE_ENV is not set: NPU kernels can only come from the cache (set it here or at run time)")
+    if (DEFINED ENV{XDG_DATA_HOME} AND NOT "$ENV{XDG_DATA_HOME}" STREQUAL "")
+        set(_xdna2_default_env "$ENV{XDG_DATA_HOME}/ggml-xdna2/venv")
+    else()
+        set(_xdna2_default_env "$ENV{HOME}/.local/share/ggml-xdna2/venv")
+    endif()
+    if (EXISTS "${_xdna2_default_env}/bin/aiecc")
+        message(STATUS "ggml-xdna2: NPU kernel toolchain found at ${_xdna2_default_env}")
+    else()
+        message(WARNING "ggml-xdna2: no NPU kernel toolchain found. Run scripts/xdna2-setup.sh (or pass -DGGML_XDNA2_MLIR_AIE_ENV=<venv>), "
+                        "otherwise the NPU kernels cannot be built on the first run")
+    endif()
 elseif (NOT EXISTS "${GGML_XDNA2_MLIR_AIE_ENV}/bin/aiecc")
     message(WARNING "ggml-xdna2: ${GGML_XDNA2_MLIR_AIE_ENV}/bin/aiecc not found: is GGML_XDNA2_MLIR_AIE_ENV a venv with mlir_aie and llvm-aie?")
 endif()
@@ -37,7 +47,7 @@ set(GGML_XDNA2_KERNEL_DEFS
     GGML_XDNA2_KERNEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/kernels"
     GGML_XDNA2_MLIR_AIE_ENV="${GGML_XDNA2_MLIR_AIE_ENV}")
 target_compile_definitions(ggml-xdna2 PRIVATE ${GGML_XDNA2_KERNEL_DEFS})
-target_link_libraries(ggml-xdna2 PRIVATE Threads::Threads)
+target_link_libraries(ggml-xdna2 PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
 
 target_compile_features(ggml-xdna2 PRIVATE cxx_std_17)
 target_include_directories(ggml-xdna2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -61,8 +71,14 @@ if (XRT_INCLUDE_DIR AND XRT_COREUTIL_LIB)
     target_include_directories(ggml-xdna2 SYSTEM PRIVATE ${XRT_INCLUDE_DIR})
     target_link_libraries(ggml-xdna2 PRIVATE ${XRT_COREUTIL_LIB})
 else()
-    message(STATUS "ggml-xdna2: XRT not found - building without NPU support (host reference compute only)")
+    message(WARNING "ggml-xdna2: XRT not found (need xrt/xrt_bo.h and libxrt_coreutil): building WITHOUT NPU support. "
+                    "Install XRT (Arch: pacman -S xrt xrt-plugin-amdxdna; others: build amd/xdna-driver and 'source /opt/xilinx/xrt/setup.sh'), "
+                    "then configure again. See docs/backend/XDNA2.md")
 endif()
+
+# The kernel sources are read at run time (compiled for each model's shapes on first use): ship them with the library
+install(DIRECTORY kernels/ DESTINATION ${CMAKE_INSTALL_DATADIR}/ggml-xdna2/kernels USE_SOURCE_PERMISSIONS
+        PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
 # unit test of the device weight layout (header only, no ggml / XRT dependency)
 if (GGML_BUILD_TESTS OR LLAMA_BUILD_TESTS)

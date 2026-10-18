@@ -115,6 +115,12 @@ struct SJob {
 class XrtExecutor final : public NpuExecutor {
 public:
     XrtExecutor() {
+        // XRT locks a 64 MiB heap when it opens the device: take whatever the hard limit allows (a login shell often has soft 8 MiB, hard unlimited)
+        rlimit lim{};
+        if (getrlimit(RLIMIT_MEMLOCK, &lim) == 0 && lim.rlim_cur != RLIM_INFINITY && lim.rlim_cur < lim.rlim_max) {
+            lim.rlim_cur = lim.rlim_max;
+            setrlimit(RLIMIT_MEMLOCK, &lim);
+        }
         try {
             dev_ = xrt::device(0);
             ok_ = true;
@@ -123,8 +129,8 @@ public:
             // XRT locks a 64 MiB heap when it opens the device; the usual 8 MiB default RLIMIT_MEMLOCK makes that fail
             rlimit rl{};
             if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur < (rlim_t(128) << 20)) {
-                GGML_LOG_ERROR("ggml-xdna2: the locked-memory limit is %llu KiB, XRT needs more: run 'ulimit -l unlimited' first "
-                               "(raise the hard limit in /etc/security/limits.d if needed). Falling back to the CPU.\n",
+                GGML_LOG_ERROR("ggml-xdna2: the locked-memory limit is %llu KiB, XRT needs more: set LimitMEMLOCK=infinity "
+                               "(service unit) or memlock unlimited (/etc/security/limits.d), see docs/backend/XDNA2.md. Falling back to the CPU.\n",
                                (unsigned long long) (rl.rlim_cur >> 10));
             }
         }

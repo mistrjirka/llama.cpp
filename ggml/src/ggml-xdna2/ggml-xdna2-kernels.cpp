@@ -153,7 +153,7 @@ bool KernelCache::available() const {
     std::call_once(warn_no_toolchain_, [this] {
         say(2, "no kernel in " + dir() + " and no toolchain to build it (" +
                (cfg_.toolchain_env.empty() ? std::string("GGML_XDNA2_MLIR_AIE_ENV is not set") : cfg_.toolchain_env + "/bin/aiecc not found") +
-               "): this work runs on the CPU. Point GGML_XDNA2_MLIR_AIE_ENV at a python venv with mlir_aie and llvm-aie.");
+               "): this work runs on the CPU. Run scripts/xdna2-setup.sh, or point GGML_XDNA2_MLIR_AIE_ENV at a python venv with mlir_aie and llvm-aie.");
     });
     return false;
 }

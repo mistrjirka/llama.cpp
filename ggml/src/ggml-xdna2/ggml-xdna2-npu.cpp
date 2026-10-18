@@ -11,6 +11,7 @@
 #include <mutex>
 #include <cstring>
 
+#include <dlfcn.h>
 #include <sys/stat.h>
 
 #ifndef GGML_XDNA2_KERNEL_DIR
@@ -37,12 +38,51 @@ std::string default_cache_dir() {
     return "ggml-xdna2-cache";
 }
 
-// The mlir-aie environment used to build kernels: GGML_XDNA2_MLIR_AIE_ENV at run time, else the one configured at build time.
+bool file_exists(const std::string & p) {
+    struct stat st;
+    return ::stat(p.c_str(), &st) == 0;
+}
+
+// Per-user data directory of the backend (the default home of the toolchain venv made by scripts/xdna2-setup.sh).
+std::string default_data_dir() {
+    if (const char * x = std::getenv("XDG_DATA_HOME")) {
+        if (*x) return std::string(x) + "/ggml-xdna2";
+    }
+    if (const char * h = std::getenv("HOME")) {
+        if (*h) return std::string(h) + "/.local/share/ggml-xdna2";
+    }
+    return "";
+}
+
+// The mlir-aie environment used to build kernels, first match wins: GGML_XDNA2_MLIR_AIE_ENV at run time, the one configured at
+// build time, the venv made by scripts/xdna2-setup.sh.
 std::string toolchain_env() {
     if (const char * e = std::getenv("GGML_XDNA2_MLIR_AIE_ENV")) {
         if (*e) return e;
     }
-    return GGML_XDNA2_MLIR_AIE_ENV;
+    const std::string baked = GGML_XDNA2_MLIR_AIE_ENV;
+    if (!baked.empty() && file_exists(baked + "/bin/aiecc")) return baked;
+    const std::string data = default_data_dir();
+    if (!data.empty() && file_exists(data + "/venv/bin/aiecc")) return data + "/venv";
+    return baked;
+}
+
+// Where the kernel sources and build scripts are, first match wins: GGML_XDNA2_KERNEL_DIR at run time, the installed copy
+// (<prefix>/share/ggml-xdna2/kernels next to the library's lib directory), the source tree this was built from.
+std::string kernel_src_dir() {
+    if (const char * e = std::getenv("GGML_XDNA2_KERNEL_DIR")) {
+        if (*e) return e;
+    }
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void *>(&default_cache_dir), &info) && info.dli_fname) {
+        std::string lib = info.dli_fname;
+        const size_t slash = lib.rfind('/');
+        if (slash != std::string::npos) {
+            const std::string installed = lib.substr(0, slash) + "/../share/ggml-xdna2/kernels";
+            if (file_exists(installed + "/build_prefill.sh")) return installed;
+        }
+    }
+    return GGML_XDNA2_KERNEL_DIR;
 }
 
 // Never available: used with the host reference mode, without XRT, or without an NPU.
@@ -95,7 +135,7 @@ KernelCache & kernel_cache() {
     static KernelCache c([] {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
-        cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
+        cfg.kernel_src_dir = kernel_src_dir();
         cfg.toolchain_env  = toolchain_env();
         cfg.max_jobs       = 4;
         cfg.log            = kernel_log;
@@ -108,7 +148,7 @@ KernelCache & prefill_kernel_cache() {
     static KernelCache c([] {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
-        cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
+        cfg.kernel_src_dir = kernel_src_dir();
         cfg.toolchain_env  = toolchain_env();
         cfg.product        = Product::Prefill;
         cfg.max_jobs       = 4;
@@ -126,7 +166,7 @@ KernelCache & attention_kernel_cache(const FaShape & shape) {
     if (!c) {
         KernelCache::Config cfg;
         cfg.cache_dir      = default_cache_dir();
-        cfg.kernel_src_dir = GGML_XDNA2_KERNEL_DIR;
+        cfg.kernel_src_dir = kernel_src_dir();
         cfg.toolchain_env  = toolchain_env();
         cfg.product        = Product::Attention;
         cfg.max_jobs       = 4;
