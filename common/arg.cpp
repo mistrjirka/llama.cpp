@@ -1310,6 +1310,10 @@ bool common_params_parse(int argc, char ** argv, common_params & params, llama_e
             exit(0);
         }
         params.lr.init();
+        // the XDNA2 NPU prefill and attention kernels are faster with 2048-token ubatches (+8-11 % at 2-4k prompts)
+        if (!params.n_ubatch_set && params.n_ubatch == 512 && ggml_backend_dev_by_name("XDNA2") != nullptr) {
+            params.n_ubatch = std::min(2048, params.n_batch);
+        }
     } catch (const std::invalid_argument & ex) {
         fprintf(stderr, "%s\n", ex.what());
         ctx_arg.params = params_org;
@@ -1680,6 +1684,7 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         string_format("physical maximum batch size (default: %d)", params.n_ubatch),
         [](common_params & params, int value) {
             params.n_ubatch = value;
+            params.n_ubatch_set = true;
         }
     ).set_env("LLAMA_ARG_UBATCH"));
     add_opt(common_arg(
