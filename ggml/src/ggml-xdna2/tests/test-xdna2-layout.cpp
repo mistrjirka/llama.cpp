@@ -142,10 +142,10 @@ static void test_straddle(Fmt fmt, int64_t n, int64_t k) {
         const int64_t sp = 0, Gs = g.sp_groups(0);
         for (int64_t sb = 0; sb < g.sp_nsb(sp); ++sb) {
             for (int64_t kb = 0; kb < g.nbk; ++kb) {
-                const RecPtr first = locate(g, dev.data(), (sb * GSB) * GROUP_ROWS, kb);
+                const RecPtr first = locate(g, dev.data(), (sb * g.gsb) * GROUP_ROWS, kb);
                 CHECK(first.s0 % CHUNK == 0);
                 for (int64_t gl = 1; gl < g.sb_groups(sp, sb); ++gl) {
-                    const RecPtr q = locate(g, dev.data(), (sb * GSB + gl) * GROUP_ROWS, kb);
+                    const RecPtr q = locate(g, dev.data(), (sb * g.gsb + gl) * GROUP_ROWS, kb);
                     CHECK(q.s0 == first.s0 + size_t(gl) * g.rec_bytes);
                 }
             }

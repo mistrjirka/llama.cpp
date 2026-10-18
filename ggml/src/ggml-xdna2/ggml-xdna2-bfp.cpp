@@ -237,8 +237,8 @@ void pf_encode_tiles(uint8_t * slabs, size_t tile_stride, const float * x, size_
     }
 }
 
-void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups) {
-    const int32_t hdr[4] = { int32_t(nsb), int32_t(nbk), int32_t(qtype), int32_t(groups) };
+void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups, int gsb) {
+    const int32_t hdr[5] = { int32_t(nsb), int32_t(nbk), int32_t(qtype), int32_t(groups), int32_t(gsb) };
     std::memcpy(a_tile, hdr, sizeof(hdr));              // the header object (the rest of it is never read)
 #if defined(_OPENMP)
     #pragma omp parallel for schedule(static) if(nbk >= 8) num_threads(pf_threads())
@@ -278,9 +278,9 @@ inline void unpermute_rows(const float * y, int tile, int64_t n_tok, const layou
             for (int64_t sb = 0; sb < nsb; ++sb) {
                 const int64_t gc = g.sb_groups(split, sb);
                 for (int64_t gl = 0; gl < gc; ++gl) {
-                    const int64_t row0 = row_base + ((c * 4 + k) * Gs + sb * GSB + gl) * 16;
+                    const int64_t row0 = row_base + ((c * 4 + k) * Gs + sb * g.gsb + gl) * 16;
                     if (row0 >= g.n) break;
-                    const float * s0 = y + (((c * nsb + sb) * 4 + k) * GSB + gl) * 1024 + (mb * 2) * 64 + m8 * 8, * s1 = s0 + 64;
+                    const float * s0 = y + (((c * nsb + sb) * 4 + k) * GSB_MAX + gl) * 1024 + (mb * 2) * 64 + m8 * 8, * s1 = s0 + 64;
                     float * d = drow + row0;
                     if (orow) {
                         const float * o = orow + row0;

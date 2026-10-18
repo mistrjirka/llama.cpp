@@ -24,10 +24,11 @@
 //
 // W region of one split (Gs groups, rows [split*GMAX*512, ...)):  [8 chains][n_w chunks][4 lanes][CHUNK bytes]
 //   core c32 = (col*4 + k) (k = 0..3) owns rows [c32*16*Gs, (c32+1)*16*Gs) of the split; chain = col, lane = k.
-//   The 16-row groups of a core are cut into SUPERBLOCKS of GSB groups (the last one has gc = Gs - sb*GSB <= GSB groups). The byte stream of
-//   a core is the sequence of SLABS (sb, kb), sb = 0.., kb = 0..NBK-1; a slab holds the gc records (16 rows x 256 k) record(sb*GSB+gl, kb),
+//   The 16-row groups of a core are cut into SUPERBLOCKS of gsb groups (the last one has gc = Gs - sb*gsb <= gsb groups). The byte stream of
+//   a core is the sequence of SLABS (sb, kb), sb = 0.., kb = 0..NBK-1; a slab holds the gc records (16 rows x 256 k) record(sb*gsb+gl, kb),
 //   gl = 0..gc-1, back to back, and is padded with zero bytes to a multiple of CHUNK. => a slab is an integer number of chunks, the slab
 //   (sb, kb) is the unit that shares one 256-wide activation slice (prefill: activation slab reused for gc records).
+//   gsb = 5 for Q6_K, 4 for the other formats: their slabs of 4 records are whole chunks (no padding bytes, see Geom::gsb).
 //   Chunk j of the stream of (chain, lane) is at   chain*chain_bytes + (j*4 + lane)*CHUNK    with  chain_bytes = n_w*4*CHUNK.
 //   A record may straddle chunk boundaries (consecutive chunks of a lane are 4*CHUNK apart in the device layout): RecPtr resolves that.
 //   Bytes of a split region: 8*chain_bytes (a multiple of 32 KB); the region of a matrix is the concatenation of its splits.
@@ -40,6 +41,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -77,7 +79,7 @@ constexpr int     GROUP_ROWS = 16;
 constexpr int64_t ROW_GRAN   = int64_t(N_CORES) * GROUP_ROWS; // 512
 constexpr int     N_CHAINS   = 8;               // one chain per column
 constexpr int     N_LANES    = 4;               // cores per column (lanes of a chain)
-constexpr int     GSB        = 5;               // groups per superblock (A-slab reuse of the prefill kernel; L1 budget)
+constexpr int     GSB_MAX    = 5;               // max groups per superblock (A-slab reuse of the prefill kernel; L1 budget): Geom::gsb
 constexpr size_t  MAX_BLOCK_BYTES = 210;
 constexpr size_t  MAX_REC_BYTES   = 4352;
 constexpr size_t  CHUNK      = 1024;          // kernel stream chunk (ObjectFifo object) in bytes: ABI constant, see kernels/qku.cc QK_S
@@ -85,6 +87,12 @@ constexpr int64_t GMAX       = 128;           // groups per dispatch (core stagi
 constexpr int64_t KMAX       = 12288;         // activation buffer of the core (kernels/genu.py --kmax)
 
 constexpr int64_t roundup(int64_t x, int64_t m) { return (x + m - 1) / m * m; }
+
+// groups per superblock: 5 for Q6_K, 4 for the other formats (slabs of 4 records are whole chunks); GGML_XDNA2_GSB=1..5 forces one value
+inline int gsb_of(Fmt fmt) {
+    static const int forced = [] { const char * e = std::getenv("GGML_XDNA2_GSB"); const int v = e ? std::atoi(e) : 0; return v >= 1 && v <= GSB_MAX ? v : 0; }();
+    return forced ? forced : fmt == Fmt::Q6_K ? 5 : 4;
+}
 
 struct Geom {
     Fmt     fmt = Fmt::Q4_K;
@@ -101,21 +109,22 @@ struct Geom {
     size_t  bytes = 0;            // bytes of one 2D matrix region (all splits)
     size_t  row_bytes = 0;        // GGUF bytes of one row
     size_t  gguf_bytes = 0;       // GGUF bytes of one 2D matrix
+    int     gsb = GSB_MAX;        // groups per superblock (gsb_of; passed to the kernels in their headers)
 
     int64_t sp_groups(int64_t s) const { return s + 1 < nsplit ? GMAX : groups - (nsplit - 1) * GMAX; }
     int64_t sp_row0(int64_t s) const { return s * GMAX * ROW_GRAN; }
-    // slab = gc records padded to whole chunks; superblocks hold GSB groups (the last one the rest)
+    // slab = gc records padded to whole chunks; superblocks hold gsb groups (the last one the rest)
     size_t  slab_bytes(int64_t gc) const { return (size_t(gc) * rec_bytes + CHUNK - 1) / CHUNK * CHUNK; }
-    int64_t sp_nsb(int64_t s) const { return (sp_groups(s) + GSB - 1) / GSB; }
-    int64_t sb_groups(int64_t s, int64_t sb) const { const int64_t r = sp_groups(s) - sb * GSB; return r < GSB ? r : GSB; }
+    int64_t sp_nsb(int64_t s) const { return (sp_groups(s) + gsb - 1) / gsb; }
+    int64_t sb_groups(int64_t s, int64_t sb) const { const int64_t r = sp_groups(s) - sb * gsb; return r < gsb ? r : gsb; }
     size_t  lane_bytes_groups(int64_t gs) const {      // bytes of the lane stream of a core with gs groups
-        const int64_t full = gs / GSB, rem = gs % GSB;
-        return size_t(nbk) * (size_t(full) * slab_bytes(GSB) + (rem ? slab_bytes(rem) : 0));
+        const int64_t full = gs / gsb, rem = gs % gsb;
+        return size_t(nbk) * (size_t(full) * slab_bytes(gsb) + (rem ? slab_bytes(rem) : 0));
     }
     // lane stream of a core with gs groups restricted to the first nbk_use records (k-blocks) of every superblock
     size_t  lane_bytes_groups_k(int64_t gs, int64_t nbk_use) const {
-        const int64_t full = gs / GSB, rem = gs % GSB;
-        return size_t(nbk_use) * (size_t(full) * slab_bytes(GSB) + (rem ? slab_bytes(rem) : 0));
+        const int64_t full = gs / gsb, rem = gs % gsb;
+        return size_t(nbk_use) * (size_t(full) * slab_bytes(gsb) + (rem ? slab_bytes(rem) : 0));
     }
     size_t  sp_lane_bytes(int64_t s) const { return lane_bytes_groups(sp_groups(s)); }
     size_t  sp_nw(int64_t s) const { return sp_lane_bytes(s) / CHUNK; }   // chunks per lane stream
@@ -150,6 +159,7 @@ inline Geom make_geom(Fmt fmt, int64_t n, int64_t k) {
     g.rec_bytes = fi.rec_bytes;
     g.block_bytes = fi.block_bytes;
     g.rec_blocks = fi.rec_blocks;
+    g.gsb = gsb_of(fmt);
     g.split_bytes_full = g.lane_bytes_groups(GMAX) / CHUNK * N_LANES * CHUNK * N_CHAINS;
     g.bytes = 0;
     for (int64_t s = 0; s < g.nsplit; ++s) g.bytes += g.sp_bytes(s);
@@ -187,11 +197,11 @@ inline RecPtr locate(const Geom & g, uint8_t * dev, int64_t row, int64_t r) {
     const int64_t rpc = Gs * GROUP_ROWS;
     const int64_t c32 = rr / rpc, grp = (rr % rpc) / GROUP_ROWS;
     const size_t chain = size_t(c32 / N_LANES), lane = size_t(c32 % N_LANES);
-    const int64_t sb = grp / GSB, gl = grp % GSB;
+    const int64_t sb = grp / g.gsb, gl = grp % g.gsb;
     const size_t slab = g.slab_bytes(g.sb_groups(s, sb));
     RecPtr p;
     p.base = dev + g.sp_off(s) + chain * g.sp_chain_bytes(s) + lane * CHUNK;
-    p.s0 = size_t(sb) * size_t(g.nbk) * g.slab_bytes(GSB) + size_t(r) * slab + size_t(gl) * g.rec_bytes;
+    p.s0 = size_t(sb) * size_t(g.nbk) * g.slab_bytes(g.gsb) + size_t(r) * slab + size_t(gl) * g.rec_bytes;
     return p;
 }
 

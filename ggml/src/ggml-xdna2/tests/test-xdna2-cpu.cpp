@@ -112,7 +112,7 @@ static void test_shape(Fmt fmt, int64_t n, int64_t k, uint32_t seed, int64_t sb_
             const int64_t Gs = g.sp_groups(i / (GMAX * ROW_GRAN));
             const int64_t rr = i - g.sp_row0(i / (GMAX * ROW_GRAN));
             const int64_t grp = (rr % (Gs * GROUP_ROWS)) / GROUP_ROWS;
-            if (grp / GSB < sb_from) { if (y[i] != 12345.0f) { std::printf("FAIL prefix row %lld touched\n", (long long) i); ++g_fail; } continue; }
+            if (grp / g.gsb < sb_from) { if (y[i] != 12345.0f) { std::printf("FAIL prefix row %lld touched\n", (long long) i); ++g_fail; } continue; }
         }
         const double e = double(y[i]) - ref[i];
         num2 += (double(y[i]) - ref2[i]) * (double(y[i]) - ref2[i]);
@@ -206,9 +206,9 @@ int main(int argc, char ** argv) {
         test_shape(f, 9216, 2560, seed++, 1);
         test_shape(f, 9216, 2560, seed++, 3);
         test_shape(f, 70000, 512, seed++, 2);
-        test_shape(f, 2560, 4096, seed++, 1, 6);       // K split of a one-superblock matrix: CPU = K suffix of all rows
+        test_shape(f, 2048, 4096, seed++, 1, 6);       // K split of a one-superblock matrix (4 groups per core): CPU = K suffix of all rows
         test_shape(f, 1024, 2560, seed++, 1, 9);
-        test_shape(f, 2560, 4096, seed++, 1, 16);      // NPU does everything: nothing left for the CPU (rows untouched)
+        test_shape(f, 2048, 4096, seed++, 1, 16);      // NPU does everything: nothing left for the CPU (rows untouched)
     }
     std::printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
     return g_fail ? 1 : 0;

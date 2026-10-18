@@ -93,13 +93,13 @@ size_t act_bo_bytes(const Geom & g, int m) {
     return act_chunks(g.fmt, g.k) * N_LANES * CHUNK;
 }
 
-// header i32: 0 G, 1 K, 2 qtype, 3 n_act-1, 4 n_w, 5 total records (see kernels/qku.cc);  `gs` = groups / chunks of the split
+// header i32: 0 G, 1 K, 2 qtype, 3 n_act-1, 4 n_w, 5 total records, 6 gsb (see kernels/qku.cc);  `gs` = groups / chunks of the split
 void pack_act_bo(const ActQ & act, const Geom & g, int64_t split, int64_t t, uint8_t * dst) {
     const size_t nact = act_chunks(g.fmt, g.k);
     std::vector<uint8_t> a(nact * CHUNK, 0);
     const int64_t Gs = g.sp_groups(split);
-    const int32_t hdr[6] = { int32_t(Gs), int32_t(g.k), int32_t(fmt_info(g.fmt).qt), int32_t(nact - 1), int32_t(g.sp_nw(split)),
-                             int32_t(Gs * g.nbk) };
+    const int32_t hdr[7] = { int32_t(Gs), int32_t(g.k), int32_t(fmt_info(g.fmt).qt), int32_t(nact - 1), int32_t(g.sp_nw(split)),
+                             int32_t(Gs * g.nbk), int32_t(g.gsb) };
     std::memcpy(a.data(), hdr, sizeof(hdr));
     uint8_t * p = a.data() + 64;
     std::memcpy(p, act.q_row(t), size_t(act.k_pad));

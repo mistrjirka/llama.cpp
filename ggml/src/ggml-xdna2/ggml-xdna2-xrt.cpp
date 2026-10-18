@@ -402,7 +402,7 @@ private:
                 continue;
             }
             const int64_t Gs = g.sp_groups(s);
-            j->G_npu = std::min<int64_t>(p.sb_npu * layout::GSB, Gs);
+            j->G_npu = std::min<int64_t>(p.sb_npu * g.gsb, Gs);
             j->nbk_npu = p.kb_npu;
             j->add = p.kb_npu < g.nbk;
             const size_t lane_bytes = g.lane_bytes_groups_k(j->G_npu, j->nbk_npu);
@@ -451,7 +451,7 @@ private:
                 Splits & sj = get_split_job(jobs[i], c);
                 for (auto & j : sj) {
                     if (!j->active) continue;
-                    cpu_pack_npu_act(jobs[i].geom.fmt, jobs[i].geom.k, j->nbk_npu * 256, j->G_npu, j->n_w, cpu_decode_act(i), j->a.map<uint8_t *>());
+                    cpu_pack_npu_act(jobs[i].geom.fmt, jobs[i].geom.k, j->nbk_npu * 256, j->G_npu, j->n_w, jobs[i].geom.gsb, cpu_decode_act(i), j->a.map<uint8_t *>());
                     j->a.sync(XCL_BO_SYNC_BO_TO_DEVICE);
                     sp_disp_.push_back(j.get());
                     sp_jobs_.push_back(i);
@@ -647,7 +647,7 @@ private:
         const layout::Geom & g = j.geom;
         const int64_t nsb = g.sp_nsb(j.split);
         uint32_t nw = 0;
-        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(g.nbk * PF_SLAB_BYTES / 4), nsb, nsb * 4 * layout::GSB * 1024, tiles, nw);
+        const xrt::bo & bi = get_pf_instr(c, int64_t(g.sp_chain_words(j.split)), int64_t(g.nbk * PF_SLAB_BYTES / 4), nsb, nsb * 4 * layout::GSB_MAX * 1024, tiles, nw);
         xrt::run r(c.kern);
         r.set_arg(0, 3);
         r.set_arg(1, bi);
@@ -755,7 +755,7 @@ private:
             uint8_t * abase = pool.a.map<uint8_t *>() + pool.a_slot * size_t(u.slot);
             for (int t = 0; t < u.tiles; ++t) {
                 pf_build_a_tile(abase + pool.a_tile * size_t(t), en.slabs.data() + tile_bytes * size_t(u.tile0 + t), g.nbk, nsb, layout::fmt_info(g.fmt).qt,
-                                g.sp_groups(u.sp->split));
+                                g.sp_groups(u.sp->split), g.gsb);
             }
             st_.pf_t_abuild += now_s() - t0;
             st_.pf_bytes_a += double(pool.a_tile) * u.tiles;

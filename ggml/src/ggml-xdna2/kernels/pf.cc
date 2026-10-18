@@ -2,7 +2,7 @@
 // (w = a*q - b), bfp16 mmul against the resident bfp16 activation slab (64 tok x 256 k), fp32 C accumulate in the output object.
 //
 // Control (see genp.py): the first A object carries the header (64 B):
-//   i32 0 nsb (superblocks per core), 1 nbk (K/256), 2 qtype (4,5,6,8), 3 G (groups per core)
+//   i32 0 nsb (superblocks per core), 1 nbk (K/256), 2 qtype (4,5,6,8), 3 G (groups per core), 4 gsb (groups per superblock)
 // per slab (sb, kb): pf_slab_begin -> number of 1 KB W chunks of the slab; pf_chunk per chunk assembles records in wrec, processes complete records.
 #include <aie_api/aie.hpp>
 #include "aie_kernel_utils.h"
@@ -338,8 +338,9 @@ extern "C" void pf_zero(float *__restrict c) {
 extern "C" void pf_slab_begin(const int32_t *__restrict hdr, int32_t *__restrict ctl) {
   const int G = hdr[3], qt = hdr[2];
   if (++st_kb == hdr[1]) { st_kb = 0; st_sb++; }
-  int rem = G - st_sb * GSB;
-  st_gc = rem < GSB ? rem : GSB;
+  const int gsb = hdr[4];              // groups per superblock (layout::Geom::gsb <= GSB, the C capacity)
+  int rem = G - st_sb * gsb;
+  st_gc = rem < gsb ? rem : gsb;
   st_gl = 0; st_fill = 0;
   ctl[0] = (st_gc * rec_bytes(qt) + PF_S - 1) / PF_S;
   // the chunks of the first record are consumed (and the record expanded) before the A slab is acquired, so the A transfer overlaps that work

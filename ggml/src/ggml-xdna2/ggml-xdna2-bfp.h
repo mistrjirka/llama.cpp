@@ -27,8 +27,8 @@ constexpr int    PF_TILE_TOK   = 64;
 
 // A BO bytes of one tile: header object + the nbk slabs, stored once (the shim DMA re-reads the slabs for every superblock pass)
 inline size_t pf_a_tile_bytes(int64_t nbk) { return (1 + size_t(nbk)) * PF_SLAB_BYTES; }
-// Y bytes of one tile of a split: [col 8][nsb][core 4][GSB groups][1024 f32]
-inline size_t pf_y_tile_bytes(int64_t nsb) { return size_t(8) * size_t(nsb) * 4 * layout::GSB * 1024 * sizeof(float); }
+// Y bytes of one tile of a split: [col 8][nsb][core 4][GSB_MAX groups (gsb used)][1024 f32]
+inline size_t pf_y_tile_bytes(int64_t nsb) { return size_t(8) * size_t(nsb) * 4 * layout::GSB_MAX * 1024 * sizeof(float); }
 
 // one block of 8 floats -> 9 bytes [E][8 x int8]; reference (scalar, 64-bit) and the vectorized version used by the encoder (bit identical)
 void pf_enc8_ref(const float * x, uint8_t * out);
@@ -43,7 +43,7 @@ void pf_encode_tiles(uint8_t * slabs, size_t tile_stride, const float * x, size_
 
 // Fill the A BO region of one tile (pf_a_tile_bytes) from its one-pass slabs: header object + the slabs.
 // hdr: i32 [nsb, nbk, qtype, G (groups per core)].
-void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups);
+void pf_build_a_tile(uint8_t * a_tile, const uint8_t * slabs, int64_t nbk, int64_t nsb, int qtype, int64_t groups, int gsb);
 
 // Copy the fp32 outputs of one tile of one split into dst (row j at dst + j*dst_row_stride bytes, g.n floats per row).
 void pf_unpermute_tile(const float * y_tile, int tile, int64_t n_tok, const layout::Geom & g, int64_t split, float * dst, size_t dst_row_stride);

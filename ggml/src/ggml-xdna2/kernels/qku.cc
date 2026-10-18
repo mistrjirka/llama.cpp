@@ -6,6 +6,7 @@
 //     [act chunks: n_act][weight chunks: n_w]      (act is padded to whole chunks, the weight record stream is padded to whole chunks)
 //   header (first 64 B of the activation = hdr[16] i32):
 //     0 G (16-row groups per core)  1 K  2 qtype (4,5,6,8)  3 n_act-1 (act chunks after the first)  4 n_w (weight chunks)  5 total records (G*K/256)
+//     6 gsb (groups per superblock)
 //   activation (after the 64 B header): Q4_K/Q5_K/Q6_K : q[K] | f32 d[K/256] | i32 bsum32[K/32];  Q8_0: q[K] | f32 d[K/32]
 //   weight records (REC bytes, 16 rows x 256 weights) are a CONTIGUOUS per-core byte stream (record order: group g, k-block kb), cut into chunks;
 //   a record may straddle a chunk boundary (copied into wrec) -- chunks need not be record aligned.
@@ -16,13 +17,14 @@
 #ifndef QK_S
 #define QK_S 1024
 #endif
-#define GSB 5     // groups per superblock (layout v2, see ggml-xdna2-layout.h); must equal layout::GSB
+#define GSB 5     // max groups per superblock (layout v2, see ggml-xdna2-layout.h): layout::GSB_MAX; the dispatch's gsb is header field 6
 
-// LAYOUT v2: the per-core weight stream is the sequence of slabs (sb, kb): gc = min(GSB, G - sb*GSB) records (gl = 0..gc-1), padded to a whole
+// LAYOUT v2: the per-core weight stream is the sequence of slabs (sb, kb): gc = min(gsb, G - sb*gsb) records (gl = 0..gc-1), padded to a whole
 // number of QK_S chunks.  yst[gl] holds the running sums of the gc groups of the superblock.
 alignas(64) static float yst[GSB][16];
 static int blk = 0, recs_done = 0, sb = 0, gl = 0, gc = 0, fill = 0, act_got = 0, fl = 0;
 static bool slab_done = false;
+static int gsb = GSB;                 // groups per superblock of this dispatch (header field 6)
 
 static inline void copy_bytes64(int8_t *__restrict dst, const int8_t *__restrict src, int n) {   // n multiple of 64, 64-aligned
   for (int i = 0; i < n; i += 64) aie::store_v(dst + i, aie::load_v<64>(src + i));
@@ -35,7 +37,8 @@ extern "C" void qk_first(const int8_t *__restrict chunk, int8_t *__restrict act,
   copy_bytes64(act, chunk, QK_S);
   aie::store_v(hdr, aie::load_v<16>((const int32_t *)chunk));
   const int G0 = ((const int32_t *)chunk)[0];
-  blk = 0; recs_done = 0; sb = 0; gl = 0; gc = G0 < GSB ? G0 : GSB; fill = 0; fl = 0; act_got = 1; slab_done = false;
+  gsb = ((const int32_t *)chunk)[6];
+  blk = 0; recs_done = 0; sb = 0; gl = 0; gc = G0 < gsb ? G0 : gsb; fill = 0; fl = 0; act_got = 1; slab_done = false;
 }
 extern "C" void qk_act(const int8_t *__restrict chunk, int8_t *__restrict act) {
   copy_bytes64(act + act_got * QK_S, chunk, QK_S);
@@ -270,7 +273,7 @@ static inline int rec_bytes(int qt) { return qt == 4 ? 2304 : qt == 5 ? 2816 : q
 static inline void process(const int8_t *rec, const int8_t *act, float *ost, int qt, int K, int G) {
   const int NBK = K >> 8;
   const bool last = (blk == NBK - 1);
-  float *out = ost + (sb * GSB + gl) * 16;
+  float *out = ost + (sb * gsb + gl) * 16;
   if (qt == 4) rec_q4(rec, out, act, K, last);
   else if (qt == 5) rec_q5(rec, out, act, K, last);
   else if (qt == 6) rec_q6(rec, out, act, K, last);
@@ -279,7 +282,7 @@ static inline void process(const int8_t *rec, const int8_t *act, float *ost, int
   recs_done++;
   if (++gl == gc) {                     // slab complete (the rest of its last chunk is padding)
     gl = 0; slab_done = true;
-    if (++blk == NBK) { blk = 0; sb++; const int rem = G - sb * GSB; gc = rem < GSB ? rem : GSB; }
+    if (++blk == NBK) { blk = 0; sb++; const int rem = G - sb * gsb; gc = rem < gsb ? rem : gsb; }
   }
 }
 

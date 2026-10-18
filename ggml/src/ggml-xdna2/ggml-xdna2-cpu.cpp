@@ -366,15 +366,15 @@ XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, in
     const int64_t Gs = g.sp_groups(s);
     const int64_t gc = g.sb_groups(s, sb);
     const uint8_t * cb = w + g.sp_off(s) + size_t(chain) * g.sp_chain_bytes(s);
-    const size_t slab_full = g.slab_bytes(GSB), slab = g.slab_bytes(gc);
+    const size_t slab_full = g.slab_bytes(g.gsb), slab = g.slab_bytes(gc);
     const size_t s0_sb = size_t(sb) * size_t(g.nbk) * slab_full;
     const size_t RB = g.rec_bytes;
-    __m512 y[N_LANES][GSB];
-    for (int l = 0; l < N_LANES; ++l) for (int i = 0; i < GSB; ++i) y[l][i] = _mm512_setzero_ps();
-    alignas(64) float yt[CPU_MAX_TOK][N_LANES][GSB][GROUP_ROWS];     // nt > 1: the accumulators of every token (the record stays in L1)
+    __m512 y[N_LANES][GSB_MAX];
+    for (int l = 0; l < N_LANES; ++l) for (int i = 0; i < GSB_MAX; ++i) y[l][i] = _mm512_setzero_ps();
+    alignas(64) float yt[CPU_MAX_TOK][N_LANES][GSB_MAX][GROUP_ROWS];     // nt > 1: the accumulators of every token (the record stays in L1)
     ActRef at[CPU_MAX_TOK];
     if (nt > 1) {
-        std::memset(yt, 0, sizeof(float) * size_t(nt) * N_LANES * GSB * GROUP_ROWS);
+        std::memset(yt, 0, sizeof(float) * size_t(nt) * N_LANES * GSB_MAX * GROUP_ROWS);
         for (int t = 0; t < nt; ++t) at[t] = act.tok(t);
     }
     const size_t slab_pages = slab / CHUNK;       // pages (4 lanes x CHUNK) per slab
@@ -416,7 +416,7 @@ XD_TGT void run_item_t(const Geom & g, const uint8_t * w, const ActRef & act, in
                 for (int64_t i = 0; i < gc; ++i) _mm512_storeu_ps(o + (l * gc + i) * GROUP_ROWS, nt == 1 ? y[l][i] : _mm512_load_ps(yt[t][l][i]));
                 continue;
             }
-            const int64_t row0 = g.sp_row0(s) + (chain * N_LANES + lane0 + l) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS;
+            const int64_t row0 = g.sp_row0(s) + (chain * N_LANES + lane0 + l) * GROUP_ROWS * Gs + sb * g.gsb * GROUP_ROWS;
             for (int64_t i = 0; i < gc; ++i) {
                 const int64_t r = row0 + i * GROUP_ROWS;
                 if (r >= n_use) break;
@@ -476,7 +476,7 @@ XD_TGT void process_item(const Item & m, const CpuDecodeJob & jb, const ActRef &
                 float * dst = jb.dst + size_t(t) * dstride;
                 const float * st = scr + size_t(t) * tsz;
                 for (int64_t l = 0; l < N_LANES; ++l) {
-                    const int64_t row0 = g.sp_row0(m.split) + (m.chain * N_LANES + l) * GROUP_ROWS * Gs + m.sb * GSB * GROUP_ROWS;
+                    const int64_t row0 = g.sp_row0(m.split) + (m.chain * N_LANES + l) * GROUP_ROWS * Gs + m.sb * g.gsb * GROUP_ROWS;
                     for (int64_t i = 0; i < gc; ++i) {
                         const int64_t r = row0 + i * GROUP_ROWS;
                         if (r >= n_use) break;
@@ -556,7 +556,7 @@ std::vector<SplitPlan> make_split_plan(const Geom & g, double frac) {
             int64_t best = 0;
             double bd = frac;                                   // k = 0: distance |0 - frac|
             for (int64_t k = 1; k <= nsb; ++k) {
-                const double f = double(std::min<int64_t>(k * GSB, Gs)) / double(Gs);
+                const double f = double(std::min<int64_t>(k * g.gsb, Gs)) / double(Gs);
                 if (std::fabs(f - frac) < bd) { bd = std::fabs(f - frac); best = k; }
             }
             p.sb_npu = best;
@@ -570,13 +570,13 @@ std::vector<SplitPlan> make_split_plan(const Geom & g, double frac) {
     return out;
 }
 
-void cpu_pack_npu_act(Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, int64_t n_w, const void * act, uint8_t * dst) {
+void cpu_pack_npu_act(Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, int64_t n_w, int gsb, const void * act, uint8_t * dst) {
     (void) k_full;
     const size_t nact = act_chunks(fmt, k_use);
     thread_local std::vector<uint8_t> a;
     a.assign(nact * CHUNK, 0);
     const int64_t nbk = k_use / 256;
-    const int32_t hdr[6] = { int32_t(groups), int32_t(k_use), int32_t(fmt_info(fmt).qt), int32_t(nact - 1), int32_t(n_w), int32_t(groups * nbk) };
+    const int32_t hdr[7] = { int32_t(groups), int32_t(k_use), int32_t(fmt_info(fmt).qt), int32_t(nact - 1), int32_t(n_w), int32_t(groups * nbk), int32_t(gsb) };
     std::memcpy(a.data(), hdr, sizeof(hdr));
     uint8_t * p = a.data() + 64;
     if (blocks32(fmt)) {          // q[K] signed | f32 d[K/32]   (CPU format: q + 128, then f32 d[K/32])
@@ -673,7 +673,7 @@ void build_plan(const CpuDecodeJob * jobs, size_t nj, FlushPlan & P) {
                 int64_t k0, k1;
                 if (!kb_range(j, s, sb, k0, k1)) continue;
                 for (int64_t chain = 0; chain < N_CHAINS; ++chain)
-                    if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS < jobs[j].rows()) ++n_groups_total;
+                    if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * g.gsb * GROUP_ROWS < jobs[j].rows()) ++n_groups_total;
             }
         }
     }
@@ -687,7 +687,7 @@ void build_plan(const CpuDecodeJob * jobs, size_t nj, FlushPlan & P) {
                 int64_t k0, k1;
                 if (!kb_range(j, s, sb, k0, k1)) continue;
                 for (int64_t chain = 0; chain < N_CHAINS; ++chain) {
-                    if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * GSB * GROUP_ROWS >= jobs[j].rows()) continue;   // padding only / beyond n_use
+                    if (g.sp_row0(s) + (chain * N_LANES) * GROUP_ROWS * Gs + sb * g.gsb * GROUP_ROWS >= jobs[j].rows()) continue;   // padding only / beyond n_use
                     int64_t P_ = std::max<int64_t>(1, std::min<int64_t>(parts_wanted, (k1 - k0) / 2));
                     if (tail_fine > 0 && gidx + tail_groups >= n_groups_total) P_ = std::max<int64_t>(P_, std::min<int64_t>(tail_fine, k1 - k0));
                     ++gidx;
@@ -799,7 +799,7 @@ XD_TGT void helper_stream(const FlushRec & rec, int tid, int nth, uint64_t ep) {
         const uint8_t * w = rec.jobs[m.job].w;
         const int64_t gc = g.sb_groups(m.split, m.sb);
         const uint8_t * cb = w + g.sp_off(m.split) + size_t(m.chain) * g.sp_chain_bytes(m.split);
-        const size_t slab_full = g.slab_bytes(GSB), slab = g.slab_bytes(gc);
+        const size_t slab_full = g.slab_bytes(g.gsb), slab = g.slab_bytes(gc);
         const size_t s0_sb = size_t(m.sb) * size_t(g.nbk) * slab_full;
         size_t left = per_item;
         for (int64_t kb = m.kb0; kb < m.kb1 && left > 0; ++kb) {
@@ -958,7 +958,7 @@ void cpu_decode_stats(double & b, double & w, int & t) { b = w = 0; t = 1; }
 void cpu_decode_run(const CpuDecodeJob *, size_t, const std::function<void()> &) {}
 const void * cpu_decode_act(size_t) { return nullptr; }
 std::vector<SplitPlan> make_split_plan(const layout::Geom & g, double) { return std::vector<SplitPlan>(size_t(g.nsplit)); }
-void cpu_pack_npu_act(layout::Fmt, int64_t, int64_t, int64_t, int64_t, const void *, uint8_t *) {}
+void cpu_pack_npu_act(layout::Fmt, int64_t, int64_t, int64_t, int64_t, int, const void *, uint8_t *) {}
 
 #endif
 

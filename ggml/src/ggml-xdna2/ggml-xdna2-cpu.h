@@ -8,8 +8,8 @@
 // the NPU / host reference path).  Activations are quantized here (Q8_K-like 256 blocks with the 16-sums for the K-quants, biased
 // Q8_0 blocks for Q8_0), the products are exact integer dot products per (sub-)block, scaled in f32 like ggml's vec_dot.
 //
-// Work is organised in items = (split, core c32, superblock sb): the 16-row groups sb*GSB .. of one core of the NPU layout, i.e. the
-// rows [row0(split) + c32*16*Gs + sb*GSB*16, +16*gc).  A job may restrict the CPU to the superblocks >= sb_from of every split
+// Work is organised in items = (split, core c32, superblock sb): the 16-row groups sb*gsb .. of one core of the NPU layout, i.e. the
+// rows [row0(split) + c32*16*Gs + sb*gsb*16, +16*gc).  A job may restrict the CPU to the superblocks >= sb_from of every split
 // (the NPU then does the prefix [0, sb_from) of every chain: row split between NPU and CPU, see ggml-xdna2-xrt.cpp).
 
 #include <cstddef>
@@ -66,7 +66,7 @@ void cpu_decode_run(const CpuDecodeJob * jobs, size_t n, const std::function<voi
 const void * cpu_decode_act(size_t job);
 
 // The activation BO of the NPU decode kernel for a (K-prefix of a) quantized activation of the CPU format: logical content
-// [64 B header: G, K, qtype, n_act-1, n_w, G*K/256][q | d | bsum32], every chunk duplicated for the 4 lanes (dst: layout::act_chunks(fmt, k_use) * 4 * CHUNK bytes)
-void cpu_pack_npu_act(layout::Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, int64_t n_w, const void * act, uint8_t * dst);
+// [64 B header: G, K, qtype, n_act-1, n_w, G*K/256, gsb][q | d | bsum32], every chunk duplicated for the 4 lanes (dst: layout::act_chunks(fmt, k_use) * 4 * CHUNK bytes)
+void cpu_pack_npu_act(layout::Fmt fmt, int64_t k_full, int64_t k_use, int64_t groups, int64_t n_w, int gsb, const void * act, uint8_t * dst);
 
 } // namespace xdna2
