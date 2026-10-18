@@ -17,6 +17,16 @@
 
 </div>
 
+## This fork: AMD XDNA2 NPU backend
+
+The `xdna2-universal` branch adds a backend for the NPU in AMD Ryzen AI 300 and Ryzen AI Max chips (Linux only). It runs prompt processing on
+the NPU and token generation on the CPU. On Qwen3.5-4B it processes a 4k-token prompt at 560 tok/s at about 16 W of package power in the
+power-saver profile, against 528 tok/s at 33 W for llama.cpp's Vulkan backend on the iGPU of the same laptop. Token generation is slower
+than on the iGPU (19 vs 24 tok/s).
+
+The quick start below installs upstream llama.cpp, which has no NPU support. See [docs/backend/XDNA2.md](docs/backend/XDNA2.md) for
+installation, measurements against the iGPU and FastFlowLM, and limitations.
+
 ## Quick start
 
 A few options to get `llama.cpp` installed on your machine:
