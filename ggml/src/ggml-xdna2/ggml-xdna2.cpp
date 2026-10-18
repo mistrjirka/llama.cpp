@@ -65,6 +65,16 @@ static layout::Geom xdna2_geom(const ggml_tensor * t) {
     return layout::make_geom(f, t->ne[1], t->ne[0]);
 }
 
+// a view of the first rows of a 2D repacked weight (e.g. a truncated LM head): the CPU GEMV computes just those rows from the base layout
+static const ggml_tensor * xdna2_row_prefix_base(const ggml_tensor * t) {
+    const ggml_tensor * b = t->view_src;
+    if (b == nullptr || t->view_offs != 0 || b->type != t->type || !xdna2_is_repacked(b)) return nullptr;
+    if (t->ne[0] != b->ne[0] || t->ne[1] > b->ne[1] || t->nb[1] != b->nb[1] || t->ne[2] != 1 || t->ne[3] != 1 || b->ne[2] != 1 || b->ne[3] != 1) {
+        return nullptr;
+    }
+    return b;
+}
+
 static size_t xdna2_slices(const ggml_tensor * t) {
     return size_t(t->ne[2]) * size_t(t->ne[3]);
 }
@@ -331,7 +341,7 @@ static void xdna2_flush(ggml_backend_xdna2_context * ctx) {
         }
         ctx->t_cpu += xdna2_now() - t0;
         ctx->n_cpu_flush++; ctx->n_cpu_jobs += ctx->cpu_pending.size();
-        for (const auto & j : ctx->cpu_pending) ctx->b_cpu += double(j.geom.bytes);
+        for (const auto & j : ctx->cpu_pending) ctx->b_cpu += double(j.geom.bytes) * double(j.rows()) / double(j.geom.n);
         ctx->cpu_pending.clear();
         if (ctx->pending.empty() && ctx->pf_pending.empty()) {
             ctx->pending_dst.clear();
@@ -373,9 +383,12 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
     GGML_ASSERT(ne00 == ne10 && ne0 == ne01 && ne1 == ne11 && ne2 == ne12 && ne3 == ne13);
     GGML_ASSERT(nb10 == sizeof(float) && nb0 == sizeof(float));
 
-    const layout::Geom geom = xdna2_geom(src0);
-    const Arena * arena = xdna2_ctx(src0->buffer)->arena.get();
-    const size_t base_off = xdna2_arena_off(src0->buffer, src0);
+    const ggml_tensor * prefix_base = src0->view_src ? xdna2_row_prefix_base(src0) : nullptr;
+    GGML_ASSERT((src0->view_src == nullptr || prefix_base) && "xdna2: views of repacked tensors are not supported");
+    const ggml_tensor * w0 = prefix_base ? prefix_base : src0;
+    const layout::Geom geom = xdna2_geom(w0);
+    const Arena * arena = xdna2_ctx(w0->buffer)->arena.get();
+    const size_t base_off = xdna2_arena_off(w0->buffer, w0);
 
     const int64_t r2 = ne12 / ne02;
     const int64_t r3 = ne13 / ne03;
@@ -400,6 +413,25 @@ static void ggml_backend_xdna2_mul_mat(ggml_backend_xdna2_context * ctx, ggml_te
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
         for (int64_t i12 = 0; i12 < ne12; ++i12) {
             const int64_t i02 = i12 / r2, i03 = i13 / r3;
+
+            if (prefix_base) {
+                // row prefix (only the CPU GEMV handles it): chunks of at most CPU_MAX_TOK tokens
+                for (int64_t t0 = 0; t0 < ne11; t0 += CPU_MAX_TOK) {
+                    CpuDecodeJob cj;
+                    cj.geom       = geom;
+                    cj.w          = arena->base() + base_off;
+                    cj.x          = reinterpret_cast<const float *>(static_cast<const char *>(src1->data) + t0 * nb11 + i12 * nb12 + i13 * nb13);
+                    cj.dst        = reinterpret_cast<float *>(static_cast<char *>(dst->data) + t0 * nb1 + i12 * nb2 + i13 * nb3);
+                    cj.n_tok      = int(std::min<int64_t>(CPU_MAX_TOK, ne11 - t0));
+                    cj.x_stride   = nb11;
+                    cj.dst_stride = nb1;
+                    cj.n_use      = ne01;
+                    cj.arena      = arena;
+                    cj.w_off      = base_off;
+                    ctx->cpu_pending.push_back(cj);
+                }
+                continue;
+            }
 
             if (use_cpu) {
                 CpuDecodeJob cj;
@@ -1011,7 +1043,10 @@ static bool ggml_backend_xdna2_device_supports_op(ggml_backend_dev_t, const ggml
             if (src0->buffer && src0->buffer->buft != xdna2_buft()) {
                 return xdna2_reject(2);
             }
-            if (src0->view_src != nullptr || !ggml_is_contiguous(src0)) {
+            if (src0->view_src != nullptr && !(xdna2_row_prefix_base(src0) && cpu_decode_available())) {
+                return xdna2_reject(3);
+            }
+            if (!ggml_is_contiguous(src0)) {
                 return xdna2_reject(3);
             }
             if (!layout::k_supported(src0->ne[0]) || src0->ne[0] != src1->ne[0]) {

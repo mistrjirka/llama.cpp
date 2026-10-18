@@ -43,9 +43,12 @@ struct CpuDecodeJob {
     int                 n_tok = 1;        // tokens (<= CPU_MAX_TOK): the weights are read once for all of them
     size_t              x_stride = 0;     // bytes between the tokens of x
     size_t              dst_stride = 0;   // bytes between the tokens of dst
+    int64_t             n_use = 0;        // rows computed and written (a prefix of the matrix); 0 = all geom.n
     const SplitPlan *   plan = nullptr;   // geom.nsplit entries; nullptr = the CPU computes the whole matrix
     const Arena *       arena = nullptr;  // for the NPU part
     size_t              w_off = 0;
+
+    int64_t rows() const { return n_use > 0 ? n_use : geom.n; }
 };
 
 constexpr int CPU_MAX_TOK = 8;

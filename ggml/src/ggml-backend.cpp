@@ -1112,10 +1112,12 @@ static int ggml_backend_sched_backend_id_from_cur(ggml_backend_sched_t sched, st
             if (src == NULL) {
                 continue;
             }
-            if (src->buffer != NULL && src->buffer->usage == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
+            // (a view of a weight, e.g. a row range, gets its buffer only at allocation: use the one of its source)
+            ggml_backend_buffer_t src_buf = src->view_src ? src->view_src->buffer : src->buffer;
+            if (src_buf != NULL && src_buf->usage == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
                 int src_backend_id = ggml_backend_sched_backend_from_buffer(sched, src, tensor);
                 // check if a backend with higher prio wants to offload the op
-                if (sched->op_offload && src_backend_id == sched->n_backends - 1 && ggml_backend_buffer_is_host(src->buffer)) {
+                if (sched->op_offload && src_backend_id == sched->n_backends - 1 && ggml_backend_buffer_is_host(src_buf)) {
                     for (int b = 0; b < src_backend_id; b++) {
                         if (ggml_backend_supports_op(sched->backends[b], tensor) && ggml_backend_offload_op(sched->backends[b], tensor)) {
                             SET_CAUSE(tensor, "1.off");
