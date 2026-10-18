@@ -41,44 +41,46 @@ xrt-smi examine        # should list an NPU device under "Device(s) Present"
 
 ### 2. Locked-memory limit
 
-XRT locks a 64 MiB buffer when it opens the NPU. systemd limits locked memory to 8 MiB per process by default, and then the backend prints
-`cannot open the NPU device ... the locked-memory limit is 8192 KiB` and runs everything on the CPU. Check with `ulimit -l`; it should print
-`unlimited`. To raise it for your user:
+XRT locks a 64 MiB buffer when it opens the NPU. The backend raises the soft `RLIMIT_MEMLOCK` to the hard limit by itself, so this only needs
+fixing when the hard limit is small too (check with `ulimit -Hl`; systemd services and some distributions default to 8 MiB). Then the backend prints
+`cannot open the NPU device ... the locked-memory limit is 8192 KiB` and runs everything on the CPU (about 100 tok/s prompt processing instead of 500+).
+To raise it for your user:
 
 ```sh
 echo -e "$USER soft memlock unlimited\n$USER hard memlock unlimited" | sudo tee /etc/security/limits.d/99-amdxdna.conf
 ```
 
-then log out and back in. If `ulimit -l` still shows 8192 (systemd sessions can ignore limits.d), set it in systemd as well:
+then log out and back in. If `ulimit -Hl` still shows 8192 (systemd sessions can ignore limits.d), set it in systemd as well:
 `sudo systemctl edit user@.service`, add `LimitMEMLOCK=infinity` under `[Service]`, and log in again. A service that runs `llama-server`
 needs `LimitMEMLOCK=infinity` in its own unit.
 
 ### 3. NPU kernel toolchain
 
-The NPU kernels are compiled on the first run (once per kernel, then cached). That needs [mlir-aie](https://github.com/Xilinx/mlir-aie) and
-its Peano compiler (`llvm-aie`) in a Python venv. Wheels exist for Python 3.11 to 3.14:
-
-```sh
-python3 -m venv ~/mlir-aie-env
-~/mlir-aie-env/bin/pip install mlir_aie==1.4.0 -f https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v1.4.0
-~/mlir-aie-env/bin/pip install "llvm-aie==21.0.0.2026072001+ce8c0f8f" -f https://github.com/Xilinx/llvm-aie/releases/expanded_assets/nightly
-```
-
-These are the versions this branch is tested with (the `llvm-aie` pin is the one mlir-aie v1.4.0 itself uses).
-
-### 4. Build
+The NPU kernels are compiled on the first run (once per model shape, then cached). That needs [mlir-aie](https://github.com/Xilinx/mlir-aie) and
+its Peano compiler (`llvm-aie`) in a Python venv. `scripts/xdna2-setup.sh` checks steps 1 and 2 and creates that venv (needs Python 3.11 to 3.14,
+about 1.4 GB on disk, no root):
 
 ```sh
 git clone -b xdna2-universal https://github.com/mistrjirka/llama.cpp
 cd llama.cpp
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_XDNA2=ON -DGGML_XDNA2_MLIR_AIE_ENV=$HOME/mlir-aie-env
+scripts/xdna2-setup.sh
+```
+
+It installs `mlir_aie==1.4.0` and the `llvm-aie` build that mlir-aie v1.4.0 itself uses (the versions this branch is tested with) into
+`~/.local/share/ggml-xdna2/venv`, where the backend finds them without any flag. To use another venv, pass its path to the script and
+set `GGML_XDNA2_MLIR_AIE_ENV` at run time (or `-DGGML_XDNA2_MLIR_AIE_ENV=` when configuring).
+
+### 4. Build
+
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_XDNA2=ON
 cmake --build build -j
 ```
 
-The CMake output should contain `ggml-xdna2: XRT found`. Without XRT the backend still builds, but only as a CPU reference path.
-
-The kernel sources are read from the source tree at run time (`ggml/src/ggml-xdna2/kernels`), so keep the clone where it was built.
-The toolchain path can be changed later with the `GGML_XDNA2_MLIR_AIE_ENV` environment variable.
+The CMake output should contain `ggml-xdna2: XRT found` and `ggml-xdna2: NPU kernel toolchain found`. CMake warns if either is missing. GCC and
+Clang both work. `cmake --install build` also installs the kernel sources (`share/ggml-xdna2/kernels`), which the backend finds next to the
+library, so an installed build does not need the source tree (`GGML_XDNA2_KERNEL_DIR` overrides the location). In a prefix that is not on the
+loader path, set `LD_LIBRARY_PATH=<prefix>/lib` as for any llama.cpp install.
 
 ### 5. Run
 
@@ -203,7 +205,8 @@ Gemma 4 12B
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GGML_XDNA2_MLIR_AIE_ENV` | build-time value | mlir-aie venv used to compile kernels |
+| `GGML_XDNA2_MLIR_AIE_ENV` | build-time value, else `~/.local/share/ggml-xdna2/venv` | mlir-aie venv used to compile kernels |
+| `GGML_XDNA2_KERNEL_DIR` | `<prefix>/share/ggml-xdna2/kernels`, else the source tree | kernel sources and build scripts |
 | `GGML_XDNA2_CACHE_DIR` | `$XDG_CACHE_HOME/ggml-xdna2` or `~/.cache/ggml-xdna2` | kernel cache |
 | `GGML_XDNA2_DISABLE` | unset | `1`: do not register the NPU device |
 | `GGML_XDNA2_FA` | on | `0`: attention on the CPU |

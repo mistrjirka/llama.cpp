@@ -24,8 +24,16 @@ the NPU and token generation on the CPU. On Qwen3.5-4B it processes a 4k-token p
 power-saver profile, against 528 tok/s at 33 W for llama.cpp's Vulkan backend on the iGPU of the same laptop. Token generation is slower
 than on the iGPU (19 vs 24 tok/s).
 
+```sh
+sudo pacman -S xrt xrt-plugin-amdxdna     # Arch; other distributions build XRT from amd/xdna-driver, see the guide
+git clone -b xdna2-universal https://github.com/mistrjirka/llama.cpp && cd llama.cpp
+scripts/xdna2-setup.sh                    # checks the NPU stack, installs the kernel compiler into ~/.local/share/ggml-xdna2
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_XDNA2=ON && cmake --build build -j
+./build/bin/llama-server -m model.gguf    # OpenAI-compatible API; the first prompt is 20-45 s slower while NPU kernels compile
+```
+
 The quick start below installs upstream llama.cpp, which has no NPU support. See [docs/backend/XDNA2.md](docs/backend/XDNA2.md) for
-installation, measurements against the iGPU and FastFlowLM, and limitations.
+the details, measurements against the iGPU and FastFlowLM, and limitations.
 
 ## Quick start
 

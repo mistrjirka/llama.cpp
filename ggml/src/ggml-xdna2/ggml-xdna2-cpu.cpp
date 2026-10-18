@@ -14,7 +14,7 @@
 
 #if defined(__x86_64__)
 #include <immintrin.h>
-#include <mwaitxintrin.h>
+#include <x86intrin.h>   // _mm_monitorx/_mm_mwaitx (clang rejects including mwaitxintrin.h directly)
 #include <sched.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>

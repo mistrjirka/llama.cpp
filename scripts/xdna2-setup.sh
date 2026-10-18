@@ -49,7 +49,7 @@ else
   done
   if [ -z "$PY" ]; then warn "need python 3.11 to 3.14 with the venv module (Debian/Ubuntu: sudo apt install python3-venv)"
   else
-    echo "  creating the venv with $PY and installing mlir_aie $MLIR_AIE_VERSION + llvm-aie (about 1 GB download)"
+    echo "  creating the venv with $PY and installing mlir_aie $MLIR_AIE_VERSION + llvm-aie (about 1.4 GB)"
     if "$PY" -m venv "$VENV" \
        && "$VENV/bin/pip" install -q "mlir_aie==$MLIR_AIE_VERSION" -f "https://github.com/Xilinx/mlir-aie/releases/expanded_assets/v$MLIR_AIE_VERSION" \
        && "$VENV/bin/pip" install -q "llvm-aie==$LLVM_AIE_VERSION" -f https://github.com/Xilinx/llvm-aie/releases/expanded_assets/nightly \
