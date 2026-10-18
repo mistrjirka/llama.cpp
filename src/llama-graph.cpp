@@ -1809,7 +1809,15 @@ llm_graph_qkv llm_graph_context::build_qkv(
         }
     } else {
         // separate Q/K/V path
-        Qcur = build_lora_mm(layer.wq, cur, layer.wq_s);
+        // the three matmuls go into the graph next to each other, so a backend that batches independent matmuls sees them in one split
+        ggml_tensor * q_mm = build_lora_mm(layer.wq, cur, layer.wq_s);
+        ggml_tensor * k_mm = build_lora_mm(layer.wk, cur, layer.wk_s);
+        ggml_tensor * v_mm = build_lora_mm(layer.wv, cur, layer.wv_s);
+        ggml_build_forward_expand(gf, q_mm);
+        ggml_build_forward_expand(gf, k_mm);
+        ggml_build_forward_expand(gf, v_mm);
+
+        Qcur = q_mm;
         if (reshape) {
             cb(Qcur, "Qcur", il);
         }
@@ -1823,7 +1831,7 @@ llm_graph_qkv llm_graph_context::build_qkv(
             Qcur = ggml_clamp(ctx0, Qcur, -hparams.f_clamp_kqv, hparams.f_clamp_kqv);
             cb(Qcur, "Qcur_clamped", il);
         }
-        Kcur = build_lora_mm(layer.wk, cur, layer.wk_s);
+        Kcur = k_mm;
         if (reshape) {
             cb(Kcur, "Kcur", il);
         }
@@ -1837,7 +1845,7 @@ llm_graph_qkv llm_graph_context::build_qkv(
             Kcur = ggml_clamp(ctx0, Kcur, -hparams.f_clamp_kqv, hparams.f_clamp_kqv);
             cb(Kcur, "Kcur_clamped", il);
         }
-        Vcur = build_lora_mm(layer.wv, cur, layer.wv_s);
+        Vcur = v_mm;
         if (reshape) {
             cb(Vcur, "Vcur", il);
         }
