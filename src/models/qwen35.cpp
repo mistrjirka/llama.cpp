@@ -656,7 +656,18 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s : model.output_s;
     GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head (nextn.shared_head_head or model.output)");
-    cur = build_lora_mm(head_w, cur, head_s);
+    // LLAMA_MTP_VOCAB=K: the draft head scores only the first K token ids (the most frequent ones in a BPE vocab), the
+    // other logits are -inf.  The head reads K / n_vocab of the LM head; the target verifies every draft, so the output is unchanged.
+    static const int64_t mtp_vocab = [] { const char * e = getenv("LLAMA_MTP_VOCAB"); return e ? atoll(e) : 0; }();
+    const int64_t n_vocab = head_w->ne[1];
+    if (mtp_vocab > 0 && mtp_vocab < n_vocab && !head_s) {
+        ggml_tensor * head_k = ggml_view_2d(ctx0, head_w, head_w->ne[0], mtp_vocab, head_w->nb[1], 0);
+        cur = build_lora_mm(head_k, cur, nullptr);
+        ggml_tensor * rest = ggml_pad(ctx0, ggml_view_2d(ctx0, cur, 1, cur->ne[1], cur->nb[1], 0), n_vocab - mtp_vocab - 1, 0, 0, 0);
+        cur = ggml_concat(ctx0, cur, ggml_fill(ctx0, rest, -INFINITY), 0);
+    } else {
+        cur = build_lora_mm(head_w, cur, head_s);
+    }
     cb(cur, "result_output", -1);
 
     res->t_logits = cur;
