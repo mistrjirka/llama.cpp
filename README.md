@@ -1,3 +1,21 @@
+
+I highly recommend bit better project for most people the https://github.com/poisonxa16/pxa it has much more advanced features and ported lot of the optimizations that are here. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # llama.cpp for NVIDIA SM70 and SM75 GPUs
 
 This repository is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp), a C/C++ project for running language models locally from **GGUF** model files. It includes the normal llama.cpp command-line tools and OpenAI-compatible HTTP server; this is a complete llama.cpp source tree, not an extension that must be installed on top of another copy.
