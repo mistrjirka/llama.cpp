@@ -1,152 +1,161 @@
-# llama.cpp
+# llama.cpp for the AMD XDNA2 NPU
 
-![llama](https://raw.githubusercontent.com/ggml-org/llama.brand/refs/heads/master/cover/llama-cpp/cover-llama-cpp-dark.svg)
+A fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) that runs **prompt processing on the NPU of Ryzen AI 300 / Max chips** and keeps
+token generation on the CPU. It is a ggml backend, not a separate program: `llama-server`, `llama-cli`, `llama-bench`, the OpenAI-compatible
+API and ordinary GGUF models work exactly as upstream, and the NPU is used automatically.
 
-<div align="center">
+Why: on battery, the NPU processes a long prompt at **half the power of the iGPU** and, on Qwen3.5 models, faster.
 
-<b>LLM inference in C/C++</b>
+| Qwen3.5-4B, 4.3k-token prompt, power-saver profile | Prompt tok/s | Package power | Generation tok/s | Package power |
+|---|---:|---:|---:|---:|
+| **this fork (NPU + CPU)** | **560** | 16 W | 19.2 | 16 W |
+| llama.cpp Vulkan (iGPU) | 528 | 33 W | **23.6** | 32 W |
+| llama.cpp ROCm (iGPU) | 454 | 31 W | 22.3 | 31 W |
+| FastFlowLM (NPU only) | 479 | **13 W** | 15.2 | **12 W** |
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/ggml-org/llama.cpp?filter=v*&color=brightgreen)](https://github.com/ggml-org/llama.cpp/releases?q=tag:v0)
-[![Nightly](https://img.shields.io/github/v/release/ggml-org/llama.cpp?label=nightly&filter=b*&color=orange)](https://github.com/ggml-org/llama.cpp/releases?q=b)
-[![Server](https://img.shields.io/github/actions/workflow/status/ggml-org/llama.cpp/server.yml?label=Server)](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml)
-[![Docker](https://img.shields.io/github/actions/workflow/status/ggml-org/llama.cpp/docker.yml?label=Docker)](https://github.com/ggml-org/llama.cpp/actions/workflows/docker.yml)
-[![Winget](https://img.shields.io/github/actions/workflow/status/ggml-org/llama.cpp/winget.yml?label=Winget)](https://github.com/ggml-org/llama.cpp/actions/workflows/winget.yml)
+Token generation is not faster than the iGPU, and on Gemma 4 12B prompt processing is slower than the iGPU. [Full results](#benchmarks) and
+[limitations](#limitations) below.
 
-[ggml](https://github.com/ggml-org/ggml) / [ops](https://github.com/ggml-org/llama.cpp/blob/master/docs/ops.md) / [maintainer PRs](https://github.com/ggml-org/llama.cpp/issues?q=is%3Apr%20is%3Aopen%20draft%3AFalse%20(author%3Argerganov%20OR%20author%3AKitaitiMakoto%20OR%20author%3Adanbev%20OR%20author%3Aaldehir%20OR%20author%3Amax-krasnyansky%20OR%20author%3ACISC%20OR%20author%3Aggerganov%20OR%20author%3Aam17an%20OR%20author%3Ajhen0409%20OR%20author%3Abartowski1182%20OR%20author%3Anikwen%20OR%20author%3Ahipudding%20OR%20author%3Aravi9%20OR%20author%3AServeurpersoCom%20OR%20author%3Apwilkin%20OR%20author%3Areeselevine%20OR%20author%3Angxson%20OR%20author%3Ajeffbolznv%20OR%20author%3Amarty1885%20OR%20author%3A0cc4m%20OR%20author%3ATitaniumtown%20OR%20author%3Aangt%20OR%20author%3AIMbackK%20OR%20author%3Aarthw%20OR%20author%3AJohannesGaessler%20OR%20author%3AORippler%20OR%20author%3Aruixiang63%20OR%20author%3Axctan%20OR%20author%3Aallozaur%20OR%20author%3Ayomaytk%20OR%20author%3Aaendk%20OR%20author%3Awine99%20OR%20author%3Agaugarg-nv%20OR%20author%3Ataronaeo%20OR%20author%3Aforforever73%20OR%20author%3Alhez%20OR%20author%3Anetrunnereve%20OR%20author%3Afairydreaming)%20sort%3Aupdated-desc) / [dev stats](https://github.com/ggml-org/llama.cpp-dev) / [lib llama API](https://github.com/ggml-org/llama.cpp/issues/9289) / [llama-server REST API](https://github.com/ggml-org/llama.cpp/issues/9291)
+**Status:** works and passes llama.cpp's server tests (251 passed, 4 skipped, 1 failed; the failure is a model download timeout that also fails on a
+stock build). Tested on one machine and one distribution only (see [Requirements](#requirements)).
 
-</div>
+## Contents
 
-## This fork: AMD XDNA2 NPU backend
-
-The `xdna2-universal` branch adds a backend for the NPU in AMD Ryzen AI 300 and Ryzen AI Max chips (Linux only). It runs prompt processing on
-the NPU and token generation on the CPU. On Qwen3.5-4B it processes a 4k-token prompt at 560 tok/s at about 16 W of package power in the
-power-saver profile, against 528 tok/s at 33 W for llama.cpp's Vulkan backend on the iGPU of the same laptop. Token generation is slower
-than on the iGPU (19 vs 24 tok/s).
-
-```sh
-sudo pacman -S xrt xrt-plugin-amdxdna     # Arch; other distributions build XRT from amd/xdna-driver, see the guide
-git clone -b xdna2-universal https://github.com/mistrjirka/llama.cpp && cd llama.cpp
-scripts/xdna2-setup.sh                    # checks the NPU stack, installs the kernel compiler into ~/.local/share/ggml-xdna2
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_XDNA2=ON && cmake --build build -j
-./build/bin/llama-server -m model.gguf    # OpenAI-compatible API; the first prompt is 20-45 s slower while NPU kernels compile
-```
-
-The quick start below installs upstream llama.cpp, which has no NPU support. See [docs/backend/XDNA2.md](docs/backend/XDNA2.md) for
-the details, measurements against the iGPU and FastFlowLM, and limitations.
+[Quick start](#quick-start) | [Requirements](#requirements) | [Benchmarks](#benchmarks) | [How it works](#how-it-works) |
+[Troubleshooting](#troubleshooting) | [Limitations](#limitations) | [Staying current with upstream](#staying-current-with-upstream) |
+[Credits and license](#credits-and-license)
 
 ## Quick start
 
-A few options to get `llama.cpp` installed on your machine:
-
-```bash
-# curl
-curl -LsSf https://llama.app/install.sh | sh
-
-# powershell
-irm https://llama.app/install.ps1 | iex
+```sh
+sudo pacman -S xrt xrt-plugin-amdxdna        # Arch; other distributions: see docs/backend/XDNA2.md
+git clone https://github.com/mistrjirka/llama.cpp-xdna2 && cd llama.cpp-xdna2
+scripts/xdna2-setup.sh                       # checks the NPU stack, installs the kernel compiler (no root, ~1.4 GB)
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_XDNA2=ON && cmake --build build -j
+./build/bin/llama-server -m model.gguf -c 16384    # OpenAI API at http://127.0.0.1:8080/v1
 ```
 
-- Visit https://llama.app and follow the instructions
-- Run with Docker - see our [Docker documentation](docs/docker.md)
-- Download pre-built binaries from the [releases page](https://github.com/ggml-org/llama.cpp/releases)
-- Build from source by cloning this repository - check out [our build guide](docs/build.md)
-
-Once installed:
+The first prompt of a new model is 20-45 s slower while the NPU kernels compile; they are cached in `~/.cache/ggml-xdna2` and reused afterwards.
+`llama-server --list-devices` should list `XDNA2: AMD XDNA2 NPU`. If the speed is far lower than the tables below, see [Troubleshooting](#troubleshooting).
 
 ```sh
-# Download and run a model directly from Hugging Face
-llama cli -hf ggml-org/Qwen3.5-0.8B-GGUF
-
-# Launch OpenAI-compatible API server
-llama serve -hf ggml-org/Qwen3.5-0.8B-GGUF
+curl http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'
+./build/bin/llama-bench -m model.gguf -fa 1 -ub 2048 -p 512,2048 -n 64     # llama-bench needs -ub 2048 to match the server default
 ```
 
-<table align="center">
-    <tr>
-        <td align="center" width=50%>
-            <img width="1310" height="888" alt="VLM session with `llama cli`" src="https://github.com/user-attachments/assets/88726b48-1713-48aa-a525-95a02e78afc4" />
-            <i>VLM session with <b>llama cli</b></i>
-        </td>
-        <td align="center">
-            <img width="1392" height="958" alt="Built-in web UI against `llama serve` running Qwen 3.6" src="https://github.com/user-attachments/assets/b402f972-2e32-4def-8771-8d849f08cf2e" />
-            <i>Built-in web UI against <b>llama serve</b></i>
-        </td>
-    </tr>
-<table>
+Full installation notes, other distributions, and the environment variables: [docs/backend/XDNA2.md](docs/backend/XDNA2.md).
 
-## Description
+## Requirements
 
-The main goal of `llama.cpp` is to enable LLM (and VLM) inference with minimal setup and state-of-the-art performance on
-a wide range of hardware - locally and in the cloud.
+- An AMD **XDNA2** NPU: Ryzen AI 300 (Strix Point, Krackan Point) or Ryzen AI Max (Strix Halo). XDNA1 (Ryzen 7040/8040) is not supported.
+- Linux 6.14 or newer (mainline `amdxdna` driver), x86-64 with AVX-512 (all Ryzen AI 300 chips have it). Windows is not supported.
+- XRT and the amdxdna plugin; Python 3.11 to 3.14 for the kernel compiler; GCC or Clang.
+- 64 MiB of lockable memory for XRT (`ulimit -Hl`); the setup script checks this.
 
-- Plain C/C++ implementation without any dependencies
-- Apple silicon is a first-class citizen - optimized via ARM NEON, Accelerate and Metal frameworks
-- AVX, AVX2, AVX512 and AMX support for x86 architectures
-- RVV, ZVFH, ZFH, ZICBOP and ZIHINTPAUSE support for RISC-V architectures
-- 1.5-bit, 2-bit, 3-bit, 4-bit, 5-bit, 6-bit, and 8-bit integer quantization for faster inference and reduced memory use
-- Custom CUDA kernels for running LLMs on NVIDIA GPUs (support for AMD GPUs via HIP and Moore Threads GPUs via MUSA)
-- Vulkan and SYCL backend support
-- CPU+GPU hybrid inference to partially accelerate models larger than the total VRAM capacity
+Tested only on an HP OmniBook Ultra 14 (Ryzen AI 9 365, 32 GB), Arch Linux, kernel 7.2, XRT 2.21.75, NPU firmware 1.1.2.64. The Ubuntu and
+Fedora steps in the guide come from AMD's driver documentation and have not been run.
 
-The `llama.cpp` project is build on top of the [ggml](https://github.com/ggml-org/ggml) library.
+## Benchmarks
 
-## Supported backends
+Same laptop, one engine at a time, each through its own OpenAI-compatible server and the same client. Prompt: one chat request of
+4.3k-4.5k tokens, time to the first token. Generation: 256 tokens after a short prompt. Power is the whole-package power (CPU, iGPU, NPU, memory
+controller) from the amdgpu driver, sampled every 20 ms; the screen and the rest of the laptop are not included. Each number is the second of
+two runs; repeats differ by about 5 %.
 
-| Backend | Target devices |
-| --- | --- |
-| [BLAS](docs/build.md#blas-build) | All |
-| [BLIS](docs/backend/BLIS.md) | All |
-| [CANN](docs/build.md#cann) | Ascend NPU |
-| [CUDA](docs/build.md#cuda) | Nvidia GPU |
-| [HIP](docs/build.md#hip) | AMD GPU |
-| [Hexagon](docs/backend/snapdragon/README.md) | Snapdragon |
-| [IBM zDNN](docs/backend/zDNN.md) | IBM Z & LinuxONE |
-| [MUSA](docs/build.md#musa) | Moore Threads GPU |
-| [Metal](docs/build.md#metal-build) | Apple Silicon |
-| [OpenCL](docs/backend/OPENCL.md) | Adreno GPU |
-| [OpenVINO [In Progress]](docs/backend/OPENVINO.md) | Intel CPUs, GPUs, and NPUs |
-| [RPC](https://github.com/ggml-org/llama.cpp/tree/master/tools/rpc) | All |
-| [SYCL](docs/backend/SYCL.md) | Intel GPU |
-| [VirtGPU](docs/backend/VirtGPU.md) | VirtGPU APIR |
-| [Vulkan](docs/build.md#vulkan) | GPU |
-| [WebGPU](docs/build.md#webgpu) | All |
-| [ZenDNN](docs/build.md#zendnn) | AMD CPU |
+Power-saver profile (the laptop default, what matters on battery). Prompt in tok/s at watts; generation likewise:
 
-## Documentation
+| Model | Engine | Prompt | Generation |
+|---|---|---:|---:|
+| Qwen3.5-4B Q4_K_M | **this fork** | **560** at 16.3 W | 19.2 at 16.4 W |
+| | Vulkan (iGPU) | 528 at 33.2 W | **23.6** at 32.4 W |
+| | ROCm (iGPU) | 454 at 31.0 W | 22.3 at 31.4 W |
+| | FastFlowLM | 479 at 12.9 W | 15.2 at 12.0 W |
+| Ornith-1.5-9B Q4_K_M | **this fork** | **408** at 18.3 W | 11.9 at 17.8 W |
+| | Vulkan (iGPU) | 307 at 30.7 W | **15.1** at 29.7 W |
+| | ROCm (iGPU) | 287 at 29.7 W | 13.6 at 29.4 W |
+| | FastFlowLM (Qwen3.5-9B) | 338 at 11.8 W | 9.3 at 11.5 W |
+| Gemma 4 12B QAT Q4_0 | this fork | 136 at 17.8 W | 9.2 at 18.4 W |
+| | Vulkan (iGPU) | 261 at 29.2 W | **11.3** at 29.7 W |
+| | ROCm (iGPU) | 179 at 28.8 W | 10.4 at 29.2 W |
+| | FastFlowLM | **278** at 16.3 W | 6.8 at 14.3 W |
 
-#### Tools
+What this says:
 
-- [cli](tools/cli/README.md)
-- [completion](tools/completion/README.md)
-- [server](tools/server/README.md)
-- [GBNF grammars](grammars/README.md)
+- **Prompt processing, Qwen3.5:** fastest of the four engines, at about half the iGPU's power, i.e. about half the energy per prompt token
+  (4B: 29 mJ/token against 63 for Vulkan). FastFlowLM is slightly more frugal on the 4B (27 mJ/token) but slower.
+- **Prompt processing, Gemma 4 12B:** the slowest here. Its global-attention layers run on the CPU and the cost grows with the prompt.
+- **Generation:** the iGPU is fastest everywhere. In power-saver this fork generates at about half the iGPU's power; in the performance
+  profile the CPU cores clock up and the power is about the same. FastFlowLM generates slowest but at the lowest power.
 
-#### Development
+The models are not byte-identical: llama.cpp runs the GGUFs named above, FastFlowLM its own conversions (Qwen3.5-9B stands in for Ornith, which
+is a fine-tune of the same architecture). Output quality was not compared. [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM) is the NPU
+engine [Lemonade](https://github.com/lemonade-sdk/lemonade) uses on Linux; Lemonade itself was not run.
 
-- [How to build](docs/build.md)
-- [Running on Docker](docs/docker.md)
-- [Build on Android](docs/android.md)
-- [Multi-GPU usage](docs/multi-gpu.md)
-- [Performance troubleshooting](docs/development/token_generation_performance_tips.md)
-- [GGML tips & tricks](https://github.com/ggml-org/llama.cpp/wiki/GGML-Tips-&-Tricks)
-- [XCFramework](docs/xcframework.md)
-- [Completions](docs/completions.md)
-- [Models](docs/models.md)
-- [Release process](docs/release.md)
+The performance profile (the iGPU engines draw 40-48 W there), energy per token, and methodology are in
+[docs/backend/XDNA2.md](docs/backend/XDNA2.md#performance).
 
-## Contributing
+<details>
+<summary>llama-bench prompt speed against prompt length (performance profile, tok/s)</summary>
 
-- Contributors can open PRs
-- Collaborators will be invited based on contributions
-- Maintainers can push to branches in the `llama.cpp` repo and merge PRs into the `master` branch
-- Any help with managing issues, PRs and projects is very appreciated!
-- Read the [CONTRIBUTING.md](CONTRIBUTING.md) for more information
+`llama-bench -fa 1 -p 512,2048,4096 -n 64`. This fork at `-ub 2048`; the iGPU engines at their best `-ub` (Gemma 12B: `-ub 512` for all).
 
-## Acknowledgements
+| Model | Engine | pp512 | pp2048 | pp4096 | tg64 |
+|---|---|---:|---:|---:|---:|
+| Qwen3.5-4B | this fork | 640 | 684 | 684 | 20.7 |
+| | Vulkan | 614 | 598 | 593 | 27.1 |
+| | ROCm | 556 | 548 | 536 | 26.4 |
+| Ornith-1.5-9B | this fork | 440 | 487 | 472 | 12.7 |
+| | Vulkan | 368 | 358 | 347 | 15.0 |
+| | ROCm | 340 | 349 | 336 | 14.3 |
+| Gemma 4 12B QAT | this fork | 196 | 172 | 152 | 10.4 |
+| | Vulkan | 327 | 310 | 297 | 12.3 |
+| | ROCm | 259 | 236 | 247 | 11.2 |
 
-- [yhirose/cpp-httplib](https://github.com/yhirose/cpp-httplib) - Single-header HTTP server, used by `llama-server` - MIT license
-- [nothings/stb](https://github.com/nothings/stb) - Single-header image format decoder, used by multimodal subsystem - Public domain
-- [nlohmann/json](https://github.com/nlohmann/json) - Single-header JSON library, used by various tools/examples - MIT License
-- [mackron/miniaudio](https://github.com/mackron/miniaudio) - Single-header audio format decoder, used by multimodal subsystem - Public domain
-- [sheredom/subprocess.h](https://github.com/sheredom/subprocess.h) - Single-header process launching solution for C and C++ - Public domain
+</details>
+
+## How it works
+
+| Work | Runs on |
+|---|---|
+| Weight matmuls during prompt processing (Q4_0, Q4_1, Q4_K, Q5_K, Q6_K, Q8_0) | NPU |
+| Attention during prompt processing (head size 128/256, 4 or 8 KV heads, causal or sliding window; needs 32+ tokens and 1024+ context) | NPU |
+| Everything else in prompt processing (norms, RoPE, Qwen3.5 linear attention, other formats, mixture-of-experts) | CPU |
+| Token generation, and batches of up to 8 tokens | CPU (AVX-512), reading the NPU's weight copy in place |
+
+Generation stays on the CPU because one token stream is limited by memory bandwidth, and the cores read DRAM faster (~70 GB/s here) than the
+NPU can (~53 GB/s). The NPU computes in bfp16 (8-bit mantissas, one exponent per 8 values); perplexity stays within 0.2-0.6 % of the CPU build on
+the models tested, but outputs are not bit-identical. The NPU kernels are generated for each model's shapes with
+[mlir-aie](https://github.com/Xilinx/mlir-aie) (IRON) and compiled on first use; the sources are in `ggml/src/ggml-xdna2/kernels`.
+
+Code: `ggml/src/ggml-xdna2/` (the backend), `scripts/xdna2-setup.sh` (setup), `docs/backend/XDNA2.md` (guide).
+
+## Troubleshooting
+
+- **Prompt speed is about 100 tok/s instead of 500+:** the NPU was not opened. The log says why. Usually the locked-memory limit is under 64 MiB: set
+  `LimitMEMLOCK=infinity` for a service, or `memlock unlimited` in `/etc/security/limits.d`, then log in again.
+- **`no kernel ... and no toolchain to build it`:** run `scripts/xdna2-setup.sh`, or point `GGML_XDNA2_MLIR_AIE_ENV` at a venv with `mlir_aie` and `llvm-aie`.
+- **CMake says XRT was not found:** install XRT (on Ubuntu or Fedora build [amd/xdna-driver](https://github.com/amd/xdna-driver) and run
+  `source /opt/xilinx/xrt/setup.sh`), then configure again.
+- **First prompt is slow:** kernels are being compiled (20-45 s once per model shape).
+- **Compare with the plain CPU path:** `GGML_XDNA2_DISABLE=1`.
+
+## Limitations
+
+- Generation is 0-5 % slower than a plain CPU build, and about 13 % slower with Q4_0 weights (measured on Llama 3.2 3B).
+- Gemma 4: layers with head size 512, and all attention layers of E2B and E4B, run attention on the CPU, which limits long prompts.
+- Only the formats listed under [How it works](#how-it-works) run on the NPU; others work but stay on the CPU.
+- Single NPU, single machine type tested, Linux only, bfp16 arithmetic.
+
+## Staying current with upstream
+
+This branch is based on llama.cpp master of mid-October 2026 and tracks it by merging; it was about 150 commits behind on 21 October 2026, with
+no merge conflicts. Anything not about the NPU (other backends, models, tools, the web UI) is upstream's: see the
+[llama.cpp README](https://github.com/ggml-org/llama.cpp#readme) and [documentation](https://github.com/ggml-org/llama.cpp/tree/master/docs).
+
+## Credits and license
+
+Built on [llama.cpp and ggml](https://github.com/ggml-org/llama.cpp). NPU kernels are generated with [mlir-aie / IRON](https://github.com/Xilinx/mlir-aie)
+and compiled with Peano ([llvm-aie](https://github.com/Xilinx/llvm-aie)); the device is driven through
+[XRT](https://github.com/Xilinx/XRT) and the [amdxdna driver](https://github.com/amd/xdna-driver). [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)
+was used as the NPU comparison. MIT license, see [LICENSE](LICENSE).
