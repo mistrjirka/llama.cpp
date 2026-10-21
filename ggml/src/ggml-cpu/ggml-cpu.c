@@ -3112,6 +3112,35 @@ static int ggml_cpu_try_fuse_ops(
     return 0;
 }
 
+// [diag] GGML_CPU_OPPROF=1: per-op wall time on thread 0 (node + its barrier), keyed by op and tensor name without the layer suffix
+#define OPPROF_N 512
+static struct { char key[64]; double t; long n; } g_opprof[OPPROF_N];
+static double g_opprof_graph_t; static long g_opprof_graphs;
+static int opprof_on(void) { static int v = -1; if (v < 0) { const char * e = getenv("GGML_CPU_OPPROF"); v = e && *e && *e != '0'; } return v; }
+static void opprof_dump(void) {
+    double tot = 0; for (int i = 0; i < OPPROF_N; i++) tot += g_opprof[i].t;
+    fprintf(stderr, "[opprof] cpu graphs %ld, graph_compute wall %.3f s, sum of nodes %.3f s\n", g_opprof_graphs, g_opprof_graph_t, tot);
+    for (int k = 0; k < 40; k++) {
+        int b = -1; for (int i = 0; i < OPPROF_N; i++) if (g_opprof[i].n && (b < 0 || g_opprof[i].t > g_opprof[b].t)) b = i;
+        if (b < 0) break;
+        fprintf(stderr, "[opprof] %8.3f s %5.1f%% %7ld  %s\n", g_opprof[b].t, 100.0 * g_opprof[b].t / tot, g_opprof[b].n, g_opprof[b].key);
+        g_opprof[b].n = 0;
+    }
+}
+static void opprof_add(const struct ggml_tensor * node, double dt) {
+    char key[64]; char nm[48]; snprintf(nm, sizeof nm, "%s", node->name);
+    char * d = strrchr(nm, '-'); if (d && d[1] >= '0' && d[1] <= '9') *d = 0;
+    if (strncmp(nm, "node_", 5) == 0 || nm[0] == 0 || nm[0] == '(') snprintf(nm, sizeof nm, "<%s>", node->src[0] ? node->src[0]->name : "");
+    for (char * p = nm; *p; p++) if (*p >= '0' && *p <= '9') { *p = 0; break; }
+    snprintf(key, sizeof key, "%-12s %s", ggml_op_desc(node), nm);
+    unsigned h = 5381; for (const char * p = key; *p; p++) h = h * 33 + (unsigned char) *p;
+    for (int i = 0; i < OPPROF_N; i++) {
+        int j = (h + i) % OPPROF_N;
+        if (g_opprof[j].n == 0 && g_opprof[j].key[0] == 0) { strcpy(g_opprof[j].key, key); }
+        if (strcmp(g_opprof[j].key, key) == 0) { g_opprof[j].t += dt; g_opprof[j].n++; return; }
+    }
+}
+
 static thread_ret_t ggml_graph_compute_thread(void * data) {
     struct ggml_compute_state * state = (struct ggml_compute_state *) data;
     struct ggml_threadpool    * tp    = state->threadpool;
@@ -3151,6 +3180,8 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
         if ((node->flags & GGML_TENSOR_FLAG_COMPUTE) == 0) {
             continue;
         }
+        const int64_t prof_t0 = (state->ith == 0 && opprof_on()) ? ggml_time_us() : 0;
+        struct ggml_tensor * prof_node = node;
 
         // TODO: move fused-op detection into ggml_graph_plan so fusion decisions are made once at planning time
         // Try fused ops, fall back to normal compute
@@ -3170,6 +3201,7 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
         if (node_n + 1 < cgraph->n_nodes) {
             ggml_barrier(state->threadpool);
         }
+        if (prof_t0) opprof_add(prof_node, (ggml_time_us() - prof_t0) * 1e-6);
     }
 
 #ifdef GGML_USE_OPENMP
@@ -3402,7 +3434,16 @@ struct ggml_threadpool * ggml_threadpool_new(struct ggml_threadpool_params * tpp
     return ggml_threadpool_new_impl(tpp, NULL, NULL);
 }
 
+static enum ggml_status ggml_graph_compute_impl(struct ggml_cgraph * cgraph, struct ggml_cplan * cplan);
 enum ggml_status ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cplan * cplan) {
+    if (!opprof_on()) return ggml_graph_compute_impl(cgraph, cplan);
+    static int reg = 0; if (!reg) { reg = 1; atexit(opprof_dump); }
+    const int64_t t0 = ggml_time_us();
+    enum ggml_status st = ggml_graph_compute_impl(cgraph, cplan);
+    g_opprof_graph_t += (ggml_time_us() - t0) * 1e-6; g_opprof_graphs++;
+    return st;
+}
+static enum ggml_status ggml_graph_compute_impl(struct ggml_cgraph * cgraph, struct ggml_cplan * cplan) {
     ggml_cpu_init();
 
     GGML_ASSERT(cplan);

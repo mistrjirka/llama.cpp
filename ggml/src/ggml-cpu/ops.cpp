@@ -9099,6 +9099,26 @@ static void ggml_compute_forward_flash_attn_ext_f16_one_chunk(
     }
 }
 
+// DIAG (not for commit): emulate bfp16ebs8 rounding (8 values share an exponent, 8-bit signed mantissa) of the attention operands.
+// GGML_FA_BFP bitmask: 1 = Q, 2 = K, 4 = P, 8 = V (groups along the reduction dim, as the NPU mmul blocks them); 16 = hi+lo split for Q and K
+static int fa_bfp_mode() { static const int m = [] { const char * e = getenv("GGML_FA_BFP"); return e ? atoi(e) : 0; }(); return m; }
+static inline float fa_bfp_q(float x, float q) { float m = nearbyintf(x / q); m = fminf(fmaxf(m, -128.0f), 127.0f); return m * q; }
+static inline void fa_bfp_round(float * x, int64_t stride, bool split) {
+    float mx = 0.0f;
+    for (int i = 0; i < 8; ++i) mx = fmaxf(mx, fabsf(x[i*stride]));
+    if (mx == 0.0f || !std::isfinite(mx)) return;
+    int e; frexpf(mx, &e);                       // mx in [2^(e-1), 2^e)
+    const float q = ldexpf(1.0f, e - 1 - 6);
+    float hi[8], lo[8];
+    for (int i = 0; i < 8; ++i) { hi[i] = fa_bfp_q(x[i*stride], q); lo[i] = x[i*stride] - hi[i]; }
+    if (split) {                                 // second bfp16 block for the remainder
+        float ml = 0.0f;
+        for (int i = 0; i < 8; ++i) ml = fmaxf(ml, fabsf(lo[i]));
+        if (ml > 0.0f) { frexpf(ml, &e); const float ql = ldexpf(1.0f, e - 1 - 6); for (int i = 0; i < 8; ++i) hi[i] += fa_bfp_q(lo[i], ql); }
+    }
+    for (int i = 0; i < 8; ++i) x[i*stride] = hi[i];
+}
+
 static void ggml_compute_forward_flash_attn_ext_tiled(
         const ggml_compute_params * params,
         ggml_tensor * dst,
@@ -9237,6 +9257,9 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
             for (int tq = tile_rows; tq < Q_TILE_SZ; tq++) {
                 memset(Q_f32 + tq * DK, 0, DK * sizeof(float));
             }
+            if (fa_bfp_mode() & 1) {
+                for (int tq = 0; tq < tile_rows; tq++) for (int64_t g = 0; g < DK; g += 8) fa_bfp_round(Q_f32 + tq * DK + g, 1, fa_bfp_mode() & 16);
+            }
         }
 
         memset(K_f32, 0, DK * KV_TILE_SZ * sizeof(float));
@@ -9282,6 +9305,9 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                         K_f32[dk * KV_TILE_SZ + tk] = k_f32_src[dk];
                     }
                 }
+            }
+            if (fa_bfp_mode() & 2) {
+                for (int tk = 0; tk < kv_tile; tk++) for (int64_t g = 0; g < DK; g += 8) fa_bfp_round(K_f32 + g * KV_TILE_SZ + tk, KV_TILE_SZ, fa_bfp_mode() & 16);
             }
             memset(KQ, 0, Q_TILE_SZ * KV_TILE_SZ * sizeof(float));
             simd_gemm(KQ, (const float *)Q_q, K_f32, Q_TILE_SZ, DK, KV_TILE_SZ);
@@ -9346,6 +9372,12 @@ static void ggml_compute_forward_flash_attn_ext_tiled(
                 if (skip[tq]) {
                     memset(KQ + tq * KV_TILE_SZ, 0, KV_TILE_SZ * sizeof(float));
                 }
+            }
+            if (fa_bfp_mode() & 4) {
+                for (int tq = 0; tq < Q_TILE_SZ; tq++) for (int tk = 0; tk < KV_TILE_SZ; tk += 8) fa_bfp_round(KQ + tq * KV_TILE_SZ + tk, 1, false);
+            }
+            if (fa_bfp_mode() & 8) {
+                for (int tk = 0; tk < KV_TILE_SZ; tk += 8) for (int64_t dv = 0; dv < DV; dv++) fa_bfp_round(V32 + tk * DV + dv, DV, false);
             }
             simd_gemm(VKQ32, KQ, V32, Q_TILE_SZ, KV_TILE_SZ, DV);
         }

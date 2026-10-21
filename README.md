@@ -149,8 +149,8 @@ Code: `ggml/src/ggml-xdna2/` (the backend), `scripts/xdna2-setup.sh` (setup), `d
 
 ## Staying current with upstream
 
-This branch is based on llama.cpp master of mid-October 2026 and tracks it by merging; it was about 150 commits behind on 21 October 2026, with
-no merge conflicts. Anything not about the NPU (other backends, models, tools, the web UI) is upstream's: see the
+This branch is based on llama.cpp master of 15 October 2026 and has not been merged with anything newer: on 21 October 2026 it was 147
+commits behind and 47 ahead. A trial merge of upstream master into it showed no conflicts. Anything not about the NPU (other backends, models, tools, the web UI) is upstream's: see the
 [llama.cpp README](https://github.com/ggml-org/llama.cpp#readme) and [documentation](https://github.com/ggml-org/llama.cpp/tree/master/docs).
 
 ## Credits and license
