@@ -2724,6 +2724,11 @@ private:
     void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max) {
         const int id_task = slot.task->id;
 
+        // the checkpoint at the start of the first user message sits right after the system prompt and
+        // the tool definitions. a new conversation with the same ones resumes from it instead of
+        // re-processing them, so it is the last checkpoint to be evicted
+        const int64_t n_tokens_base = slot.task->params.message_spans.first_user_message_pos();
+
         // evict checkpoints within min-step of a previous checkpoint, unless they were
         // created by the current task
         // only when the list is full, otherwise short prompts keep just the oldest checkpoint
@@ -2731,7 +2736,7 @@ private:
         for (auto it = slot.prompt.checkpoints.begin();
                 slot.prompt.checkpoints.size() + 1 >= (size_t) params_base.n_ctx_checkpoints &&
                 it != slot.prompt.checkpoints.end(); ) {
-            if (it->id_task != id_task && last >= 0 && it->n_tokens <= last + params_base.checkpoint_min_step) {
+            if (it->id_task != id_task && it->n_tokens != n_tokens_base && last >= 0 && it->n_tokens <= last + params_base.checkpoint_min_step) {
                 SLT_TRC(slot, "erasing context checkpoint too close to an earlier one (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
                         it->pos_min, it->pos_max, it->n_tokens, (float) it->size() / 1024 / 1024);
 
@@ -2744,13 +2749,16 @@ private:
         }
 
         while (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints) {
-            // make room for the new checkpoint, if needed
-            const auto & cur = slot.prompt.checkpoints.front();
+            // make room for the new checkpoint, if needed: the oldest one that is not the base
+            auto it = slot.prompt.checkpoints.begin();
+            if (it->n_tokens == n_tokens_base && std::next(it) != slot.prompt.checkpoints.end()) {
+                ++it;
+            }
 
             SLT_WRN(slot, "erasing old context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
-                    cur.pos_min, cur.pos_max, cur.n_tokens, (float) cur.size() / 1024 / 1024);
+                    it->pos_min, it->pos_max, it->n_tokens, (float) it->size() / 1024 / 1024);
 
-            slot.prompt.checkpoints.erase(slot.prompt.checkpoints.begin());
+            slot.prompt.checkpoints.erase(it);
         }
 
         // replace an existing checkpoint at the same n_tokens instead of appending a duplicate
