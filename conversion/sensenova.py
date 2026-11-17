@@ -145,3 +145,10 @@ class SenseNovaLoopModel(Qwen3_5TextModel):
             return
 
         yield from super().modify_tensors(data_torch, name.replace("model.language_model.", "model."), bid)
+
+    def tensor_force_quant(self, name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | bool:
+        # the residual routers are trained and applied in fp32 (mhc_route asserts F32): narrowing
+        # their weights to the output type would round them before the quantizer widens them again
+        if ".mhc_" in new_name:
+            return gguf.GGMLQuantizationType.F32
+        return super().tensor_force_quant(name, new_name, bid, n_dims)
