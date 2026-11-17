@@ -355,6 +355,11 @@ static int ggml_metal_op_encode_impl(ggml_metal_op_t ctx, int idx) {
             {
                 n_fuse = ggml_metal_op_dsv4_hc(ctx, idx);
             } break;
+        case GGML_OP_MHC_ROUTE:
+        case GGML_OP_MHC_MERGE:
+            {
+                n_fuse = ggml_metal_op_mhc(ctx, idx);
+            } break;
         case GGML_OP_SOFT_MAX:
             {
                 n_fuse = ggml_metal_op_soft_max(ctx, idx);
@@ -1677,6 +1682,116 @@ int ggml_metal_op_dsv4_hc(ggml_metal_op_t ctx, int idx) {
                 const int nsg = std::min(4, n_tiles);
                 ggml_metal_encoder_dispatch_threadgroups(
                         enc, (n_tiles + nsg - 1)/nsg, args.n_tokens, 1, 32, nsg, 1);
+            } break;
+        default:
+            GGML_ABORT("fatal error");
+    }
+
+    return 1;
+}
+
+int ggml_metal_op_mhc(ggml_metal_op_t ctx, int idx) {
+    ggml_tensor * op = ctx->node(idx);
+
+    ggml_metal_encoder_t enc = ctx->enc;
+    auto pipeline = ggml_metal_library_get_pipeline_mhc(ctx->lib, op);
+
+    ggml_metal_encoder_set_pipeline(enc, pipeline);
+
+    switch (op->op) {
+        case GGML_OP_MHC_ROUTE:
+            {
+                const ggml_tensor * a    = op->src[0];
+                const ggml_tensor * b    = op->src[1];
+                const ggml_tensor * w    = op->src[2];
+                const ggml_tensor * bias = op->src[3];
+
+                GGML_ASSERT(a->type    == GGML_TYPE_F32);
+                GGML_ASSERT(b->type    == GGML_TYPE_F32);
+                GGML_ASSERT(w->type    == GGML_TYPE_F32);
+                GGML_ASSERT(bias->type == GGML_TYPE_F32);
+                GGML_ASSERT(op->type   == GGML_TYPE_F32);
+                GGML_ASSERT(ggml_is_contiguous_rows(a));
+                GGML_ASSERT(ggml_is_contiguous_rows(b));
+                GGML_ASSERT(ggml_is_contiguous(w));
+                GGML_ASSERT(ggml_is_contiguous(bias));
+                GGML_ASSERT(w->ne[0] == 2*a->ne[0] && w->ne[1] == OP_MHC_ROUTE_NRED - 1);
+                GGML_ASSERT(bias->ne[0] == OP_MHC_ROUTE_NRED - 1);
+
+                ggml_metal_kargs_mhc_route args = {
+                    /*.n_embd =*/ (int32_t) a->ne[0],
+                    /*.nb_a1  =*/ a->nb[1],
+                    /*.nb_a2  =*/ a->nb[2],
+                    /*.nb_b1  =*/ b->nb[1],
+                    /*.nb_b2  =*/ b->nb[2],
+                    /*.nb_w1  =*/ w->nb[1],
+                    /*.nb_d1  =*/ op->nb[1],
+                    /*.nb_d2  =*/ op->nb[2],
+                };
+
+                int nth = 32; // SIMD width
+
+                while (nth < args.n_embd && nth < ggml_metal_pipeline_max_theads_per_threadgroup(pipeline)) {
+                    nth *= 2;
+                }
+
+                nth = std::min(nth, ggml_metal_pipeline_max_theads_per_threadgroup(pipeline));
+
+                ggml_metal_encoder_set_bytes (enc, &args, sizeof(args), 0);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(a),    1);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(b),    2);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(w),    3);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(bias), 4);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(op),   5);
+
+                ggml_metal_encoder_set_threadgroup_memory_size(enc, pipeline.smem, 0);
+
+                // One threadgroup owns one (token, stream) row: with a single token the whole
+                // reduction over 2*n_embd still spreads over nth threads.
+                ggml_metal_encoder_dispatch_threadgroups(enc, (int) a->ne[1], (int) a->ne[2], 1, nth, 1, 1);
+            } break;
+        case GGML_OP_MHC_MERGE:
+            {
+                const ggml_tensor * a      = op->src[0];
+                const ggml_tensor * b      = op->src[1];
+                const ggml_tensor * x      = op->src[2];
+                const ggml_tensor * packed = op->src[3];
+
+                GGML_ASSERT(a->type      == GGML_TYPE_F32);
+                GGML_ASSERT(b->type      == GGML_TYPE_F32);
+                GGML_ASSERT(x->type      == GGML_TYPE_F32);
+                GGML_ASSERT(packed->type == GGML_TYPE_F32);
+                GGML_ASSERT(op->type     == GGML_TYPE_F32);
+                GGML_ASSERT(ggml_is_contiguous_rows(a));
+                GGML_ASSERT(ggml_is_contiguous_rows(b));
+                GGML_ASSERT(ggml_is_contiguous_rows(x));
+                GGML_ASSERT(ggml_is_contiguous_rows(packed));
+
+                ggml_metal_kargs_mhc_merge args = {
+                    /*.n_embd =*/ (int32_t) a->ne[0],
+                    /*.nb_a1  =*/ a->nb[1],
+                    /*.nb_a2  =*/ a->nb[2],
+                    /*.nb_b1  =*/ b->nb[1],
+                    /*.nb_b2  =*/ b->nb[2],
+                    /*.nb_x1  =*/ x->nb[1],
+                    /*.nb_x2  =*/ x->nb[2],
+                    /*.nb_p1  =*/ packed->nb[1],
+                    /*.nb_p2  =*/ packed->nb[2],
+                    /*.nb_d1  =*/ op->nb[1],
+                    /*.nb_d2  =*/ op->nb[2],
+                };
+
+                ggml_metal_encoder_set_bytes (enc, &args, sizeof(args), 0);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(a),      1);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(b),      2);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(x),      3);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(packed), 4);
+                ggml_metal_encoder_set_buffer(enc, ggml_metal_get_buffer_id(op),     5);
+
+                const int n_tiles = (args.n_embd + 31)/32;
+                const int nsg = std::min(4, n_tiles);
+                ggml_metal_encoder_dispatch_threadgroups(
+                        enc, (n_tiles + nsg - 1)/nsg, (int) a->ne[1], (int) a->ne[2], 32, nsg, 1);
             } break;
         default:
             GGML_ABORT("fatal error");

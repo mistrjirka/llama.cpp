@@ -588,6 +588,31 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_dsv4_hc(ggml_met
     return res;
 }
 
+ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mhc(ggml_metal_library_t lib, const ggml_tensor * op) {
+    char base[256];
+    char name[256];
+
+    switch (op->op) {
+        case GGML_OP_MHC_ROUTE: snprintf(base, 256, "kernel_mhc_route_%s", ggml_type_name(op->type)); break;
+        case GGML_OP_MHC_MERGE: snprintf(base, 256, "kernel_mhc_merge_%s", ggml_type_name(op->type)); break;
+        default:
+            GGML_ABORT("fatal error");
+    }
+
+    snprintf(name, 256, "%s", base);
+
+    ggml_metal_pipeline_with_params res = ggml_metal_library_get_pipeline(lib, name);
+    if (!res.pipeline) {
+        res = ggml_metal_library_compile_pipeline(lib, base, name, nullptr);
+    }
+
+    if (op->op == GGML_OP_MHC_ROUTE) {
+        res.smem = OP_MHC_ROUTE_NRED*32*sizeof(float);
+    }
+
+    return res;
+}
+
 ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_ssm_conv(
         ggml_metal_library_t lib, const ggml_tensor * op, int32_t nc, bool use_silu) {
     GGML_ASSERT(op->src[0]->type == GGML_TYPE_F32);

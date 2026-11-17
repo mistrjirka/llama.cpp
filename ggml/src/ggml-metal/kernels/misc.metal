@@ -907,6 +907,177 @@ kernel void kernel_dsv4_hc_post_f32(
     }
 }
 
+static inline float mhc_logsumexp(float x, float y) {
+    const float mx = max(x, y);
+    return mx + log(exp(x - mx) + exp(y - mx));
+}
+
+// One threadgroup per (token, stream). The threads stride over the row and reduce the sum of
+// squares together with the eight router logits, then every thread writes its share of the
+// pre-weighted branch and thread 0 runs the sinkhorn passes and writes the gates.
+kernel void kernel_mhc_route_f32(
+        constant ggml_metal_kargs_mhc_route & args,
+        device const char * a,
+        device const char * b,
+        device const char * w,
+        device const char * bias,
+        device       char * dst,
+        threadgroup float * shmem_f32 [[threadgroup(0)]],
+        uint3   tgpig[[threadgroup_position_in_grid]],
+        ushort3 tpitg[[thread_position_in_threadgroup]],
+        ushort  sgitg[[simdgroup_index_in_threadgroup]],
+        ushort  tiisg[[thread_index_in_simdgroup]],
+        ushort3   ntg[[threads_per_threadgroup]]) {
+    constexpr short nred   = OP_MHC_ROUTE_NRED;
+    constexpr short n_iter = 20;
+
+    if (sgitg == 0) {
+        FOR_UNROLL (short k = 0; k < nred; ++k) {
+            shmem_f32[k*N_SIMDWIDTH + tiisg] = 0.0f;
+        }
+    }
+
+    const int it = tgpig.x;
+    const int is = tgpig.y;
+
+    const int d = args.n_embd;
+
+    device const float * va = (device const float *) (a   + it*args.nb_a1 + is*args.nb_a2);
+    device const float * vb = (device const float *) (b   + it*args.nb_b1 + is*args.nb_b2);
+    device       float * vo = (device       float *) (dst + it*args.nb_d1 + is*args.nb_d2);
+
+    // acc[0] : sum of squares over both streams, acc[1 + k] : router logit k
+    float acc[nred];
+    FOR_UNROLL (short k = 0; k < nred; ++k) {
+        acc[k] = 0.0f;
+    }
+
+    // parallel sum
+    for (int i = tpitg.x; i < d; i += ntg.x) {
+        const float xa = va[i];
+        const float xb = vb[i];
+
+        acc[0] += xa*xa + xb*xb;
+
+        FOR_UNROLL (short k = 0; k < nred - 1; ++k) {
+            device const float * wk = (device const float *) (w + k*args.nb_w1);
+
+            acc[1 + k] += wk[i]*xa + wk[d + i]*xb;
+        }
+    }
+
+    FOR_UNROLL (short k = 0; k < nred; ++k) {
+        acc[k] = simd_sum(acc[k]);
+    }
+
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    if (tiisg == 0) {
+        FOR_UNROLL (short k = 0; k < nred; ++k) {
+            shmem_f32[k*N_SIMDWIDTH + sgitg] = acc[k];
+        }
+    }
+
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    FOR_UNROLL (short k = 0; k < nred; ++k) {
+        acc[k] = shmem_f32[k*N_SIMDWIDTH + tiisg];
+        acc[k] = simd_sum(acc[k]);
+    }
+
+    const float rms = 1.0f/sqrt(acc[0]/(2.0f*d) + 1e-6f);
+
+    device const float * pb = (device const float *) bias;
+
+    const float pre0 = 1.0f/(1.0f + exp(-(acc[1]*rms + pb[0])));
+    const float pre1 = 1.0f/(1.0f + exp(-(acc[2]*rms + pb[1])));
+
+    for (int i = tpitg.x; i < d; i += ntg.x) {
+        vo[i] = pre0*va[i] + pre1*vb[i];
+    }
+
+    // the output gates and the 2x2 mixing matrix are scalars of the row: one thread is enough
+    if (tpitg.x != 0) {
+        return;
+    }
+
+    const float post0 = 2.0f/(1.0f + exp(-(acc[3]*rms + pb[2])));
+    const float post1 = 2.0f/(1.0f + exp(-(acc[4]*rms + pb[3])));
+
+    float m00 = acc[5]*rms + pb[4];
+    float m01 = acc[6]*rms + pb[5];
+    float m10 = acc[7]*rms + pb[6];
+    float m11 = acc[8]*rms + pb[7];
+
+    // sinkhorn in log space: normalize the rows, then the columns
+    for (short iter = 0; iter < n_iter; ++iter) {
+        float lse;
+
+        lse = mhc_logsumexp(m00, m01); m00 -= lse; m01 -= lse;
+        lse = mhc_logsumexp(m10, m11); m10 -= lse; m11 -= lse;
+
+        lse = mhc_logsumexp(m00, m10); m00 -= lse; m10 -= lse;
+        lse = mhc_logsumexp(m01, m11); m01 -= lse; m11 -= lse;
+    }
+
+    vo[d + 0] = post0;
+    vo[d + 1] = post1;
+    vo[d + 2] = exp(m00);
+    vo[d + 3] = exp(m01);
+    vo[d + 4] = exp(m10);
+    vo[d + 5] = exp(m11);
+}
+
+kernel void kernel_mhc_merge_f32(
+        constant ggml_metal_kargs_mhc_merge & args,
+        device const char * a,
+        device const char * b,
+        device const char * x,
+        device const char * route,
+        device       char * dst,
+        uint3   tgpig[[threadgroup_position_in_grid]],
+        ushort  tiisg[[thread_index_in_simdgroup]],
+        ushort  sgitg[[simdgroup_index_in_threadgroup]],
+        ushort3   ntg[[threads_per_threadgroup]]) {
+    constexpr ushort n_coeff = 6;
+
+    const int it = tgpig.y;
+    const int is = tgpig.z;
+    const int i0 = ((int) tgpig.x*ntg.y + sgitg)*32 + tiisg;
+
+    const int d = args.n_embd;
+
+    device const float * va = (device const float *) (a     + it*args.nb_a1 + is*args.nb_a2);
+    device const float * vb = (device const float *) (b     + it*args.nb_b1 + is*args.nb_b2);
+    device const float * vx = (device const float *) (x     + it*args.nb_x1 + is*args.nb_x2);
+    device const float * vp = (device const float *) (route + it*args.nb_p1 + is*args.nb_p2);
+    device       float * vo = (device       float *) (dst   + it*args.nb_d1 + is*args.nb_d2);
+
+    // the first lanes load post0, post1, m00, m01, m10, m11 and share them with the SIMD group
+    float coeff_lane = 0.0f;
+    if (tiisg < n_coeff) {
+        coeff_lane = vp[d + tiisg];
+    }
+
+    const float post0 = simd_shuffle(coeff_lane, 0);
+    const float post1 = simd_shuffle(coeff_lane, 1);
+    const float m00   = simd_shuffle(coeff_lane, 2);
+    const float m01   = simd_shuffle(coeff_lane, 3);
+    const float m10   = simd_shuffle(coeff_lane, 4);
+    const float m11   = simd_shuffle(coeff_lane, 5);
+
+    if (i0 >= d) {
+        return;
+    }
+
+    const float av = va[i0];
+    const float bv = vb[i0];
+    const float xv = vx[i0];
+
+    vo[i0]     = m00*av + m01*bv + post0*xv;
+    vo[d + i0] = m10*av + m11*bv + post1*xv;
+}
+
 constant bool FC_top_k_mask_has_score  [[function_constant(FC_TOP_K_MASK + 0)]];
 constant bool FC_top_k_mask_has_blocks [[function_constant(FC_TOP_K_MASK + 1)]];
 constant bool FC_top_k_mask_has_extra  [[function_constant(FC_TOP_K_MASK + 2)]];

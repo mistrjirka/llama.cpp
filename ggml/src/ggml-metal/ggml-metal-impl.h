@@ -185,6 +185,8 @@
 #define OP_SSM_SCAN_SSD_HD  64 // Metal-specific; Head Dim the MMA kernel is specialized for (Mamba-2); use_mma gates on d_inner == this
 #define OP_SSM_SCAN_SSD_NSG 4  // Metal-specific; Number of SimdGroups per threadgroup; NSG*32 == threads dispatched per threadgroup
 
+#define OP_MHC_ROUTE_NRED 9 // Metal-specific; Number of REDuctions per row: sum of squares + 8 router logits; each takes 32 floats of threadgroup mem
+
 // kernel argument structs
 //
 // - element counters (e.g. ne00) typically use int32_t to reduce register usage
@@ -1372,6 +1374,31 @@ typedef struct {
     uint64_t nb_d1;
     uint64_t nb_d2;
 } ggml_metal_kargs_dsv4_hc_post;
+
+typedef struct {
+    int32_t  n_embd;
+    uint64_t nb_a1;
+    uint64_t nb_a2;
+    uint64_t nb_b1;
+    uint64_t nb_b2;
+    uint64_t nb_w1;
+    uint64_t nb_d1;
+    uint64_t nb_d2;
+} ggml_metal_kargs_mhc_route;
+
+typedef struct {
+    int32_t  n_embd;
+    uint64_t nb_a1;
+    uint64_t nb_a2;
+    uint64_t nb_b1;
+    uint64_t nb_b2;
+    uint64_t nb_x1;
+    uint64_t nb_x2;
+    uint64_t nb_p1;
+    uint64_t nb_p2;
+    uint64_t nb_d1;
+    uint64_t nb_d2;
+} ggml_metal_kargs_mhc_merge;
 
 typedef struct {
     int32_t  ne00;
