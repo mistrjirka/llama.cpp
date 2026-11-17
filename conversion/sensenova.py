@@ -126,6 +126,8 @@ class SenseNovaLoopModel(Qwen3_5TextModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         if name.startswith("model.visual."):
             return  # text-only: vision tower stays out of this file
+        if ".loop_gate." in name:
+            return  # release checkpoints carry it, the reference forward never reads it
 
         m = re.match(r"model\.(?:language_model\.)?layers\.(\d+)\.(.+)$", name)
         if m:
