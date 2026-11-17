@@ -68,7 +68,7 @@ def mhc_kinds(plan: list[int], mhc: dict | None) -> list[int]:
 @ModelBase.register("SenseNovaLoopForConditionalGeneration", "SenseNovaLoopModel")
 class SenseNovaLoopModel(Qwen3_5TextModel):
     model_arch = gguf.MODEL_ARCH.SENSENOVA_LOOP
-    no_mtp = True
+    no_mtp = False
 
     def __init__(self, dir_model, *args, **kwargs):
         super().__init__(dir_model, *args, **kwargs)
@@ -92,7 +92,9 @@ class SenseNovaLoopModel(Qwen3_5TextModel):
             self.virtual_for.setdefault(p, []).append(v)
 
         # the file describes the expanded plan, so the block count and name map follow it
-        self.block_count = self.n_virtual
+        self.n_phys = n_phys
+        self.n_mtp = 0 if self.no_mtp else int(self.hparams.get("mtp_num_hidden_layers", 0))
+        self.block_count = self.n_virtual + self.n_mtp
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
         logger.info(f"loop plan: {n_phys} physical layers -> {self.n_virtual} blocks, "
@@ -102,29 +104,37 @@ class SenseNovaLoopModel(Qwen3_5TextModel):
         # the base writes the recurrent-layer array from the physical layer types; this file
         # describes the expanded plan, so suppress it and write the array for the plan instead
         layer_types = self.hparams.pop("layer_types", None)
+        n_hidden = self.hparams["num_hidden_layers"]
+        self.hparams["num_hidden_layers"] = self.n_virtual  # mixin writes nextn = block_count - this
         try:
             super().set_gguf_parameters()
         finally:
+            self.hparams["num_hidden_layers"] = n_hidden
             if layer_types is not None:
                 self.hparams["layer_types"] = layer_types
 
         if layer_types is not None:
-            self.gguf_writer.add_recurrent_layers([layer_types[p] == "linear_attention" for p in self.plan])
+            self.gguf_writer.add_recurrent_layers([layer_types[p] == "linear_attention" for p in self.plan] + [False] * self.n_mtp)
 
         if self.mhc:
             arch = self.gguf_writer.arch
             streams = int(self.mhc["streams"])
             self.gguf_writer.add_uint32(gguf.Keys.MHC.STREAMS.format(arch=arch), streams)
-            self.gguf_writer.add_array(gguf.Keys.MHC.LAYER_KINDS.format(arch=arch), self.kinds)
+            self.gguf_writer.add_array(gguf.Keys.MHC.LAYER_KINDS.format(arch=arch), self.kinds + [0] * self.n_mtp)
             logger.info(f"mHC: {streams} streams, {int(self.mhc['iterations'])} sinkhorn iterations")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
-        if name.startswith("model.visual.") or name.startswith("mtp."):
-            return  # text-only: vision tower and the MTP head stay out of this file
+        if name.startswith("model.visual."):
+            return  # text-only: vision tower stays out of this file
 
         m = re.match(r"model\.(?:language_model\.)?layers\.(\d+)\.(.+)$", name)
         if m:
             phys, tail = int(m.group(1)), m.group(2)
+            if phys >= self.n_phys:
+                # MTP block (filter_tensors put it at n_phys + i): it follows the expanded plan
+                v = self.n_virtual + (phys - self.n_phys)
+                yield from super().modify_tensors(data_torch, f"model.layers.{v}.{tail}", v)
+                return
             if tail.endswith("conv1d.weight"):
                 # ssm_conv reads an F32 kernel, so this one is never narrowed
                 data_torch = data_torch.to(torch.float32)

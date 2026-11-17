@@ -5359,6 +5359,49 @@ struct test_rwkv_wkv7 : public test_case {
     }
 };
 
+
+// SenseNova-Loop mHC router. a/b are views into one merged buffer in the model (stride 2d).
+struct test_mhc_route : public test_case {
+    const int64_t d, n_tok; const bool view;
+    std::string vars() override { return VARS_TO_STR3(d, n_tok, view); }
+    test_mhc_route(int64_t d = 4096, int64_t n_tok = 1, bool view = true) : d(d), n_tok(n_tok), view(view) {}
+    double max_nmse_err() override { return 1e-6; }
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * a; ggml_tensor * b;
+        if (view) {
+            ggml_tensor * m = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 2*d, n_tok, 1);
+            a = ggml_view_3d(ctx, m, d, n_tok, 1, m->nb[1], m->nb[2], 0);
+            b = ggml_view_3d(ctx, m, d, n_tok, 1, m->nb[1], m->nb[2], d*sizeof(float));
+        } else {
+            a = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d, n_tok, 1);
+            b = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d, n_tok, 1);
+        }
+        ggml_tensor * w    = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 2*d, 8);
+        ggml_tensor * bias = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 8);
+        return ggml_mhc_route(ctx, a, b, w, bias);
+    }
+    void initialize_tensors(ggml_context * ctx) override {
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
+            if (t->ne[1] == 8 && t->ne[0] == 2*d) init_tensor_uniform(t, -0.02f, 0.02f);   // router weights
+            else init_tensor_uniform(t, -1.0f, 1.0f);
+        }
+    }
+};
+
+struct test_mhc_merge : public test_case {
+    const int64_t d, n_tok;
+    std::string vars() override { return VARS_TO_STR2(d, n_tok); }
+    test_mhc_merge(int64_t d = 4096, int64_t n_tok = 1) : d(d), n_tok(n_tok) {}
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * m = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 2*d, n_tok, 1);
+        ggml_tensor * a = ggml_view_3d(ctx, m, d, n_tok, 1, m->nb[1], m->nb[2], 0);
+        ggml_tensor * b = ggml_view_3d(ctx, m, d, n_tok, 1, m->nb[1], m->nb[2], d*sizeof(float));
+        ggml_tensor * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d, n_tok, 1);
+        ggml_tensor * packed = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d + 6, n_tok, 1);
+        return ggml_mhc_merge(ctx, a, b, x, packed);
+    }
+};
+
 static int32_t test_get_op_params_i32(const ggml_tensor * tensor, uint32_t i) {
     GGML_ASSERT(i < GGML_MAX_OP_PARAMS / sizeof(int32_t));
     return tensor->op_params[i];
@@ -11111,6 +11154,24 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_rwkv_wkv7(GGML_TYPE_F32, 32, 64, 32, 1));
     test_cases.emplace_back(new test_rwkv_wkv7(GGML_TYPE_F32, 32, 64, 32, 4));
     test_cases.emplace_back(new test_rwkv_wkv7(GGML_TYPE_F32, 32, 64, 128, 4));
+    test_cases.emplace_back(new test_mhc_route(4096, 1, true));
+    test_cases.emplace_back(new test_mhc_route(4096, 1, false));
+    test_cases.emplace_back(new test_mhc_route(4096, 7, true));
+    test_cases.emplace_back(new test_mhc_route(4096, 7, false));
+    test_cases.emplace_back(new test_mhc_route(4096, 512, true));
+    test_cases.emplace_back(new test_mhc_route(4096, 512, false));
+    test_cases.emplace_back(new test_mhc_route(1000, 1, true));
+    test_cases.emplace_back(new test_mhc_route(1000, 1, false));
+    test_cases.emplace_back(new test_mhc_route(1000, 7, true));
+    test_cases.emplace_back(new test_mhc_route(1000, 7, false));
+    test_cases.emplace_back(new test_mhc_route(1000, 512, true));
+    test_cases.emplace_back(new test_mhc_route(1000, 512, false));
+    test_cases.emplace_back(new test_mhc_merge(4096, 1));
+    test_cases.emplace_back(new test_mhc_merge(4096, 7));
+    test_cases.emplace_back(new test_mhc_merge(4096, 512));
+    test_cases.emplace_back(new test_mhc_merge(1000, 1));
+    test_cases.emplace_back(new test_mhc_merge(1000, 7));
+    test_cases.emplace_back(new test_mhc_merge(1000, 512));
 
     test_cases.emplace_back(new test_gla(GGML_TYPE_F32, 32, 64, 1, 1));
     test_cases.emplace_back(new test_gla(GGML_TYPE_F32, 32, 64, 32, 1));
