@@ -2678,6 +2678,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_GATED_DELTA_NET:
             ggml_cuda_op_gated_delta_net(ctx, dst);
             break;
+        case GGML_OP_GATED_DELTA_NET_LAZY:
+            ggml_cuda_op_gated_delta_net_lazy(ctx, dst);
+            break;
         case GGML_OP_DSV4_HC_COMB:
             ggml_cuda_op_dsv4_hc_comb(ctx, dst);
             break;
@@ -6203,6 +6206,27 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                 op->src[2]->nb[0] == sizeof(float) && op->src[3]->nb[0] == sizeof(float);
         case GGML_OP_GATED_DELTA_NET:
             return true;
+        case GGML_OP_GATED_DELTA_NET_LAZY: {
+            const ggml_tensor * q       = op->src[0];
+            const ggml_tensor * k       = op->src[1];
+            const ggml_tensor * v       = op->src[2];
+            const ggml_tensor * g       = op->src[3];
+            const ggml_tensor * beta    = op->src[4];
+            const ggml_tensor * state   = op->src[5];
+            const ggml_tensor * factors = op->src[6];
+            const ggml_tensor * n_apply = op->src[7];
+            return q->type == GGML_TYPE_F32 && k->type == GGML_TYPE_F32 && v->type == GGML_TYPE_F32 &&
+                g->type == GGML_TYPE_F32 && beta->type == GGML_TYPE_F32 && state->type == GGML_TYPE_F32 &&
+                factors->type == GGML_TYPE_F32 && n_apply->type == GGML_TYPE_I32 &&
+                ggml_is_contiguous_rows(q) && ggml_is_contiguous_rows(k) && ggml_is_contiguous_rows(v) &&
+                ggml_is_contiguous(g) && ggml_is_contiguous(beta) &&
+                ggml_is_contiguous(state) && ggml_is_contiguous(factors) &&
+                g->ne[0] == 1 && beta->ne[0] == 1 &&
+                v->ne[0] % WARP_SIZE == 0 && v->ne[0] <= 128 && v->ne[0] != 96 &&
+                state->ne[0] == v->ne[0] && state->ne[1] == v->ne[0] && state->ne[2] == v->ne[1] &&
+                factors->ne[0] == v->ne[1]*(2*v->ne[0] + 1) &&
+                factors->ne[1] == ggml_get_op_params_i32(op, 0);
+        }
         case GGML_OP_DSV4_HC_COMB:
             return op->src[0]->type == GGML_TYPE_F32 && op->src[1]->type == GGML_TYPE_F32 &&
                 op->src[2]->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32;
