@@ -70,9 +70,8 @@ enum ggml_metal_mma_kind ggml_metal_mul_mv_mma_kind(enum ggml_type type, int rt)
     if (type == GGML_TYPE_Q4_0 || (type == GGML_TYPE_Q8_0 && rt == 1)) {
         return GGML_METAL_MMA_KIND_BLK;
     }
-    // q4_K shares the q5_K layout (pairs of nibble-packed sub-blocks) and its kind: a kernel unrolled over the row length
     if (type == GGML_TYPE_Q4_K) {
-        return ggml_metal_mul_mv_mma_q4_K_gen() ? GGML_METAL_MMA_KIND_GEN : GGML_METAL_MMA_KIND_Q5_K;
+        return ggml_metal_mul_mv_mma_q4_K_gen() ? GGML_METAL_MMA_KIND_GEN : GGML_METAL_MMA_KIND_Q4_K;
     }
     return type == GGML_TYPE_Q5_K ? GGML_METAL_MMA_KIND_Q5_K : GGML_METAL_MMA_KIND_GEN;
 }
@@ -119,7 +118,13 @@ int64_t ggml_metal_mul_mv_mma_k_step(enum ggml_type type, int rt) {
     if (!ggml_metal_mul_mv_mma_type_supported(type)) {
         return 0;
     }
-    return ggml_metal_mul_mv_mma_kind(type, rt) == GGML_METAL_MMA_KIND_BLK ? ggml_blck_size(type) : GGML_METAL_MMA_K_CHUNK;
+    switch (ggml_metal_mul_mv_mma_kind(type, rt)) {
+        case GGML_METAL_MMA_KIND_BLK:
+        case GGML_METAL_MMA_KIND_Q4_K:
+            return ggml_blck_size(type);
+        default:
+            return GGML_METAL_MMA_K_CHUNK;
+    }
 }
 
 static bool ggml_metal_mul_mat_mma_type_ok(const struct ggml_tensor * op) {
@@ -167,6 +172,19 @@ bool ggml_metal_op_mul_mat_use_mma(const struct ggml_tensor * op) {
 
 bool ggml_metal_op_mul_mat_may_use_mma(const struct ggml_tensor * op) {
     return ggml_metal_mul_mv_mma_type_supported(op->src[0]->type) && op->src[1]->type == GGML_TYPE_F32;
+}
+
+size_t ggml_metal_op_mul_mat_mma_extra(const struct ggml_tensor * op) {
+    if (op->op != GGML_OP_MUL_MAT || !ggml_metal_op_mul_mat_use_mma(op) ||
+        ggml_metal_mul_mv_mma_kind(op->src[0]->type, ggml_metal_mul_mv_mma_rt(op)) != GGML_METAL_MMA_KIND_Q4_K) {
+        return 0;
+    }
+
+    const ggml_tensor * src0 = op->src[0];
+    const ggml_tensor * src1 = op->src[1];
+
+    // one sum per 32-value sub-block of every src1 row
+    return sizeof(float)*(src0->ne[0]/32)*src1->ne[1]*src1->ne[2]*src1->ne[3];
 }
 
 // represents a memory range (i.e. an interval from a starting address p0 to an ending address p1 in a given buffer pb)

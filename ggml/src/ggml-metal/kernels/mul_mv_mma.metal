@@ -512,31 +512,64 @@ inline void mul_mv_mma_q4_K_frags(uint q, thread half2 * lo, thread half2 * hi) 
     hi[1] = mul_mv_mma_1024_plus((qw >> 8) & 0x00F0) - mma_f16_1024;
 }
 
-struct mul_mv_mma_q4_K_a {
-    uint2 q;
-    uint  sc[3];
-    uint  dm;
-};
+// the sums of the 32 src1 values of every sub-block, per src1 row: sums[(i1m*ne11 + i11)*(ne00/32) + j].
+// a k-quant with mins subtracts min*sum per sub-block, so the sums are the same for every src0 row. the few-row kernel
+// formed them in each lane and each K step with three simdgroup shuffles; here they are formed once per mat-mul.
+kernel void kernel_mul_mv_mma_sums_f32(
+        constant ggml_metal_kargs_mul_mv_ext & args,
+        device const char * src1,
+        device       char * sums,
+        uint3 tgpig[[threadgroup_position_in_grid]],
+        uint3 tpitg[[thread_position_in_threadgroup]],
+        uint3   ntg[[threads_per_threadgroup]]) {
+    const int nsub = args.ne00/32;
 
+    const int j   = tgpig.x*ntg.x + tpitg.x;
+    const int i11 = tgpig.y;
+    const int i1m = tgpig.z;
+
+    if (j >= nsub) {
+        return;
+    }
+
+    const int i12 = i1m%args.ne12;
+    const int i13 = i1m/args.ne12;
+
+    device const float4 * y = (device const float4 *) (src1 + i12*args.nb12 + i13*args.nb13 + i11*args.nb11) + 8*j;
+
+    float4 sum = y[0];
+    FOR_UNROLL (short l = 1; l < 8; ++l) {
+        sum += y[l];
+    }
+
+    device float * dst = (device float *) sums + ((uint64_t) i1m*args.ne11 + i11)*nsub;
+    dst[j] = sum.x + sum.y + sum.z + sum.w;
+}
+
+// the quants of pair ip of 32-weight sub-blocks, for the 8 rows of each tile
 template<short NT>
-inline void load_q4_K_mma_a(device const block_q4_K * const x[NT], int ip, short fn, thread mul_mv_mma_q4_K_a * a) {
+inline void load_q4_K_mma_q(device const block_q4_K * const x[NT], int ip, short fn, thread uint2 * q) {
     constexpr short pairs = QK_K/64;
 
     FOR_UNROLL (short t = 0; t < NT; ++t) {
         device const block_q4_K * xb = x[t] + ip/pairs;
-        device const uint * sp = (device const uint *) xb->scales;
 
-        a[t].q     = *((device const uint2 *) (xb->qs + 32*(ip%pairs)) + fn/2);
-        a[t].sc[0] = sp[0];
-        a[t].sc[1] = sp[1];
-        a[t].sc[2] = sp[2];
-        a[t].dm    = *((device const uint *) xb);
+        q[t] = *((device const uint2 *) (xb->qs + 32*(ip%pairs)) + fn/2);
     }
 }
 
-// few-row mat-mat for q4_K over pairs of 32-weight sub-blocks: the q5_K kernel without the high bits. q4_K packs its scales
-// and mins like q5_K, so the quants stay integers in half matrices, the 1/16 of the in-place high nibbles and the sub-block
-// scales go into the accumulation, and the mins are removed with the src1 sums.
+// few-row mat-mat for q4_K, a block of 256 weights per K step of a simdgroup: 4 pairs of nibble-packed sub-blocks.
+// the quants stay integers in half matrices, and the 1/16 of the in-place high nibbles and the scales go into the
+// accumulation. the mins leave through one more 8x8 product per block:
+// (mins of the 8 sub-blocks, for 8 src0 rows) x (sums of the 8 sub-blocks, for 8 src1 rows), the sums read from `sums`.
+//
+// what a lane keeps across pairs decides the speed more than what it computes (M4, 8 src1 rows, us per mat-mul for
+// src0 4096x14336 / 4096x4096 / 14336x4096; the q5_K-style kernel this replaces: 530 / 165 / 540):
+//   scales kept packed and unpacked per pair, pairs in a plain loop        494 / 145 / 498   (this kernel)
+//   the same with the pairs loop unrolled                                 572 / 140 / 562
+//   all 8 scales unpacked per block, pairs unrolled                       582 / 140 / 589
+//   the next block's head read a block ahead, as its quants are           562 / 149 / 559
+//   2 src0 tiles per threadgroup instead of 4                             546 / 158 / 528
 template<short NT, short RT>
 kernel void kernel_mul_mv_mma_q4_K_f32(
         constant ggml_metal_kargs_mul_mv_ext & args,
@@ -544,6 +577,7 @@ kernel void kernel_mul_mv_mma_q4_K_f32(
         device const char * src1,
         device       char * dst,
         device const char * src2,
+        device const char * sums,
         threadgroup  char * shmem [[threadgroup(0)]],
         uint3  tgpig[[threadgroup_position_in_grid]],
         ushort tiisg[[thread_index_in_simdgroup]],
@@ -560,95 +594,130 @@ kernel void kernel_mul_mv_mma_q4_K_f32(
         x[t] = (device const block_q4_K *) mul_mv_mma_src0_row(tile, args, src0, t);
     }
 
-    // B lane k = fm holds src1 values b, b + 1, b + 4, b + 5 of each sub-block, b = 8*(k/2) + 2*(k%2)
+    // B lane k = fm holds src1 values b, b + 1, b + 4, b + 5 of each sub-block, b = 8*(k/2) + 2*(k%2),
+    // and for the mins the sum of sub-block k of each block
     device const float2 * y[RT][2];
+    device const float  * z[RT][2];
     FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
         FOR_UNROLL (short e = 0; e < 2; ++e) {
             y[rt][e] = (device const float2 *) (mul_mv_mma_src1_row(tile, args, src1, rt, e) + 8*(tile.fm/2) + 2*(tile.fm%2));
+
+            const int i11 = min(tile.i11 + 8*rt + tile.fn + e, args.ne11 - 1);
+            z[rt][e] = (device const float *) sums + ((uint64_t) tile.i1m*args.ne11 + i11)*(FC_mul_mv_mma_ne00/32) + tile.fm;
         }
     }
 
     float acc[RT][NT][2] = {};
 
-    const int np = FC_mul_mv_mma_ne00/64;
+    const int nb = FC_mul_mv_mma_ne00/QK_K;
 
-    mul_mv_mma_q4_K_a an[NT];
+    uint2  qn[NT];
     float2 xn[RT][2][2][2];
 
-    const int ip0 = min((int) sgitg, np - 1);
-    load_q4_K_mma_a<NT>(x, ip0, tile.fn, an);
-    load_q5_K_mma_b<RT>(y, ip0, xn);
+    const int ib0 = min((int) sgitg, nb - 1);
+    load_q4_K_mma_q<NT>(x, pairs*ib0, tile.fn, qn);
+    load_q5_K_mma_b<RT>(y, pairs*ib0, xn);
 
-    for (int ip = sgitg; ip < np; ip += NSG) {
-        const short p = ip%pairs;
+    for (int ib = sgitg; ib < nb; ib += NSG) {
+        // the block's packed scales and mins, and d
+        uint   w0[NT];
+        uint   w2[NT];
+        float  dd[NT];
 
-        mul_mv_mma_q4_K_a ac[NT];
-        float2 xs[RT][2][2][2];
         FOR_UNROLL (short t = 0; t < NT; ++t) {
-            ac[t] = an[t];
-        }
-        FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
-            FOR_UNROLL (short e = 0; e < 2; ++e) {
-                FOR_UNROLL (short h = 0; h < 2; ++h) {
-                    xs[rt][e][h][0] = xn[rt][e][h][0];
-                    xs[rt][e][h][1] = xn[rt][e][h][1];
-                }
+            device const block_q4_K * xb = x[t] + ib;
+            device const uint * sp = (device const uint *) xb->scales;
+
+            const float2 dm = float2(as_type<half2>(*((device const uint *) xb)));
+
+            // scales and mins are 6 bits each: sub-blocks 0..3 have theirs in bytes 0..3 and 4..7, sub-blocks 4..7
+            // have the low 4 bits in the nibbles of bytes 8..11 and the high 2 in the top bits of bytes 0..7
+            w0[t] = sp[0];
+            w2[t] = sp[2];
+            dd[t] = dm.x;
+
+            const uint w1 = sp[1];
+
+            // the mins of sub-blocks fn and fn + 1 of this lane's row
+            const short k0 = 8*(tile.fn % 4);
+            const uint2 lo = uint2(w1 >> k0, w1 >> (k0 + 8));
+            const uint2 hi = uint2(w2[t] >> k0, w2[t] >> (k0 + 8));
+            const uint2 mn = tile.fn < 4 ? (lo & 63) : (((hi >> 4) & 0xF) | (((lo >> 6) & 3) << 4));
+
+            const half2 mh = mul_mv_mma_1024_plus(ushort2(mn)) - mma_f16_1024;
+
+            simdgroup_half8x8 mm;
+            mm.thread_elements()[0] = mh.x;
+            mm.thread_elements()[1] = mh.y;
+
+            FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
+                simdgroup_float8x8 ms;
+                ms.thread_elements()[0] = z[rt][0][8*ib];
+                ms.thread_elements()[1] = z[rt][1][8*ib];
+
+                simdgroup_float8x8 mp = make_filled_simdgroup_matrix<float, 8>(0.0f);
+                simdgroup_multiply_accumulate(mp, mm, ms, mp);
+
+                acc[rt][t][0] = fma(-dm.y, mp.thread_elements()[0], acc[rt][t][0]);
+                acc[rt][t][1] = fma(-dm.y, mp.thread_elements()[1], acc[rt][t][1]);
             }
         }
 
-        const int ipn = min(ip + NSG, np - 1);
-        load_q4_K_mma_a<NT>(x, ipn, tile.fn, an);
-        load_q5_K_mma_b<RT>(y, ipn, xn);
-
-        float c[RT][2][2];
-        FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
-            FOR_UNROLL (short e = 0; e < 2; ++e) {
-                FOR_UNROLL (short h = 0; h < 2; ++h) {
-                    float u = xs[rt][e][h][0].x + xs[rt][e][h][0].y + xs[rt][e][h][1].x + xs[rt][e][h][1].y;
-                    u += simd_shuffle_xor(u, 2);
-                    u += simd_shuffle_xor(u, 4);
-                    u += simd_shuffle_xor(u, 16);
-                    c[rt][e][h] = u;
-                }
+        // not unrolled: see above
+        for (short p = 0; p < pairs; ++p) {
+            uint2  qc[NT];
+            float2 xs[RT][2][2][2];
+            FOR_UNROLL (short t = 0; t < NT; ++t) {
+                qc[t] = qn[t];
             }
-        }
-
-        FOR_UNROLL (short t = 0; t < NT; ++t) {
-            const float2 dm  = float2(as_type<half2>(ac[t].dm));
-            const float2 sm0 = mul_mv_mma_q5_K_scale_min(ac[t].sc, 2*p + 0);
-            const float2 sm1 = mul_mv_mma_q5_K_scale_min(ac[t].sc, 2*p + 1);
-
-            half2 a[2][2][2];
-            mul_mv_mma_q4_K_frags(ac[t].q.x, a[0][0], a[1][0]);
-            mul_mv_mma_q4_K_frags(ac[t].q.y, a[0][1], a[1][1]);
-
-            FOR_UNROLL (short hh = 0; hh < 2; ++hh) {
-                simdgroup_float8x8 mp[RT];
-                FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
-                    mp[rt] = make_filled_simdgroup_matrix<float, 8>(0.0f);
-                }
-
-                FOR_UNROLL (short s = 0; s < 4; ++s) {
-                    simdgroup_half8x8 ma;
-                    ma.thread_elements()[0] = a[hh][s/2][s%2].x;
-                    ma.thread_elements()[1] = a[hh][s/2][s%2].y;
-
-                    FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
-                        simdgroup_float8x8 mb;
-                        mb.thread_elements()[0] = s % 2 == 0 ? xs[rt][0][hh][s/2].x : xs[rt][0][hh][s/2].y;
-                        mb.thread_elements()[1] = s % 2 == 0 ? xs[rt][1][hh][s/2].x : xs[rt][1][hh][s/2].y;
-
-                        simdgroup_multiply_accumulate(mp[rt], ma, mb, mp[rt]);
+            FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
+                FOR_UNROLL (short e = 0; e < 2; ++e) {
+                    FOR_UNROLL (short h = 0; h < 2; ++h) {
+                        xs[rt][e][h][0] = xn[rt][e][h][0];
+                        xs[rt][e][h][1] = xn[rt][e][h][1];
                     }
                 }
+            }
 
-                const float2 smh = hh == 0 ? sm0 : sm1;
-                const float  dsc = dm.x*smh.x*(hh == 0 ? 1.0f : hi_scale);
-                const float  dmn = dm.y*smh.y;
+            // the next pair of this block, or the first pair of the simdgroup's next block
+            const int ipn = p + 1 < pairs ? pairs*ib + p + 1 : pairs*min(ib + NSG, nb - 1);
+            load_q4_K_mma_q<NT>(x, ipn, tile.fn, qn);
+            load_q5_K_mma_b<RT>(y, ipn, xn);
 
-                FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
-                    acc[rt][t][0] = fma(dsc, mp[rt].thread_elements()[0], fma(-dmn, c[rt][0][hh], acc[rt][t][0]));
-                    acc[rt][t][1] = fma(dsc, mp[rt].thread_elements()[1], fma(-dmn, c[rt][1][hh], acc[rt][t][1]));
+            FOR_UNROLL (short t = 0; t < NT; ++t) {
+                half2 a[2][2][2];
+                mul_mv_mma_q4_K_frags(qc[t].x, a[0][0], a[1][0]);
+                mul_mv_mma_q4_K_frags(qc[t].y, a[0][1], a[1][1]);
+
+                FOR_UNROLL (short hh = 0; hh < 2; ++hh) {
+                    simdgroup_float8x8 mp[RT];
+                    FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
+                        mp[rt] = make_filled_simdgroup_matrix<float, 8>(0.0f);
+                    }
+
+                    FOR_UNROLL (short s = 0; s < 4; ++s) {
+                        simdgroup_half8x8 ma;
+                        ma.thread_elements()[0] = a[hh][s/2][s%2].x;
+                        ma.thread_elements()[1] = a[hh][s/2][s%2].y;
+
+                        FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
+                            simdgroup_float8x8 mb;
+                            mb.thread_elements()[0] = s % 2 == 0 ? xs[rt][0][hh][s/2].x : xs[rt][0][hh][s/2].y;
+                            mb.thread_elements()[1] = s % 2 == 0 ? xs[rt][1][hh][s/2].x : xs[rt][1][hh][s/2].y;
+
+                            simdgroup_multiply_accumulate(mp[rt], ma, mb, mp[rt]);
+                        }
+                    }
+
+                    // the scale of sub-block 2*p + hh
+                    const short k   = 8*((2*p + hh) % 4);
+                    const uint  sj  = p < 2 ? (w0[t] >> k) & 63 : ((w2[t] >> k) & 0xF) | (((w0[t] >> (k + 6)) & 3) << 4);
+                    const float dsc = dd[t]*(float) sj*(hh == 0 ? 1.0f : hi_scale);
+
+                    FOR_UNROLL (short rt = 0; rt < RT; ++rt) {
+                        acc[rt][t][0] = fma(dsc, mp[rt].thread_elements()[0], acc[rt][t][0]);
+                        acc[rt][t][1] = fma(dsc, mp[rt].thread_elements()[1], acc[rt][t][1]);
+                    }
                 }
             }
         }
@@ -657,12 +726,14 @@ kernel void kernel_mul_mv_mma_q4_K_f32(
     mul_mv_mma_store<NT, RT>(acc, args, src2, dst, shmem, tile, tiisg, sgitg);
 }
 
-template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt1_rt1")]] kernel mul_mv_mma_t kernel_mul_mv_mma_q4_K_f32<1, 1>;
-template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt2_rt1")]] kernel mul_mv_mma_t kernel_mul_mv_mma_q4_K_f32<2, 1>;
-template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt4_rt1")]] kernel mul_mv_mma_t kernel_mul_mv_mma_q4_K_f32<4, 1>;
-template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt1_rt2")]] kernel mul_mv_mma_t kernel_mul_mv_mma_q4_K_f32<1, 2>;
-template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt2_rt2")]] kernel mul_mv_mma_t kernel_mul_mv_mma_q4_K_f32<2, 2>;
-template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt4_rt2")]] kernel mul_mv_mma_t kernel_mul_mv_mma_q4_K_f32<4, 2>;
+typedef decltype(kernel_mul_mv_mma_q4_K_f32<4, 1>) mul_mv_mma_q4_K_t;
+
+template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt1_rt1")]] kernel mul_mv_mma_q4_K_t kernel_mul_mv_mma_q4_K_f32<1, 1>;
+template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt2_rt1")]] kernel mul_mv_mma_q4_K_t kernel_mul_mv_mma_q4_K_f32<2, 1>;
+template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt4_rt1")]] kernel mul_mv_mma_q4_K_t kernel_mul_mv_mma_q4_K_f32<4, 1>;
+template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt1_rt2")]] kernel mul_mv_mma_q4_K_t kernel_mul_mv_mma_q4_K_f32<1, 2>;
+template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt2_rt2")]] kernel mul_mv_mma_q4_K_t kernel_mul_mv_mma_q4_K_f32<2, 2>;
+template [[host_name("kernel_mul_mv_mma_q4_K_f32_nt4_rt2")]] kernel mul_mv_mma_q4_K_t kernel_mul_mv_mma_q4_K_f32<4, 2>;
 
 // few-row mat-mat for any type with a 16-weight dequantizer: a lane dequantizes 16 consecutive weights of a 64-weight chunk once for all src1 rows.
 // MMA step s at MMA-k index j reads chunk weight 16*(j/2) + 8*(j%2) + s.

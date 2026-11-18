@@ -2758,12 +2758,38 @@ static int ggml_metal_op_mul_mat_mma(ggml_metal_op_t ctx, int idx) {
         /*.r3    =*/ (int16_t) (ne13/ne03),
     };
 
+    // the q4_K kernel reads the sums of src1 over each 32-value sub-block: they go behind the output of the mat-mul node
+    // (its own, also when the ADD is fused and the output is the ADD's)
+    const bool use_sums = ggml_metal_op_mul_mat_mma_extra(op) > 0;
+
+    ggml_metal_buffer_id bid_sums = ggml_metal_get_buffer_id(op);
+    bid_sums.offs += ggml_nbytes(op);
+
+    if (use_sums) {
+        auto pipeline_sums = ggml_metal_library_get_pipeline_mul_mv_mma_sums(lib);
+
+        const int nsub = ne00/32;
+        const int nth  = 32;
+
+        ggml_metal_encoder_set_pipeline(enc, pipeline_sums);
+        ggml_metal_encoder_set_bytes   (enc, &args, sizeof(args), 0);
+        ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[1]), 1);
+        ggml_metal_encoder_set_buffer  (enc, bid_sums, 2);
+
+        ggml_metal_encoder_dispatch_threadgroups(enc, (nsub + nth - 1)/nth, ne11, ne12*ne13, nth, 1, 1);
+
+        ggml_metal_op_concurrency_reset(ctx);
+    }
+
     ggml_metal_encoder_set_pipeline(enc, pipeline);
     ggml_metal_encoder_set_bytes   (enc, &args, sizeof(args), 0);
     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[0]), 1);
     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[1]), 2);
     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(dst),        3);
     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(res),        4);
+    if (use_sums) {
+        ggml_metal_encoder_set_buffer(enc, bid_sums, 5);
+    }
 
     ggml_metal_encoder_set_threadgroup_memory_size(enc, pipeline.smem, 0);
 

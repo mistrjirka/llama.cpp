@@ -3,6 +3,7 @@
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
 
+#include "ggml-metal-common.h"
 #include "ggml-metal-device.h"
 #include "ggml-metal-fusion.h"
 #include "ggml-metal-context.h"
@@ -313,6 +314,10 @@ static size_t ggml_backend_metal_buffer_type_get_alloc_size(ggml_backend_buffer_
         case GGML_OP_ARGMAX:
             {
                 res += ggml_metal_op_argmax_extra(tensor);
+            } break;
+        case GGML_OP_MUL_MAT:
+            {
+                res += ggml_metal_op_mul_mat_mma_extra(tensor);
             } break;
         default:
             break;
