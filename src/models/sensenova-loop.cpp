@@ -263,6 +263,16 @@ llama_model_sensenova_loop::graph::graph(const llama_model & model, const llm_gr
     for (int il = 0; il < n_layer; ++il) {
         res->t_layer_inp[il] = inpL;
 
+        // inside the mHC range the residual is two streams and inpL is a strided view of the first,
+        // which a reader of layer inputs (a DFlash draft) cannot take as one row per token: give it
+        // the mean of the streams, the same reduction the model applies when it leaves the range
+        if (str_a != nullptr && (size_t) il < cparams.embeddings_layer_inp.size() && cparams.embeddings_layer_inp[il]) {
+            ggml_tensor * tap = ggml_scale(ctx0, ggml_add(ctx0, str_a, str_b), 0.5f);
+            cb(tap, "layer_inp_mean", il);
+            ggml_build_forward_expand(gf, tap);
+            res->t_layer_inp[il] = tap;
+        }
+
         const uint32_t mhc_kind = hparams.n_mhc_streams > 0 ? hparams.mhc_layer_kinds[il] : 0;
 
         if (mhc_kind == 0) {
