@@ -98,6 +98,19 @@ struct llm_build_delta_net_base : public llm_graph_context {
             ggml_tensor *        b,
             ggml_tensor *        s,
             int                  il);
+
+    // the same over a state kept as a base and the updates of the last ubatch (llama_memory_recurrent::rs_lazy):
+    // reads them from ssm_states_all and ssm_factors_all, and writes the new ones back
+    ggml_tensor * build_recurrent_attn_lazy(
+            llm_graph_input_rs * inp,
+            ggml_tensor *        ssm_states_all,
+            ggml_tensor *        ssm_factors_all,
+            ggml_tensor *        q,
+            ggml_tensor *        k,
+            ggml_tensor *        v,
+            ggml_tensor *        g,
+            ggml_tensor *        b,
+            int                  il);
 };
 
 struct llm_build_lfm_base : public llm_graph_context {

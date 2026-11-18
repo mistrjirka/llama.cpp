@@ -396,10 +396,27 @@ void llm_graph_input_cls::set_input(const llama_ubatch * ubatch) {
     }
 }
 
+// lazy s states: how many stored updates belong to the state of each sequence.
+// has to run before the s_copy() calls, which reset the pending rollback that s_apply() reads
+static void llm_graph_input_rs_set_apply(const llm_graph_input_rs * inp_rs, const llama_memory_recurrent_context * mctx) {
+    if (!inp_rs->s_apply) {
+        return;
+    }
+
+    GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_apply->buffer));
+    int32_t * data = (int32_t *) inp_rs->s_apply->data;
+
+    for (int64_t i = 0; i < inp_rs->s_apply->ne[0]; ++i) {
+        data[i] = mctx->s_apply((int) i);
+    }
+}
+
 void llm_graph_input_rs::set_input(const llama_ubatch * ubatch) {
     GGML_UNUSED(ubatch);
 
     const int64_t n_rs = mctx->get_n_rs();
+
+    llm_graph_input_rs_set_apply(this, mctx);
 
     if (s_copy) {
         GGML_ASSERT(ggml_backend_buffer_is_host(s_copy->buffer));
@@ -1125,6 +1142,8 @@ void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
 
     const int64_t n_rs = mctx->get_recr()->get_n_rs();
 
+    llm_graph_input_rs_set_apply(inp_rs.get(), mctx->get_recr());
+
     if (inp_rs->s_copy) {
         GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
         int32_t * data = (int32_t *) inp_rs->s_copy->data;
@@ -1170,6 +1189,8 @@ void llm_graph_input_mem_hybrid_k::set_input(const llama_ubatch * ubatch) {
     }
 
     const int64_t n_rs = mctx->get_recr()->get_n_rs();
+
+    llm_graph_input_rs_set_apply(inp_rs.get(), mctx->get_recr());
 
     if (inp_rs->s_copy) {
         GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
@@ -1227,6 +1248,8 @@ void llm_graph_input_mem_hybrid_iswa::set_input(const llama_ubatch * ubatch) {
     }
 
     const int64_t n_rs = mctx->get_recr()->get_n_rs();
+
+    llm_graph_input_rs_set_apply(inp_rs.get(), mctx->get_recr());
 
     if (inp_rs->s_copy) {
         GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
@@ -3890,6 +3913,12 @@ static std::unique_ptr<llm_graph_input_rs> build_rs_inp_impl(
 
     inp->s_copy_main = ggml_view_1d(ctx0, inp->s_copy, n_seqs, 0);
     inp->s_copy_tail = ggml_view_1d(ctx0, inp->s_copy, n_rs - 1, inp->s_copy->nb[0]);
+
+    if (mctx_cur->rs_lazy()) {
+        inp->s_apply = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_seqs);
+        ggml_set_input(inp->s_apply);
+        ggml_set_name(inp->s_apply, "rs_s_apply");
+    }
 
     inp->head = mctx_cur->get_head();
     inp->rs_z = mctx_cur->get_rs_z();

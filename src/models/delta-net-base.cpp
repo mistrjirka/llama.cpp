@@ -498,7 +498,12 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
 
         const int64_t K = (int64_t) cparams.n_rs_seq + 1;
 
-        for (int64_t t = 1; t <= K; ++t) {
+        // a rollback reaches back fewer tokens than the ubatch has, and none when it has more than K
+        // (llama_memory_recurrent::mem_cell::rs_max), so only those planes are written
+        const int64_t n_seq_tokens = conv_input->ne[0] - conv_states->ne[0];
+        const int64_t n_planes     = n_seq_tokens <= K ? n_seq_tokens : 1;
+
+        for (int64_t t = K - n_planes + 1; t <= K; ++t) {
             const int64_t s_idx  = std::max<int64_t>(0, conv_input->ne[0] - conv_states->ne[0] - K + t);
             const int64_t s_slot = K - t;
 
@@ -598,6 +603,79 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         (size_t) kv_head * row_size);
 
     ggml_build_forward_expand(gf, ggml_cpy(ctx0, src, dst));
+
+    return output;
+}
+
+ggml_tensor * llm_build_delta_net_base::build_recurrent_attn_lazy(
+        llm_graph_input_rs * inp,
+        ggml_tensor *        ssm_states_all,
+        ggml_tensor *        ssm_factors_all,
+        ggml_tensor *        q,
+        ggml_tensor *        k,
+        ggml_tensor *        v,
+        ggml_tensor *        g,
+        ggml_tensor *        b,
+        int                  il) {
+    const auto * mctx_cur = inp->mctx;
+    const auto   kv_head  = mctx_cur->get_head();
+    const int32_t rs_zero = mctx_cur->get_rs_z();
+
+    const int64_t S_v          = v->ne[0];
+    const int64_t H_v          = v->ne[1];
+    const int64_t n_seq_tokens = v->ne[2];
+    const int64_t n_seqs       = v->ne[3];
+
+    const int64_t D  = S_v * S_v * H_v;
+    const int64_t K  = (int64_t) cparams.n_rs_seq + 1;
+    const int64_t TB = H_v * (2 * S_v + 1); // the updates of one token: d [S_v, H_v], k [S_v, H_v], exp(g) [H_v]
+
+    GGML_ASSERT(inp->s_apply != nullptr);
+    GGML_ASSERT(ssm_states_all->ne[0] == D);
+    GGML_ASSERT(ssm_factors_all->ne[0] == TB * K);
+
+    // a sequence that starts gets a zero base, as build_rs() does for the states it gathers.
+    // the view is empty when there is nothing to clear, so the graph stays the same
+    ggml_tensor * state_zero = ggml_view_1d(ctx0, ssm_states_all, D*(rs_zero >= 0), rs_zero*ssm_states_all->nb[1]*(rs_zero >= 0));
+    ggml_build_forward_expand(gf, ggml_scale_inplace(ctx0, state_zero, 0));
+
+    // base and updates are read where they are kept: the cell of the one sequence does not move
+    ggml_tensor * base = ggml_view_2d(ctx0, ssm_states_all, D, n_seqs, ssm_states_all->nb[1], kv_head * ssm_states_all->nb[1]);
+    ggml_tensor * fac  = ggml_view_3d(ctx0, ssm_factors_all, TB, K, n_seqs,
+            ggml_row_size(ssm_factors_all->type, TB), ssm_factors_all->nb[1], kv_head * ssm_factors_all->nb[1]);
+
+    ggml_tensor * gdn_out = ggml_gated_delta_net_lazy(ctx0, q, k, v, g, b,
+            ggml_reshape_4d(ctx0, base, S_v, S_v, H_v, n_seqs), fac, inp->s_apply, K);
+    if (n_seq_tokens > 1) {
+        res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
+    } else {
+        res->add_fused_node({LLM_FUSED_OP_GDN_AR, gdn_out, il});
+    }
+
+    const int64_t n_attn = S_v * H_v * n_seq_tokens * n_seqs;
+    const int64_t n_keep = n_seq_tokens <= K ? n_seq_tokens : 0;
+
+    // the new base goes back where the base was read
+    ggml_tensor * base_new = ggml_view_2d(ctx0, gdn_out, D, n_seqs,
+            ggml_row_size(gdn_out->type, D), ggml_row_size(gdn_out->type, n_attn));
+    ggml_build_forward_expand(gf, ggml_cpy(ctx0, base_new, base));
+
+    // and the updates of the tokens, when they are few enough to be kept
+    if (n_keep > 0) {
+        ggml_tensor * fac_new = ggml_view_2d(ctx0, gdn_out, TB * n_keep, n_seqs,
+                ggml_row_size(gdn_out->type, TB * n_keep), ggml_row_size(gdn_out->type, n_attn + D * n_seqs));
+        ggml_tensor * fac_dst = ggml_view_2d(ctx0, ssm_factors_all, TB * n_keep, n_seqs,
+                ssm_factors_all->nb[1], kv_head * ssm_factors_all->nb[1]);
+        ggml_build_forward_expand(gf, ggml_cpy(ctx0, fac_new, fac_dst));
+    }
+
+    ggml_tensor * output = ggml_view_4d(ctx0, gdn_out,
+        S_v, H_v, n_seq_tokens, n_seqs,
+        ggml_row_size(gdn_out->type, S_v),
+        ggml_row_size(gdn_out->type, S_v * H_v),
+        ggml_row_size(gdn_out->type, S_v * H_v * n_seq_tokens),
+        0);
+    cb(output, "attn_output", il);
 
     return output;
 }

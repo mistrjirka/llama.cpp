@@ -79,6 +79,12 @@ public:
 
     void set_rs_idx(llama_seq_id seq_id, uint32_t idx);
 
+    // the s states are kept as a base and the rank-1 updates of the last ubatch (ggml_gated_delta_net_lazy)
+    // instead of one snapshot per token: s_l holds one row per cell, f_l the updates of up to n_rs_seq + 1
+    // tokens, and the state of a cell is its base with the first (n_fac - rollback) updates applied.
+    // one sequence only: its cell never moves, so base and updates are read and written in place
+    bool rs_lazy = false;
+
     // computed before each graph build
     uint32_t n = 0;
 
@@ -95,6 +101,11 @@ public:
         // largest rollback whose snapshot the last ubatch guarantees: a ubatch of n <= n_rs_seq + 1 tokens
         // writes snapshots 0..n-1, a longer one only guarantees the final state (ggml_gated_delta_net)
         uint32_t rs_max = 0;
+
+        // lazy s states: updates stored by the last ubatch, and by the one before it (the ones the
+        // current graph has to apply, set in find_slot())
+        uint32_t n_fac    = 0;
+        uint32_t n_fac_in = 0;
 
         std::set<llama_seq_id> seq_id;
 
@@ -118,6 +129,11 @@ public:
     std::vector<ggml_tensor *> s_l;
     // a second conv history that must stay replicated across devices, so it cannot share the r row
     std::vector<ggml_tensor *> p_l;
+    // lazy s states: the stored updates, [n_embd_f, cells]
+    std::vector<ggml_tensor *> f_l;
+
+    // floats per cell in f_l
+    uint32_t n_embd_f = 0;
 
 private:
     //const llama_model & model;
@@ -138,7 +154,12 @@ private:
     size_t size_p_bytes() const;
 
     void state_write_meta(llama_io_write_i & io, const std::vector<std::pair<uint32_t, uint32_t>> & cell_ranges, llama_seq_id seq_id = -1) const;
-    void state_write_data(llama_io_write_i & io, const std::vector<std::pair<uint32_t, uint32_t>> & cell_ranges) const;
+    // cell_ranges: rows of the states, in the snapshot plane a pending rollback points to
+    // lazy s states: cell_ranges_base are the rows of base and updates, n_fac the updates that belong to each cell
+    void state_write_data(llama_io_write_i & io,
+            const std::vector<std::pair<uint32_t, uint32_t>> & cell_ranges,
+            const std::vector<std::pair<uint32_t, uint32_t>> & cell_ranges_base,
+            const std::vector<uint32_t> & n_fac) const;
 
     bool state_read_meta(llama_io_read_i & io, uint32_t cell_count, llama_seq_id dest_seq_id = -1);
     bool state_read_data(llama_io_read_i & io, uint32_t cell_count);
@@ -184,6 +205,13 @@ public:
     ggml_tensor * get_r_l(int32_t il) const;
     ggml_tensor * get_s_l(int32_t il) const;
     ggml_tensor * get_p_l(int32_t il) const;
+    ggml_tensor * get_f_l(int32_t il) const;
+
+    bool rs_lazy() const;
+
+    // lazy s states: how many stored updates belong to the state of the i-th sequence of the ubatch.
+    // reads the pending rollback that s_copy() then resets, so it has to be called first
+    int32_t s_apply(int i) const;
 
     int32_t s_copy(int i) const;
 
