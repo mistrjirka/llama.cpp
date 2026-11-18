@@ -4159,6 +4159,18 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_N_UBATCH"));
     add_opt(common_arg(
+        {"--spec-rollback"}, "N",
+        "tokens a recurrent model can take back after a batch without a checkpoint (default: what the block drafter needs). "
+        "a longer draft, as the ones taken from the prompt can be, is checkpointed and replayed when it is accepted in part. "
+        "costs memory per token unless the model keeps its state as a base and updates",
+        [](common_params & params, int value) {
+            if (value < 0 || value > 1024) {
+                throw std::invalid_argument("invalid value");
+            }
+            params.speculative.n_rollback = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_ROLLBACK"));
+    add_opt(common_arg(
         {"--spec-synth-len"}, "L",
         "target mean synthetic acceptance length, including the target token (benchmarking only)",
         [](common_params & params, const std::string & value) {
