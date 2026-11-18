@@ -288,6 +288,63 @@ static bool ggml_metal_fusion_check_gdn_cache(
     return true;
 }
 
+// GATED_DELTA_NET_LAZY + CPY: the cpy puts the new base into the recurrent cache, so the kernel writes
+// it there and the cpy is elided. the cache is where the kernel reads the base from, which is safe:
+// a thread writes only the state values it has read itself. not an elision chain, like the pattern above.
+static bool ggml_metal_fusion_check_gdn_lazy_cache(
+        const ggml_metal_fusion       * fusion,
+        const ggml_tensor * const     * nodes,
+        const ggml_cgraph             * gf,
+        const int                     * node_idxs,
+              int                       idx,
+              ggml_metal_fusion_mode    mode) {
+    GGML_UNUSED(fusion);
+    GGML_UNUSED(gf);
+    GGML_UNUSED(node_idxs);
+    GGML_UNUSED(idx);
+
+    const ggml_tensor * gdn = nodes[0];
+    const ggml_tensor * cpy = nodes[1];
+
+    // the kernel skips the base in its own output, so that must not be a graph output
+    if (gdn->type != GGML_TYPE_F32 || (gdn->flags & GGML_TENSOR_FLAG_OUTPUT)) {
+        return false;
+    }
+
+    if (cpy->op != GGML_OP_CPY || (cpy->flags & GGML_TENSOR_FLAG_OUTPUT)) {
+        return false;
+    }
+
+    const int64_t S_v      = gdn->src[2]->ne[0];
+    const int64_t H        = gdn->src[2]->ne[1];
+    const int64_t n_tokens = gdn->src[2]->ne[2];
+    const int64_t n_seqs   = gdn->src[2]->ne[3];
+    const size_t  base_off = ggml_row_size(GGML_TYPE_F32, S_v * H * n_tokens * n_seqs);
+
+    const int64_t n_base = S_v * S_v * H * n_seqs;
+
+    const ggml_tensor * src = cpy->src[0]; // the new base in the op output
+    const ggml_tensor * dst = cpy->src[1]; // cache view
+
+    if (src->op != GGML_OP_VIEW || src->view_src != gdn ||
+        src->view_offs != base_off || !ggml_is_contiguous(src) || ggml_nelements(src) != n_base) {
+        return false;
+    }
+
+    if (dst->type != GGML_TYPE_F32 || !ggml_is_contiguous(dst) || ggml_nelements(dst) != n_base) {
+        return false;
+    }
+
+    if (mode == GGML_METAL_FUSION_FULL) {
+        // the cache must be allocated so the kernel can write straight to its buffer
+        if (dst->data == nullptr) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 // MUL + SIN + SQR + MUL + ADD (snake activation)
 static bool ggml_metal_fusion_check_snake(
         const ggml_metal_fusion       * fusion,
@@ -729,6 +786,7 @@ static const std::vector<ggml_op> ops_add_7 = { GGML_OP_ADD, GGML_OP_ADD, GGML_O
 static const std::vector<ggml_op> ops_snake = { GGML_OP_MUL, GGML_OP_SIN, GGML_OP_SQR, GGML_OP_MUL, GGML_OP_ADD };
 
 static const std::vector<ggml_op> ops_gdn_cache = { GGML_OP_GATED_DELTA_NET, GGML_OP_CPY };
+static const std::vector<ggml_op> ops_gdn_lazy_cache = { GGML_OP_GATED_DELTA_NET_LAZY, GGML_OP_CPY };
 
 static const std::vector<ggml_op> ops_ssm_conv_silu = { GGML_OP_SSM_CONV, GGML_OP_UNARY };
 
@@ -777,6 +835,7 @@ static const std::vector<ggml_metal_fusion> ggml_metal_fusions = {
     { GGML_METAL_FUSION_ADD_CHAIN,      ops_add_7,                  {},     false, ggml_metal_fusion_check_add_chain },
     { GGML_METAL_FUSION_SNAKE,          ops_snake,                  {},     false, ggml_metal_fusion_check_snake },
     { GGML_METAL_FUSION_GDN_CACHE,      ops_gdn_cache,              {},     true,  ggml_metal_fusion_check_gdn_cache },
+    { GGML_METAL_FUSION_GDN_LAZY_CACHE, ops_gdn_lazy_cache,         {},     true,  ggml_metal_fusion_check_gdn_lazy_cache },
     { GGML_METAL_FUSION_TOPK_MOE,       ops_topk_moe,               {1},    true,  ggml_metal_fusion_check_topk_moe },
     { GGML_METAL_FUSION_TOPK_MOE,       ops_topk_moe_scale,         {1},    true,  ggml_metal_fusion_check_topk_moe },
     { GGML_METAL_FUSION_TOPK_MOE,       ops_topk_moe_norm,          {1},    true,  ggml_metal_fusion_check_topk_moe },

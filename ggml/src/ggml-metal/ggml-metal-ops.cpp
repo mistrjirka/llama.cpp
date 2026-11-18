@@ -390,6 +390,10 @@ static int ggml_metal_op_encode_impl(ggml_metal_op_t ctx, int idx) {
             {
                 n_fuse = ggml_metal_op_gated_delta_net(ctx, idx);
             } break;
+        case GGML_OP_GATED_DELTA_NET_LAZY:
+            {
+                n_fuse = ggml_metal_op_gated_delta_net_lazy(ctx, idx);
+            } break;
         case GGML_OP_SOLVE_TRI:
             {
                 n_fuse = ggml_metal_op_solve_tri(ctx, idx);
@@ -2269,6 +2273,91 @@ int ggml_metal_op_gated_delta_net(ggml_metal_op_t ctx, int idx) {
     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[5]), ida++); // state
     ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op),         ida++); // dst (attn)
     ggml_metal_encoder_set_buffer  (enc, bid_out,                              ida++); // state_out
+
+    const int nsg = pipeline.nsg;
+
+    ggml_metal_encoder_dispatch_threadgroups(enc, op->src[2]->ne[0]/nsg, op->src[2]->ne[1], op->src[2]->ne[3], 32, nsg, 1);
+
+    return n_fuse;
+}
+
+int ggml_metal_op_gated_delta_net_lazy(ggml_metal_op_t ctx, int idx) {
+    ggml_tensor * op = ctx->node(idx);
+
+    ggml_metal_library_t lib = ctx->lib;
+    ggml_metal_encoder_t enc = ctx->enc;
+
+    GGML_TENSOR_LOCALS( int32_t, ne0, op->src[0], ne);
+    GGML_TENSOR_LOCALS(uint64_t, nb0, op->src[0], nb);
+    GGML_TENSOR_LOCALS( int32_t, ne1, op->src[1], ne);
+    GGML_TENSOR_LOCALS(uint64_t, nb1, op->src[1], nb);
+    GGML_TENSOR_LOCALS( int32_t, ne2, op->src[2], ne);
+    GGML_TENSOR_LOCALS(uint64_t, nb2, op->src[2], nb);
+
+    GGML_UNUSED(ne00);
+    GGML_UNUSED(ne02);
+    GGML_UNUSED(ne03);
+    GGML_UNUSED(nb00);
+    GGML_UNUSED(ne10);
+    GGML_UNUSED(ne12);
+    GGML_UNUSED(ne13);
+    GGML_UNUSED(nb10);
+    GGML_UNUSED(ne20);
+    GGML_UNUSED(nb20);
+
+    auto pipeline = ggml_metal_library_get_pipeline_gated_delta_net_lazy(lib, op);
+
+    // when fused with the cpy of the new base into the recurrent cache, the kernel writes the base
+    // there and the cpy is skipped (see GGML_METAL_FUSION_GDN_LAZY_CACHE)
+    ggml_metal_buffer_id bid_out = ggml_metal_get_buffer_id(op);
+    int32_t fused  = 0;
+    int     n_fuse = 1;
+
+    if (ctx->use_fusion()) {
+        int n = 1;
+        const ggml_metal_fusion * fusion = ctx->can_fuse(idx, GGML_METAL_FUSION_FULL, &n);
+
+        if (fusion && ggml_metal_fusion_get_id(fusion) == GGML_METAL_FUSION_GDN_LAZY_CACHE) {
+            bid_out = ggml_metal_get_buffer_id(ctx->node(idx + 1)->src[1]); // cache view
+            fused   = 1;
+            n_fuse  = 2;
+
+            ctx->count_fusions(fusion);
+        }
+    }
+
+    ggml_metal_kargs_gated_delta_net_lazy args = {
+        /*.ne01  =*/ ne01,
+        /*.ne11  =*/ ne11,
+        /*.ne21  =*/ ne21,
+        /*.ne22  =*/ ne22,
+        /*.ne23  =*/ ne23,
+        /*.ns02  =*/ (int32_t) (nb02/sizeof(float)),
+        /*.ns12  =*/ (int32_t) (nb12/sizeof(float)),
+        /*.ns22  =*/ (int32_t) (nb22/sizeof(float)),
+        /*.nb01  =*/ nb01,
+        /*.nb03  =*/ nb03,
+        /*.nb11  =*/ nb11,
+        /*.nb13  =*/ nb13,
+        /*.nb21  =*/ nb21,
+        /*.nb23  =*/ nb23,
+        /*.fused =*/ fused,
+    };
+
+    int ida = 0;
+
+    ggml_metal_encoder_set_pipeline(enc, pipeline);
+    ggml_metal_encoder_set_bytes   (enc, &args, sizeof(args),                  ida++); // args
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[0]), ida++); // q
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[1]), ida++); // k
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[2]), ida++); // v
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[3]), ida++); // gate
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[4]), ida++); // beta
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[5]), ida++); // base
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[6]), ida++); // stored factors
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op->src[7]), ida++); // n_apply
+    ggml_metal_encoder_set_buffer  (enc, ggml_metal_get_buffer_id(op),         ida++); // dst
+    ggml_metal_encoder_set_buffer  (enc, bid_out,                              ida++); // new base
 
     const int nsg = pipeline.nsg;
 

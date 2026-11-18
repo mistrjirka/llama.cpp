@@ -805,6 +805,37 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_gated_delta_net(
     return res;
 }
 
+ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_gated_delta_net_lazy(ggml_metal_library_t lib, const ggml_tensor * op) {
+    char base[256];
+    char name[256];
+
+    const int ne20 = op->src[2]->ne[0]; // S_v
+    const int K    = ggml_get_op_params_i32(op, 0);
+
+    const int nsg = ne20/32;
+
+    GGML_ASSERT(ne20 % 32 == 0);
+
+    snprintf(base, 256, "kernel_gated_delta_net_lazy_%s_%d", ggml_type_name(op->src[0]->type), nsg);
+    snprintf(name, 256, "%s_ne20=%d_K=%d", base, ne20, K);
+
+    ggml_metal_pipeline_with_params res = ggml_metal_library_get_pipeline(lib, name);
+    if (!res.pipeline) {
+        ggml_metal_cv_t cv = ggml_metal_cv_init();
+
+        ggml_metal_cv_set_int16(cv, ne20, FC_GATED_DELTA_NET_LAZY + 0);
+        ggml_metal_cv_set_int16(cv, K,    FC_GATED_DELTA_NET_LAZY + 1);
+
+        res = ggml_metal_library_compile_pipeline(lib, base, name, cv);
+
+        ggml_metal_cv_free(cv);
+    }
+
+    res.nsg = nsg;
+
+    return res;
+}
+
 ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_solve_tri(ggml_metal_library_t lib, const ggml_tensor * op) {
     char base[256];
     char name[256];

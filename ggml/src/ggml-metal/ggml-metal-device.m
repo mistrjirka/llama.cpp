@@ -1879,6 +1879,9 @@ bool ggml_metal_device_supports_op(ggml_metal_device_t dev, const struct ggml_te
             return true;
         case GGML_OP_GATED_DELTA_NET:
             return has_simdgroup_reduction && op->src[2]->ne[0] % 32 == 0;
+        case GGML_OP_GATED_DELTA_NET_LAZY:
+            // 1, 2 or 4 state values per thread
+            return has_simdgroup_reduction && op->src[2]->ne[0] % 32 == 0 && op->src[2]->ne[0] <= 128 && op->src[2]->ne[0] != 96;
         case GGML_OP_SOLVE_TRI:
             return has_simdgroup_reduction && op->src[0]->type == GGML_TYPE_F32;
         case GGML_OP_MUL_MAT:

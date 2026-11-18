@@ -587,6 +587,7 @@ extern "C" {
         GGML_OP_RWKV_WKV7,
         GGML_OP_SOLVE_TRI,
         GGML_OP_GATED_DELTA_NET,
+        GGML_OP_GATED_DELTA_NET_LAZY,
         GGML_OP_LIGHTNING_INDEXER,
         GGML_OP_DSV4_HC_COMB,
         GGML_OP_DSV4_HC_PRE,
@@ -2697,6 +2698,32 @@ extern "C" {
             struct ggml_tensor  * g,
             struct ggml_tensor  * beta,
             struct ggml_tensor  * state,
+            int64_t               K);
+
+    // gated delta net over a state kept as a base and the rank-1 updates of its last tokens,
+    // so that the state after any of those tokens is recovered without a snapshot per token
+    //
+    //   q, k, v, g, beta : as in ggml_gated_delta_net, scalar gate only
+    //   state   : [S_v, S_v, H_v, n_seqs]          the base
+    //   factors : [H_v*(2*S_v + 1), K, n_seqs]     per stored token: d [S_v, H_v], k [S_v, H_v], exp(g) [H_v]
+    //   n_apply : I32 [n_seqs]                     how many stored tokens belong to the state, 0..K
+    //
+    // the tokens start from the base with its first n_apply stored updates applied. the output packs
+    //   attention scores [S_v, H_v, n_tokens, n_seqs]
+    //   the new base     [S_v, S_v, H_v, n_seqs]
+    //   the new factors  [H_v*(2*S_v + 1), n_keep, n_seqs], n_keep = n_tokens <= K ? n_tokens : 0
+    // n_tokens <= K: the new base is the state the tokens started from and the factors are their updates
+    // n_tokens >  K: the new base is the state after all tokens
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_lazy(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * q,
+            struct ggml_tensor  * k,
+            struct ggml_tensor  * v,
+            struct ggml_tensor  * g,
+            struct ggml_tensor  * beta,
+            struct ggml_tensor  * state,
+            struct ggml_tensor  * factors,
+            struct ggml_tensor  * n_apply,
             int64_t               K);
 
     // DSA lightning indexer

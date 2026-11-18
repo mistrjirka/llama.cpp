@@ -39,6 +39,7 @@ typedef enum ggml_metal_fusion_id {
     GGML_METAL_FUSION_ADD_CHAIN,    // ADD x N (N in [2, 7])
     GGML_METAL_FUSION_SNAKE,        // MUL + SIN + SQR + MUL + ADD
     GGML_METAL_FUSION_GDN_CACHE,    // GATED_DELTA_NET + CPY (write snapshots into the recurrent cache)
+    GGML_METAL_FUSION_GDN_LAZY_CACHE, // GATED_DELTA_NET_LAZY + CPY (write the new base into the recurrent cache)
     GGML_METAL_FUSION_TOPK_MOE,     // SOFT_MAX + ARGSORT + GET_ROWS + norm/scale (MoE routing)
     GGML_METAL_FUSION_MOE_REDUCE,   // MUL + expert VIEWs + ADD chain (MoE output reduction)
     GGML_METAL_FUSION_SSM_CONV_SILU, // SSM_CONV + UNARY (silu)

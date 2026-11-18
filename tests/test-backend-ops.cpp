@@ -5296,6 +5296,118 @@ struct test_gated_delta_net_cache_fusion : public test_case {
     }
 };
 
+// GGML_OP_GATED_DELTA_NET_LAZY, alone or with the GGML_OP_CPY that puts the new base back where it was read
+struct test_gated_delta_net_lazy : public test_case {
+    const ggml_type type;
+
+    const int64_t head_count;
+    const int64_t head_size;
+    const int64_t n_seq_tokens;
+    const int64_t n_seqs;
+    const int     v_repeat;
+    const int64_t K;        // tokens the factors are kept for
+    const int     n_apply;  // stored updates that belong to the state (one fewer per further sequence)
+    const bool    in_cache; // the base lives in a cache that the new base is copied back into
+
+    std::vector<ggml_tensor *> verify;
+
+    std::string vars() override {
+        return VARS_TO_STR9(type, head_count, head_size, n_seq_tokens, n_seqs, v_repeat, K, n_apply, in_cache);
+    }
+
+    test_gated_delta_net_lazy(ggml_type type = GGML_TYPE_F32,
+            int64_t head_count = 4, int64_t head_size = 32, int64_t n_seq_tokens = 1, int64_t n_seqs = 1,
+            int v_repeat = 1, int64_t K = 4, int n_apply = 0, bool in_cache = false)
+        : type(type), head_count(head_count), head_size(head_size), n_seq_tokens(n_seq_tokens), n_seqs(n_seqs),
+          v_repeat(v_repeat), K(K), n_apply(n_apply), in_cache(in_cache) {}
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        const int64_t S_v = head_size;
+        const int64_t H_v = head_count * v_repeat;
+        const int64_t D   = S_v * S_v * H_v;
+        const int64_t TB  = H_v * (2 * S_v + 1);
+
+        const int64_t n_keep = n_seq_tokens <= K ? n_seq_tokens : 0;
+
+        ggml_tensor * q = ggml_new_tensor_4d(ctx, type, head_size, head_count, n_seq_tokens, n_seqs);
+        ggml_tensor * k = ggml_new_tensor_4d(ctx, type, head_size, head_count, n_seq_tokens, n_seqs);
+        ggml_tensor * v = ggml_new_tensor_4d(ctx, type, head_size, H_v, n_seq_tokens, n_seqs);
+        ggml_set_name(q, "q");
+        ggml_set_name(k, "k");
+        ggml_set_name(v, "v");
+        ggml_tensor * g    = ggml_new_tensor_4d(ctx, type, 1, H_v, n_seq_tokens, n_seqs);
+        ggml_tensor * beta = ggml_new_tensor_4d(ctx, type, 1, H_v, n_seq_tokens, n_seqs);
+        ggml_set_name(g,    "g");
+        ggml_set_name(beta, "beta");
+
+        ggml_tensor * cache = ggml_new_tensor_2d(ctx, type, D, n_seqs);
+        ggml_set_name(cache, "cache");
+        ggml_tensor * state = ggml_reshape_4d(ctx, cache, S_v, S_v, H_v, n_seqs);
+
+        ggml_tensor * factors = ggml_new_tensor_3d(ctx, type, TB, K, n_seqs);
+        ggml_set_name(factors, "factors");
+        ggml_tensor * apply = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, n_seqs);
+        ggml_set_name(apply, "n_apply");
+
+        q = ggml_l2_norm(ctx, q, 1e-6f);
+        k = ggml_l2_norm(ctx, k, 1e-6f);
+
+        ggml_tensor * out = ggml_gated_delta_net_lazy(ctx, q, k, v, g, beta, state, factors, apply, K);
+        ggml_set_name(out, "gdn_lazy_out");
+
+        if (!in_cache) {
+            return out;
+        }
+
+        const int64_t n_attn = S_v * H_v * n_seq_tokens * n_seqs;
+
+        ggml_tensor * base = ggml_view_2d(ctx, out, D, n_seqs, ggml_row_size(out->type, D), ggml_row_size(out->type, n_attn));
+        ggml_tensor * cpy  = ggml_cpy(ctx, base, ggml_view_2d(ctx, cache, D, n_seqs, cache->nb[1], 0));
+        ggml_set_name(cpy, "gdn_lazy_base_cpy");
+
+        // the scores and the new factors keep coming from the op's own output
+        ggml_tensor * rest = ggml_cont(ctx, ggml_view_1d(ctx, out, n_attn, 0));
+        verify = { cpy, rest };
+
+        ggml_tensor * sum = ggml_add(ctx, ggml_sum(ctx, cpy), ggml_sum(ctx, rest));
+        if (n_keep > 0) {
+            ggml_tensor * kept = ggml_cont(ctx, ggml_view_1d(ctx, out, TB * n_keep * n_seqs, ggml_row_size(out->type, n_attn + D * n_seqs)));
+            verify.push_back(kept);
+            sum = ggml_add(ctx, sum, ggml_sum(ctx, kept));
+        }
+        return sum;
+    }
+
+    std::string op_desc(ggml_tensor * t) override {
+        GGML_UNUSED(t);
+        return in_cache ? "GATED_DELTA_NET_LAZY_CACHE_FUSION" : "GATED_DELTA_NET_LAZY";
+    }
+
+    bool run_whole_graph() override { return in_cache; }
+    std::vector<ggml_tensor *> fusion_test_nodes() override { return verify; }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
+            if (ggml_is_view_op(t->op)) { continue; }
+            if (strcmp(t->name, "g") == 0) {
+                init_tensor_uniform(t, -20.0f, -1e-4f);
+            } else if (strcmp(t->name, "beta") == 0) {
+                init_tensor_uniform(t, 0.0f, 1.0f);
+            } else if (strcmp(t->name, "v") == 0) {
+                init_tensor_uniform(t, -0.3f, 5.0f);
+            } else if (strcmp(t->name, "n_apply") == 0) {
+                std::vector<int32_t> data(n_seqs);
+                for (int64_t s = 0; s < n_seqs; s++) {
+                    data[s] = std::max<int32_t>(0, n_apply - (int32_t) s);
+                }
+                ggml_backend_tensor_set(t, data.data(), 0, data.size() * sizeof(int32_t));
+            } else {
+                init_tensor_uniform(t);
+            }
+        }
+    }
+};
+
 // GGML_OP_GATED_LINEAR_ATTN
 struct test_gla : public test_case {
     const ggml_type type;
@@ -12645,6 +12757,18 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 4, 32,   4, 1, 4));
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 8, 32,   4, 2, 4));
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 4, 32,   8, 1, 4));
+
+    // the state as a base and the updates of its last tokens: tokens within K, more tokens than K,
+    // stored updates to apply first, heads of v sharing a head of k, several sequences
+    for (bool in_cache : { false, true }) {
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32,  4,  32,  1, 1, 1, 4, 0, in_cache));
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32,  4,  32,  4, 1, 1, 4, 4, in_cache));
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32,  4,  64,  3, 2, 1, 4, 2, in_cache));
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32,  8, 128,  8, 1, 2, 8, 5, in_cache));
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32, 16, 128, 32, 1, 2, 32, 17, in_cache));
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32,  8, 128, 40, 1, 2, 8, 8, in_cache));
+        test_cases.emplace_back(new test_gated_delta_net_lazy(GGML_TYPE_F32,  4,  64, 70, 2, 1, 4, 3, in_cache));
+    }
 
 #if 0
     // these tests are disabled to save execution time, sbut they can be handy for debugging

@@ -1098,6 +1098,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "RWKV_WKV7",
     "SOLVE_TRI",
     "GATED_DELTA_NET",
+    "GATED_DELTA_NET_LAZY",
     "LIGHTNING_INDEXER",
     "DSV4_HC_COMB",
     "DSV4_HC_PRE",
@@ -1120,7 +1121,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GLU",
 };
 
-static_assert(GGML_OP_COUNT == 104, "GGML_OP_COUNT != 104");
+static_assert(GGML_OP_COUNT == 105, "GGML_OP_COUNT != 105");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1216,6 +1217,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "rwkv_wkv7(r, w, k, v, a, b, s)",
     "A X = B, A triangular, solve X",
     "gated_delta_net(q, k, v, g, beta, s)",
+    "gated_delta_net_lazy(q, k, v, g, beta, s, f, n)",
     "lightning_indexer(q, k, weights, mask)",
     "dsv4_hc_comb(mixes, scale, base)",
     "dsv4_hc_pre(x, weights)",
@@ -1238,7 +1240,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "glu(x)",
 };
 
-static_assert(GGML_OP_COUNT == 104, "GGML_OP_COUNT != 104");
+static_assert(GGML_OP_COUNT == 105, "GGML_OP_COUNT != 105");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -6546,6 +6548,74 @@ struct ggml_tensor * ggml_gated_delta_net(
     result->src[3] = g;
     result->src[4] = beta;
     result->src[5] = state;
+
+    return result;
+}
+
+// ggml_gated_delta_net_lazy
+
+struct ggml_tensor * ggml_gated_delta_net_lazy(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * q,
+        struct ggml_tensor  * k,
+        struct ggml_tensor  * v,
+        struct ggml_tensor  * g,
+        struct ggml_tensor  * beta,
+        struct ggml_tensor  * state,
+        struct ggml_tensor  * factors,
+        struct ggml_tensor  * n_apply,
+        int64_t               K) {
+    GGML_ASSERT(ggml_is_contiguous_rows(q));
+    GGML_ASSERT(ggml_is_contiguous_rows(k));
+    GGML_ASSERT(ggml_is_contiguous_rows(v));
+    GGML_ASSERT(ggml_is_contiguous(g));
+    GGML_ASSERT(ggml_is_contiguous(beta));
+    GGML_ASSERT(ggml_is_contiguous(state));
+    GGML_ASSERT(ggml_is_contiguous(factors));
+
+    GGML_ASSERT(q->type == GGML_TYPE_F32);
+    GGML_ASSERT(k->type == GGML_TYPE_F32);
+    GGML_ASSERT(v->type == GGML_TYPE_F32);
+    GGML_ASSERT(g->type == GGML_TYPE_F32);
+    GGML_ASSERT(beta->type == GGML_TYPE_F32);
+    GGML_ASSERT(state->type == GGML_TYPE_F32);
+    GGML_ASSERT(factors->type == GGML_TYPE_F32);
+    GGML_ASSERT(n_apply->type == GGML_TYPE_I32);
+
+    const int64_t S_v      = v->ne[0];
+    const int64_t H        = v->ne[1];
+    const int64_t n_tokens = v->ne[2];
+    const int64_t n_seqs   = v->ne[3];
+
+    GGML_ASSERT(g->ne[0] == 1);
+    GGML_ASSERT(beta->ne[0] == 1);
+
+    GGML_ASSERT(state->ne[0] == S_v);
+    GGML_ASSERT(state->ne[1] == S_v);
+    GGML_ASSERT(state->ne[2] == H);
+    GGML_ASSERT(state->ne[3] == n_seqs);
+
+    GGML_ASSERT(K >= 1);
+    GGML_ASSERT(factors->ne[0] == H*(2*S_v + 1));
+    GGML_ASSERT(factors->ne[1] == K);
+    GGML_ASSERT(factors->ne[2] == n_seqs);
+    GGML_ASSERT(n_apply->ne[0] == n_seqs);
+
+    const int64_t n_keep = n_tokens <= K ? n_tokens : 0;
+    const int64_t ne[4] = { S_v*H*n_tokens*n_seqs + S_v*S_v*H*n_seqs + H*(2*S_v + 1)*n_keep*n_seqs, 1, 1, 1 };
+    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne);
+
+    ggml_set_op_params_i32(result, 0, (int32_t) K);
+
+    result->op     = GGML_OP_GATED_DELTA_NET_LAZY;
+    result->src[0] = q;
+    result->src[1] = k;
+    result->src[2] = v;
+    result->src[3] = g;
+    result->src[4] = beta;
+    result->src[5] = state;
+    result->src[6] = factors;
+    result->src[7] = n_apply;
 
     return result;
 }

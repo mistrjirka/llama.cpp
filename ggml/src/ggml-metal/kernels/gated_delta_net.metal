@@ -102,7 +102,8 @@ kernel void kernel_gated_delta_net_impl(
 
         FOR_UNROLL (short j = 0; j < NSG; j++) {
             const short is = tx*NSG + j;
-            ls[j] += k_ptr[is]*d;
+            // one fused multiply-add, spelled out: kernel_gated_delta_net_lazy replays this step and must round the same way
+            ls[j] = fma(k_ptr[is], d, ls[j]);
 
             y += ls[j]*q_ptr[is];
         }
@@ -262,3 +263,180 @@ template [[host_name("kernel_gated_delta_net_f32_1")]] kernel kernel_gated_delta
 template [[host_name("kernel_gated_delta_net_f32_2")]] kernel kernel_gated_delta_net_t kernel_gated_delta_net_impl<float2, 2>;
 template [[host_name("kernel_gated_delta_net_f32_4")]] kernel kernel_gated_delta_net_t kernel_gated_delta_net_impl<float4, 4>;
 #endif
+
+// The state as a base and the rank-1 updates of its last tokens (ggml_gated_delta_net_lazy).
+// A token turns row i of the state, M[i], into g*M[i] + d[i]*k with one d per row, so storing g, k and d
+// of the last tokens is enough to rebuild the state after any of them, where the kernel above writes
+// the whole state once per token.
+
+constant short FC_gated_delta_net_lazy_ne20 [[function_constant(FC_GATED_DELTA_NET_LAZY + 0)]];
+constant short FC_gated_delta_net_lazy_K    [[function_constant(FC_GATED_DELTA_NET_LAZY + 1)]];
+
+template<short NSG>
+kernel void kernel_gated_delta_net_lazy_impl(
+        constant ggml_metal_kargs_gated_delta_net_lazy & args,
+        device const char * q,
+        device const char * k,
+        device const char * v,
+        device const char * g,
+        device const char * b,
+        device const char * s,
+        device const char * f,
+        device const char * n_apply,
+        device       char * dst,
+        device       char * dst_fuse,
+        uint3 tgpig[[threadgroup_position_in_grid]],
+        uint3 tpitg[[thread_position_in_threadgroup]],
+        uint3   ntg[[threads_per_threadgroup]])  {
+#define S_v FC_gated_delta_net_lazy_ne20
+#define K   FC_gated_delta_net_lazy_K
+
+    const uint tx = tpitg.x;
+    const uint ty = tpitg.y;
+
+    const uint i23 = tgpig.z; // B (n_seqs)
+    const uint i21 = tgpig.y; // H (head)
+    const uint i20 = tgpig.x*NSG + ty; // row within S_v
+
+    const uint i01 = i21 % args.ne01;
+    const uint i11 = i21 % args.ne11;
+
+    const float scale = 1.0f / sqrt((float)S_v);
+
+    const uint H = args.ne21;
+
+    // the factors of one token: d [S_v, H], k [S_v, H], exp(g) [H]
+    const uint TB = H*(2*S_v + 1);
+
+    // state is stored transposed: M[i20][is] = S[is][i20], so row i20 is contiguous
+    const uint state_base = (i23*H + i21)*S_v*S_v + i20*S_v;
+    device const float * s_ptr = (device const float *) (s) + state_base;
+
+    float ls[NSG];
+
+    FOR_UNROLL (short j = 0; j < NSG; j++) {
+        const short is = tx*NSG + j;
+        ls[j] = s_ptr[is];
+    }
+
+    // the stored updates that belong to the state: the two steps of a token below, with d as stored
+    {
+        const int n_rep = ((device const int *) (n_apply))[i23];
+
+        device const float * f_ptr = (device const float *) (f) + i23*K*TB;
+
+        for (int t = 0; t < n_rep; t++) {
+            const float g_f = f_ptr[2*H*S_v + i21];
+            const float d_f = f_ptr[i21*S_v + i20];
+
+            device const float * k_f = f_ptr + H*S_v + i21*S_v;
+
+            FOR_UNROLL (short j = 0; j < NSG; j++) {
+                const short is = tx*NSG + j;
+                ls[j] *= g_f;
+                ls[j] = fma(k_f[is], d_f, ls[j]);
+            }
+
+            f_ptr += TB;
+        }
+    }
+
+    // output layout: [attn scores | new base | new factors]
+    const uint attn_size = args.ne22*H*S_v*args.ne23;
+    const uint base_size = S_v*S_v*H*args.ne23;
+
+    // factors are kept for up to K tokens: then the new base is the state the tokens start from,
+    // else it is the state after all of them
+    const bool keep = args.ne22 <= K;
+
+    device float * base_out = (args.fused ? (device float *) (dst_fuse) : (device float *) (dst) + attn_size) + state_base;
+
+    if (keep) {
+        FOR_UNROLL (short j = 0; j < NSG; j++) {
+            const short is = tx*NSG + j;
+            base_out[is] = ls[j];
+        }
+    }
+
+    device float * dst_attn = (device float *) (dst) + (i23*args.ne22*H + i21)*S_v + i20;
+    device float * f_out    = (device float *) (dst) + attn_size + base_size + i23*args.ne22*TB;
+
+    device const float * q_ptr = (device const float *) (q + i23*args.nb03 + i01*args.nb01);
+    device const float * k_ptr = (device const float *) (k + i23*args.nb13 + i11*args.nb11);
+    device const float * v_ptr = (device const float *) (v + i23*args.nb23 + i21*args.nb21);
+
+    device const float * b_ptr = (device const float *) (b) + (i23*args.ne22*H + i21);
+    device const float * g_ptr = (device const float *) (g) + (i23*args.ne22*H + i21);
+
+    for (short t = 0; t < args.ne22; t++) {
+        const float g_exp = exp(g_ptr[0]);
+
+        float s_k = 0.0f;
+
+        FOR_UNROLL (short j = 0; j < NSG; j++) {
+            const short is = tx*NSG + j;
+            ls[j] *= g_exp;
+
+            s_k += ls[j]*k_ptr[is];
+        }
+
+        s_k = simd_sum(s_k);
+
+        const float d = (v_ptr[i20] - s_k)*b_ptr[0];
+
+        float y = 0.0f;
+
+        FOR_UNROLL (short j = 0; j < NSG; j++) {
+            const short is = tx*NSG + j;
+            ls[j] = fma(k_ptr[is], d, ls[j]);
+
+            y += ls[j]*q_ptr[is];
+        }
+
+        y = simd_sum(y);
+
+        if (tx == 0) {
+            dst_attn[t*H*S_v] = y*scale;
+        }
+
+        if (keep) {
+            if (tx == 0) {
+                f_out[i21*S_v + i20] = d;
+            }
+            if (i20 == 0) {
+                FOR_UNROLL (short j = 0; j < NSG; j++) {
+                    const short is = tx*NSG + j;
+                    f_out[H*S_v + i21*S_v + is] = k_ptr[is];
+                }
+                if (tx == 0) {
+                    f_out[2*H*S_v + i21] = g_exp;
+                }
+            }
+
+            f_out += TB;
+        }
+
+        q_ptr += args.ns02;
+        k_ptr += args.ns12;
+        v_ptr += args.ns22;
+
+        b_ptr += H;
+        g_ptr += H;
+    }
+
+    if (!keep) {
+        FOR_UNROLL (short j = 0; j < NSG; j++) {
+            const short is = tx*NSG + j;
+            base_out[is] = ls[j];
+        }
+    }
+
+#undef S_v
+#undef K
+}
+
+typedef decltype(kernel_gated_delta_net_lazy_impl<4>) kernel_gated_delta_net_lazy_t;
+
+template [[host_name("kernel_gated_delta_net_lazy_f32_1")]] kernel kernel_gated_delta_net_lazy_t kernel_gated_delta_net_lazy_impl<1>;
+template [[host_name("kernel_gated_delta_net_lazy_f32_2")]] kernel kernel_gated_delta_net_lazy_t kernel_gated_delta_net_lazy_impl<2>;
+template [[host_name("kernel_gated_delta_net_lazy_f32_4")]] kernel kernel_gated_delta_net_lazy_t kernel_gated_delta_net_lazy_impl<4>;
