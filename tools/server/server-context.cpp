@@ -320,6 +320,9 @@ struct server_slot {
     int32_t n_prompt_last    = 0;
     bool    prompt_continued = false;
 
+    // the batch before this one was cut for --prompt-tile: what is left of the prompt needs no checkpoint
+    bool prompt_tile_cut = false;
+
     // effective generation limit for the current task, -1 means unlimited
     int32_t n_predict_max = -1;
 
@@ -4050,6 +4053,7 @@ private:
                         int n_past = 0;
 
                         slot.prompt_continued = false;
+                        slot.prompt_tile_cut  = false;
 
                         // empty prompt passed -> release the slot and send empty response
                         if (input_tokens.empty()) {
@@ -4495,6 +4499,12 @@ private:
                     bool user_start_in_batch      = false;
                     bool last_user_start_in_batch = false;
 
+                    // --prompt-tile N: the kernels for many rows work in tiles of N, and a pass pays for every
+                    // tile it starts: 40 tokens cost as much as 64. the kernels for few rows take up to N/2.
+                    // when what is left over after whole tiles fits in those, it goes into a pass of its own:
+                    // 40 tokens as 32 + 8. on an M4 that is 531 ms instead of 713
+                    const int32_t prompt_tile = params_base.prompt_tile;
+
                     // add prompt tokens for processing in the current batch
                     while (slot.prompt.n_tokens() < slot.task->n_tokens() && batch.size() < n_batch) {
                         // get next token to process
@@ -4568,6 +4578,23 @@ private:
                                 break;
                             }
                         }
+
+                        if (prompt_tile > 0 && !(do_checkpoint && tail_checkpoint)) {
+                            const int32_t n_cur   = (int32_t) (batch.size() - n_tokens_prev);
+                            const int32_t n_left  = slot.task->n_tokens() - slot.prompt.n_tokens();
+                            const int32_t n_total = n_cur + n_left;
+
+                            // only when the rest of the prompt would go into this batch
+                            if (n_left > 0 && n_total <= n_batch - (int32_t) n_tokens_prev) {
+                                const int32_t n_over = n_total % prompt_tile;
+
+                                if (n_total > prompt_tile && n_over > 0 && n_over <= prompt_tile/2 && n_cur == n_total - n_over) {
+                                    SLT_DBG(slot, "prompt cut for --prompt-tile: %d tokens now, %d in a pass of their own\n", n_cur, n_left);
+                                    slot.prompt_tile_cut = true;
+                                    break;
+                                }
+                            }
+                        }
                     }
 
                     // the number of tokens added to the batch for the current slot
@@ -4600,6 +4627,14 @@ private:
                         if (!is_user_start && !near_prompt_end) {
                             do_checkpoint = false;
                         }
+                    }
+
+                    // the rest of a prompt that was cut for --prompt-tile: the checkpoint before the cut does
+                    if (slot.prompt_tile_cut && n_tokens_start > 0 && slot.prompt.n_tokens() == slot.task->n_tokens()) {
+                        do_checkpoint = false;
+                    }
+                    if (slot.prompt.n_tokens() == slot.task->n_tokens()) {
+                        slot.prompt_tile_cut = false;
                     }
 
                     const auto pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), slot.id);

@@ -1672,6 +1672,18 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_CTX_CHECKPOINT_TURNS").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--prompt-tile"}, "N",
+        "a prompt pass costs the same for every N rows it starts (the tile of the backend's kernels): read what is "
+        "left over after whole tiles in a pass of its own when that is at most N/2 tokens, 40 tokens as 32 + 8 "
+        "instead of 40 at the price of 64 (default: 0, off)",
+        [](common_params & params, int value) {
+            if (value < 0) {
+                throw std::invalid_argument("invalid value");
+            }
+            params.prompt_tile = value;
+        }
+    ).set_env("LLAMA_ARG_PROMPT_TILE").set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"-cram", "--cache-ram"}, "N",
         string_format("set the maximum cache size in MiB (default: %d, 0 for decision models, -1 - no limit, 0 - disable)"
             "[(more info)](https://github.com/ggml-org/llama.cpp/pull/16391)", params.cache_ram_mib),
