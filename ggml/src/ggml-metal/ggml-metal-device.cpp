@@ -959,7 +959,8 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_mul_mv_mma(ggml_
     // the specialized kernels unroll over a compile-time row length
     const int ne00 = ggml_metal_mul_mv_mma_kind(tsrc0, rt) != GGML_METAL_MMA_KIND_GEN ? op->src[0]->ne[0] : 0;
 
-    snprintf(base, 256, "kernel_mul_mv_mma_%s_%s_nt%d_rt%d", ggml_type_name(tsrc0), ggml_type_name(tsrc1), nt, rt);
+    const char * tname0 = tsrc0 == GGML_TYPE_Q4_K && ggml_metal_mul_mv_mma_q4_K_gen() ? "q4_K_gen" : ggml_type_name(tsrc0);
+    snprintf(base, 256, "kernel_mul_mv_mma_%s_%s_nt%d_rt%d", tname0, ggml_type_name(tsrc1), nt, rt);
     snprintf(name, 256, "%s_nsg=%d_ne12=%d_r2=%d_r3=%d_ne00=%d_add=%d", base, nsg, ne12, r2, r3, ne00, add);
 
     ggml_metal_pipeline_with_params res = ggml_metal_library_get_pipeline(lib, name);

@@ -1,4 +1,6 @@
 #include "ggml-metal-common.h"
+
+#include <cstdlib>
 #include "ggml-metal-fusion.h"
 
 #include "ggml.h"
@@ -58,9 +60,19 @@ static constexpr int64_t GGML_METAL_MMA_TILE_ROWS = 8;
 // weights per K step of the q5_K and generic few-row MMA kernels
 static constexpr int64_t GGML_METAL_MMA_K_CHUNK = 64;
 
+// GGML_METAL_MMA_Q4K_GEN selects the generic few-row kernel for q4_K instead of the specialized one (for comparisons)
+bool ggml_metal_mul_mv_mma_q4_K_gen(void) {
+    static const bool gen = getenv("GGML_METAL_MMA_Q4K_GEN") != nullptr;
+    return gen;
+}
+
 enum ggml_metal_mma_kind ggml_metal_mul_mv_mma_kind(enum ggml_type type, int rt) {
     if (type == GGML_TYPE_Q4_0 || (type == GGML_TYPE_Q8_0 && rt == 1)) {
         return GGML_METAL_MMA_KIND_BLK;
+    }
+    // q4_K shares the q5_K layout (pairs of nibble-packed sub-blocks) and its kind: a kernel unrolled over the row length
+    if (type == GGML_TYPE_Q4_K) {
+        return ggml_metal_mul_mv_mma_q4_K_gen() ? GGML_METAL_MMA_KIND_GEN : GGML_METAL_MMA_KIND_Q5_K;
     }
     return type == GGML_TYPE_Q5_K ? GGML_METAL_MMA_KIND_Q5_K : GGML_METAL_MMA_KIND_GEN;
 }
