@@ -12,6 +12,7 @@
 //        (--out).json: n_embd, taps, the first sequence, and per sequence its length and its first written token
 //        (--topk-out): optional, for each written token the --topk largest logits of the next token,
 //                      as (i32 token, f32 logit), largest first
+// without --out and --taps only the logits are written, and the index goes to (--topk-out).json
 
 #include "llama.h"
 #include "../../src/llama-ext.h"
@@ -26,7 +27,7 @@
 #include <vector>
 
 static void usage(const char * prog) {
-    fprintf(stderr, "usage: %s -m model.gguf --tokens seqs.bin --taps 2,30,34 --out taps.f16 [--first first.bin] [--topk K --topk-out file] [--start N] [--count N] [-ngl N] [--n-batch N]\n", prog);
+    fprintf(stderr, "usage: %s -m model.gguf --tokens seqs.bin [--taps 2,30,34 --out taps.f16] [--first first.bin] [--topk K --topk-out file] [--start N] [--count N] [-ngl N] [--n-batch N]\n", prog);
 }
 
 int main(int argc, char ** argv) {
@@ -55,13 +56,14 @@ int main(int argc, char ** argv) {
         else if (arg == "--n-batch" && has_value) { n_batch     = atoi(argv[++i]); }
         else { usage(argv[0]); return 1; }
     }
-    if (model_path.empty() || tokens_path.empty() || out_path.empty() || taps_arg.empty() || (topk > 0) != !topk_path.empty()) {
+    const bool write_taps = !out_path.empty();
+    if (model_path.empty() || tokens_path.empty() || write_taps != !taps_arg.empty() || (topk > 0) != !topk_path.empty() || (!write_taps && topk == 0)) {
         usage(argv[0]);
         return 1;
     }
 
     std::vector<uint32_t> taps;
-    for (size_t pos = 0; pos < taps_arg.size(); ) {
+    for (size_t pos = 0; write_taps && pos < taps_arg.size(); ) {
         const size_t comma = taps_arg.find(',', pos);
         taps.push_back((uint32_t) atoi(taps_arg.substr(pos, comma - pos).c_str()));
         if (comma == std::string::npos) { break; }
@@ -127,8 +129,11 @@ int main(int argc, char ** argv) {
         llama_set_embeddings_layer_inp(ctx, lid, true);
     }
 
-    FILE * fout = fopen(out_path.c_str(), "wb");
-    if (!fout) { fprintf(stderr, "cannot write %s\n", out_path.c_str()); return 1; }
+    FILE * fout = nullptr;
+    if (write_taps) {
+        fout = fopen(out_path.c_str(), "wb");
+        if (!fout) { fprintf(stderr, "cannot write %s\n", out_path.c_str()); return 1; }
+    }
 
     // optionally, the target's own next-token distribution at every written token: its top logits
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
@@ -186,7 +191,7 @@ int main(int argc, char ** argv) {
                 for (size_t k = 0; k < taps.size(); ++k) {
                     ggml_fp32_to_fp16_row(layers[k] + (size_t) i * n_embd, row.data() + k * n_embd, n_embd);
                 }
-                if (fwrite(row.data(), sizeof(ggml_fp16_t), row.size(), fout) != row.size()) {
+                if (write_taps && fwrite(row.data(), sizeof(ggml_fp16_t), row.size(), fout) != row.size()) {
                     fprintf(stderr, "write failed\n");
                     return 1;
                 }
@@ -209,10 +214,10 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "%zu/%zu sequences, %zu tokens, %.0f tokens/s\n", s + 1, seqs.size(), n_tokens_done, n_tokens_done / elapsed);
         }
     }
-    fclose(fout);
+    if (fout)  { fclose(fout); }
     if (ftopk) { fclose(ftopk); }
 
-    FILE * fmeta = fopen((out_path + ".json").c_str(), "w");
+    FILE * fmeta = fopen(((write_taps ? out_path : topk_path) + ".json").c_str(), "w");
     if (!fmeta) { fprintf(stderr, "cannot write the index\n"); return 1; }
     fprintf(fmeta, "{\"n_embd\": %d, \"dtype\": \"float16\", \"taps\": [", n_embd);
     for (size_t k = 0; k < taps.size(); ++k) { fprintf(fmeta, "%s%u", k ? ", " : "", taps[k]); }
