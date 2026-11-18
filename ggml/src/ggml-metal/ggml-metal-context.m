@@ -79,10 +79,152 @@ struct ggml_metal {
     ggml_abort_callback abort_callback;
     void *              abort_callback_data;
 
+    // GGML_METAL_PROFILE: run every node (or fused group) in its own command buffer and add up the GPU time per kind
+    int profile;
+    int profile_n;
+    int64_t profile_n_graphs;
+    struct ggml_metal_profile_entry * profile_entries;
+
     // error state - set when a command buffer fails during synchronize
     // once set, graph_compute will return GGML_STATUS_FAILED until the backend is recreated
     bool has_error;
 };
+
+// ---- GGML_METAL_PROFILE --------------------------------------------------
+//
+// a measuring aid, off unless the environment variable is set: it trades speed for attribution. the GPU
+// time of a node is taken from its own command buffer (GPUStartTime..GPUEndTime), so scheduling gaps
+// between nodes are not counted; the summary is printed when the backend is freed.
+
+#define GGML_METAL_PROFILE_MAX 512
+
+struct ggml_metal_profile_entry {
+    char     label[176];
+    double   t_gpu;   // seconds on the GPU
+    int64_t  n;       // times encoded
+    int64_t  bytes;   // weight bytes read by one execution (MUL_MAT only)
+};
+
+static void ggml_metal_profile_label(const struct ggml_tensor * node, int n_fused, char * out, size_t n_out) {
+    // the weight's name tells layers apart better than the node's
+    const char * name = node->name;
+    if (node->op == GGML_OP_MUL_MAT && node->src[0] && node->src[0]->name[0]) {
+        name = node->src[0]->name;
+    }
+
+    // collapse the layer numbers so that every layer adds to the same line
+    char collapsed[96];
+    size_t j = 0;
+    for (size_t i = 0; name[i] && j + 2 < sizeof(collapsed); ++i) {
+        if (name[i] >= '0' && name[i] <= '9') {
+            if (j == 0 || collapsed[j - 1] != '#') {
+                collapsed[j++] = '#';
+            }
+        } else {
+            collapsed[j++] = name[i];
+        }
+    }
+    collapsed[j] = 0;
+
+    const char * type = node->src[0] ? ggml_type_name(node->src[0]->type) : "";
+    snprintf(out, n_out, "B=%-3lld %-16s %-5s x%d %s", (long long) node->ne[1], ggml_op_name(node->op), type, n_fused, collapsed);
+}
+
+static void ggml_metal_profile_add(ggml_metal_t ctx, const char * label, double t_gpu, int64_t bytes) {
+    for (int i = 0; i < ctx->profile_n; ++i) {
+        if (strcmp(ctx->profile_entries[i].label, label) == 0) {
+            ctx->profile_entries[i].t_gpu += t_gpu;
+            ctx->profile_entries[i].n     += 1;
+            return;
+        }
+    }
+    if (ctx->profile_n == GGML_METAL_PROFILE_MAX) {
+        return;
+    }
+    struct ggml_metal_profile_entry * e = &ctx->profile_entries[ctx->profile_n++];
+    snprintf(e->label, sizeof(e->label), "%s", label);
+    e->t_gpu = t_gpu;
+    e->n     = 1;
+    e->bytes = bytes;
+}
+
+static int ggml_metal_profile_cmp(const void * a, const void * b) {
+    const double ta = ((const struct ggml_metal_profile_entry *) a)->t_gpu;
+    const double tb = ((const struct ggml_metal_profile_entry *) b)->t_gpu;
+    return ta < tb ? 1 : ta > tb ? -1 : 0;
+}
+
+static void ggml_metal_profile_print(ggml_metal_t ctx) {
+    if (ctx->profile_n == 0) {
+        return;
+    }
+    qsort(ctx->profile_entries, ctx->profile_n, sizeof(ctx->profile_entries[0]), ggml_metal_profile_cmp);
+
+    double total = 0.0;
+    for (int i = 0; i < ctx->profile_n; ++i) {
+        total += ctx->profile_entries[i].t_gpu;
+    }
+    fprintf(stderr, "\nggml-metal profile: %lld graphs, %.1f ms on the GPU\n", (long long) ctx->profile_n_graphs, 1e3*total);
+    fprintf(stderr, "%8s %6s %8s %9s %8s  %s\n", "ms", "%", "calls", "us/call", "GB/s", "node");
+    for (int i = 0; i < ctx->profile_n; ++i) {
+        const struct ggml_metal_profile_entry * e = &ctx->profile_entries[i];
+        char rate[16] = "";
+        if (e->bytes > 0 && e->t_gpu > 0) {
+            snprintf(rate, sizeof(rate), "%.1f", 1e-9*e->bytes*e->n/e->t_gpu);
+        }
+        fprintf(stderr, "%8.1f %6.2f %8lld %9.1f %8s  %s\n", 1e3*e->t_gpu, 100.0*e->t_gpu/total, (long long) e->n, 1e6*e->t_gpu/e->n, rate, e->label);
+    }
+}
+
+static enum ggml_status ggml_metal_graph_compute_profiled(ggml_metal_t ctx, struct ggml_cgraph * gf) {
+    @autoreleasepool {
+        if (ctx->cmd_buf_last) {
+            [ctx->cmd_buf_last waitUntilCompleted];
+            ctx->cmd_buf_last = nil;
+        }
+
+        id<MTLCommandQueue> queue = ggml_metal_device_get_queue(ctx->dev);
+
+        int idx = 0;
+        while (idx < gf->n_nodes) {
+            id<MTLCommandBuffer> cmd_buf = [queue commandBuffer];
+
+            ggml_metal_op_t ctx_op = ggml_metal_op_init(ctx->dev, cmd_buf, gf, ctx->finfo, idx, gf->n_nodes, false, false, 0);
+            if (ggml_metal_op_n_nodes(ctx_op) == 0) {
+                ggml_metal_op_free(ctx_op);
+                break;
+            }
+
+            const struct ggml_tensor * node = ggml_graph_node(gf, ggml_metal_op_node_idx(ctx_op, 0));
+            const int n_fused = ggml_metal_op_encode(ctx_op, 0);
+            const int idx_next = ggml_metal_op_node_idx(ctx_op, n_fused > 0 ? n_fused : 1);
+
+            ggml_metal_op_free(ctx_op);
+
+            [cmd_buf commit];
+            [cmd_buf waitUntilCompleted];
+
+            if ([cmd_buf status] != MTLCommandBufferStatusCompleted) {
+                GGML_LOG_ERROR("%s: command buffer failed at node '%s'\n", __func__, node->name);
+                return GGML_STATUS_FAILED;
+            }
+
+            const double t_gpu = [cmd_buf GPUEndTime] - [cmd_buf GPUStartTime];
+            if (t_gpu > 0.0) {
+                char label[176];
+                ggml_metal_profile_label(node, n_fused, label, sizeof(label));
+                const int64_t bytes = (node->op == GGML_OP_MUL_MAT && node->src[0]) ? (int64_t) ggml_nbytes(node->src[0]) : 0;
+                ggml_metal_profile_add(ctx, label, t_gpu, bytes);
+            }
+
+            idx = idx_next;
+        }
+
+        ctx->profile_n_graphs++;
+    }
+
+    return GGML_STATUS_SUCCESS;
+}
 
 ggml_metal_t ggml_metal_init(ggml_metal_device_t dev) {
     GGML_LOG_INFO("%s: allocating\n", __func__);
@@ -173,6 +315,12 @@ ggml_metal_t ggml_metal_init(ggml_metal_device_t dev) {
             }
         }
 
+        res->profile = getenv("GGML_METAL_PROFILE") != NULL;
+        if (res->profile) {
+            res->profile_entries = calloc(GGML_METAL_PROFILE_MAX, sizeof(struct ggml_metal_profile_entry));
+            GGML_LOG_WARN("%s: GGML_METAL_PROFILE is set: every node runs in its own command buffer, timings are not representative of speed\n", __func__);
+        }
+
         res->has_error = false;
 
         res->gf = nil;
@@ -194,6 +342,11 @@ ggml_metal_t ggml_metal_init(ggml_metal_device_t dev) {
 
 void ggml_metal_free(ggml_metal_t ctx) {
     GGML_LOG_INFO("%s: deallocating\n", __func__);
+
+    if (ctx->profile) {
+        ggml_metal_profile_print(ctx);
+        free(ctx->profile_entries);
+    }
 
     for (int i = 0; i < GGML_METAL_MAX_COMMAND_BUFFERS; ++i) {
         if (ctx->cmd_bufs[i].obj) {
@@ -479,6 +632,10 @@ enum ggml_status ggml_metal_graph_compute(ggml_metal_t ctx, struct ggml_cgraph *
 
     if (gf->n_nodes == 0) {
         return GGML_STATUS_SUCCESS;
+    }
+
+    if (ctx->profile) {
+        return ggml_metal_graph_compute_profiled(ctx, gf);
     }
 
     // number of nodes encoded by the main thread (empirically determined)

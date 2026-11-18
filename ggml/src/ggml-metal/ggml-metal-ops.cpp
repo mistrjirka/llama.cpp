@@ -122,6 +122,11 @@ private:
 
     // non-empty node indices
     std::vector<int> idxs;
+
+public:
+    int node_idx(int i) const {
+        return i < (int) idxs.size() ? idxs[i] : idx_end;
+    }
 };
 
 ggml_metal_op_t ggml_metal_op_init(
@@ -154,6 +159,10 @@ void ggml_metal_op_free(ggml_metal_op_t ctx) {
 
 int ggml_metal_op_n_nodes(ggml_metal_op_t ctx) {
     return ctx->n_nodes();
+}
+
+int ggml_metal_op_node_idx(ggml_metal_op_t ctx, int i) {
+    return ctx->node_idx(i);
 }
 
 static bool ggml_metal_op_concurrency_reset(ggml_metal_op_t ctx) {

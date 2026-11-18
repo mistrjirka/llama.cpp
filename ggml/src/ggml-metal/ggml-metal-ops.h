@@ -25,6 +25,9 @@ void ggml_metal_op_free(ggml_metal_op_t ctx);
 
 int ggml_metal_op_n_nodes(ggml_metal_op_t ctx);
 
+// index in the graph of the i-th non-empty node of the encoder's range; the end of the range past the last one
+int ggml_metal_op_node_idx(ggml_metal_op_t ctx, int i);
+
 int ggml_metal_op_encode(ggml_metal_op_t ctx, int idx);
 
 //
