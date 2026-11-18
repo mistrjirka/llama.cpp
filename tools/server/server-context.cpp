@@ -315,6 +315,11 @@ struct server_slot {
     int32_t n_keep  = 0;
     int32_t i_batch = -1;
 
+    // tokens of the last prompt, and whether the prompt after it kept tokens that were generated for it
+    // (see --ctx-checkpoint-turns)
+    int32_t n_prompt_last    = 0;
+    bool    prompt_continued = false;
+
     // effective generation limit for the current task, -1 means unlimited
     int32_t n_predict_max = -1;
 
@@ -4044,6 +4049,8 @@ private:
                         // keep track how many tokens we can reuse from the previous state
                         int n_past = 0;
 
+                        slot.prompt_continued = false;
+
                         // empty prompt passed -> release the slot and send empty response
                         if (input_tokens.empty()) {
                             SLT_WRN(slot, "%s", "empty prompt - releasing slot\n");
@@ -4196,6 +4203,9 @@ private:
 
                             // number of cached tokens shared with the new prompt, before any checkpoint is restored
                             const int n_prefix = n_past;
+
+                            // the client sent back what the model wrote for the prompt before this one
+                            slot.prompt_continued = slot.n_prompt_last > 0 && n_prefix > slot.n_prompt_last;
 
                             // ref: https://github.com/ggml-org/llama.cpp/pull/24110
                             const bool has_new_tokens = (n_past < slot.task->n_tokens());
@@ -4468,6 +4478,23 @@ private:
 
                     const int32_t n_decision_first = slot.task->type == SERVER_TASK_TYPE_DECISION ? slot.task->decision.pos_first() : -1;
 
+                    // --ctx-checkpoint-turns: cut the prompt for a checkpoint only where that pays. a pass
+                    // over a few tokens costs most of a pass over many, and a request has two such passes
+                    // otherwise: the tokens before its last user message, and its last 4 tokens.
+                    //  - a user message that starts within the first tokens of the batch does not cut it:
+                    //    the checkpoint before the batch stands in for the one at the message
+                    //  - the last tokens are not held back when the prompt before this one was continued
+                    //    token for token, generated tokens included. the checkpoint before them is for a
+                    //    client whose next prompt differs from what was generated (a template that drops
+                    //    an empty reasoning block, a regenerated answer); that client comes back to it on
+                    //    every request and keeps it. one that changes its ways re-reads its last message once
+                    const bool whole_turns     = params_base.checkpoint_whole_turns;
+                    const bool tail_checkpoint = !(whole_turns && slot.prompt_continued);
+                    // a user message that starts this close to the start of the batch does not cut it
+                    constexpr int32_t n_user_start_slack = 8;
+                    bool user_start_in_batch      = false;
+                    bool last_user_start_in_batch = false;
+
                     // add prompt tokens for processing in the current batch
                     while (slot.prompt.n_tokens() < slot.task->n_tokens() && batch.size() < n_batch) {
                         // get next token to process
@@ -4512,7 +4539,11 @@ private:
                             const auto pos = slot.prompt.n_tokens();
                             const auto & checkpoints = slot.prompt.checkpoints;
 
-                            if (pos == last_user_pos || checkpoints.empty() || pos > checkpoints.back().n_tokens + params_base.checkpoint_min_step) {
+                            if (whole_turns && (int32_t) (batch.size() - n_tokens_prev) <= n_user_start_slack) {
+                                // the checkpoint before this batch stands in for one at the message
+                                user_start_in_batch = true;
+                                last_user_start_in_batch = last_user_start_in_batch || pos == last_user_pos;
+                            } else if (pos == last_user_pos || checkpoints.empty() || pos > checkpoints.back().n_tokens + params_base.checkpoint_min_step) {
                                 break;
                             }
                         }
@@ -4522,7 +4553,7 @@ private:
                         //  - 4 + n_ubatch
                         //  - 4
                         // ref: https://github.com/ggml-org/llama.cpp/pull/20288
-                        if (do_checkpoint) {
+                        if (do_checkpoint && tail_checkpoint) {
                             static const int checkpoint_offsets[] = {4 + n_ubatch, 4};
 
                             bool should_break = false;
@@ -4546,12 +4577,13 @@ private:
 
                     const bool near_prompt_end = slot.task->n_tokens() < slot.prompt.n_tokens() + n_ubatch;
 
-                    const bool is_user_start = spans.is_user_start(n_tokens_start);
-                    const bool is_last_user_message = n_tokens_start == last_user_pos;
+                    const bool is_user_start = spans.is_user_start(n_tokens_start) || user_start_in_batch;
+                    const bool is_last_user_message = n_tokens_start == last_user_pos || last_user_start_in_batch;
 
                     // entire prompt has been processed
                     if (slot.prompt.n_tokens() == slot.task->n_tokens()) {
                         slot.state = SLOT_STATE_DONE_PROMPT;
+                        slot.n_prompt_last = slot.task->n_tokens();
 
                         GGML_ASSERT(batch.size() > 0);
 
