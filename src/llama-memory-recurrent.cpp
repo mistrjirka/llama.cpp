@@ -1006,6 +1006,16 @@ void llama_memory_recurrent::state_write_data(llama_io_write_i & io,
     io.write(&s_trans, sizeof(s_trans));
     io.write(&n_layer, sizeof(n_layer));
 
+    // rs_lazy: the stored updates that belong to the state of each cell come first, since only that many
+    // updates and conv inputs are written: a cache holds them for up to n_rs_seq + 1 tokens, a state
+    // saved after a prompt has none
+    const uint32_t n_updates_max = n_rs_seq + 1;
+    if (rs_lazy) {
+        for (const uint32_t n : n_fac) {
+            io.write(&n, sizeof(n));
+        }
+    }
+
     // Iterate and write all the R tensors first, each row is a cell
     // Get whole range at a time
     for (uint32_t il = 0; il < n_layer; ++il) {
@@ -1023,10 +1033,21 @@ void llama_memory_recurrent::state_write_data(llama_io_write_i & io,
         // Write each logical cell row range. With pending recurrent rollback,
         // the logical current state may live in a rollback snapshot plane.
         // rs_lazy has no planes: the rollback is in the number of updates written after the s rows
-        for (const auto & range : rs_lazy ? cell_ranges_base : cell_ranges) {
-            const size_t range_size = range.second - range.first;
-            const size_t buf_size = range_size * r_size_row;
-            io.write_tensor(r_l[il], range.first * r_size_row, buf_size);
+        if (rs_lazy) {
+            // the time steps in use: the ones the last ubatch started from, then the tokens that were kept
+            const size_t r_size_step = r_size_row / (n_state_r + n_updates_max);
+            size_t i_cell = 0;
+            for (const auto & range : cell_ranges_base) {
+                for (uint32_t cell = range.first; cell < range.second; ++cell) {
+                    io.write_tensor(r_l[il], cell * r_size_row, (n_state_r + n_fac[i_cell++]) * r_size_step);
+                }
+            }
+        } else {
+            for (const auto & range : cell_ranges) {
+                const size_t range_size = range.second - range.first;
+                const size_t buf_size = range_size * r_size_row;
+                io.write_tensor(r_l[il], range.first * r_size_row, buf_size);
+            }
         }
 
         // the PLE conv history is a second recurrent row, so it has to travel with the first
@@ -1073,15 +1094,16 @@ void llama_memory_recurrent::state_write_data(llama_io_write_i & io,
                 const uint64_t f_size_row = ggml_row_size(f_l[il]->type, n_embd_f);
                 io.write(&f_size_row, sizeof(f_size_row));
 
+                const size_t f_size_update = f_size_row / n_updates_max;
+                size_t i_cell = 0;
                 for (const auto & range : s_ranges) {
-                    const size_t range_size = range.second - range.first;
-                    io.write_tensor(f_l[il], range.first * f_size_row, range_size * f_size_row);
+                    for (uint32_t cell = range.first; cell < range.second; ++cell) {
+                        const uint32_t n = n_fac[i_cell++];
+                        if (n > 0) {
+                            io.write_tensor(f_l[il], cell * f_size_row, n * f_size_update);
+                        }
+                    }
                 }
-            }
-
-            // stored updates that belong to the state of each cell
-            for (const uint32_t n : n_fac) {
-                io.write(&n, sizeof(n));
             }
         }
     } else {
@@ -1238,6 +1260,18 @@ bool llama_memory_recurrent::state_read_data(llama_io_read_i & io, uint32_t cell
         return false;
     }
 
+    // rs_lazy: the stored updates that belong to the state of each cell; only that many updates and
+    // conv inputs follow. none of them can be rolled back any more
+    const uint32_t n_updates_max = n_rs_seq + 1;
+    std::vector<uint32_t> n_fac(rs_lazy ? cell_count : 0);
+    for (uint32_t & n : n_fac) {
+        io.read(&n, sizeof(n));
+        if (n > n_updates_max) {
+            LLAMA_LOG_ERROR("%s: %u stored s updates, more than %u\n", __func__, n, n_updates_max);
+            return false;
+        }
+    }
+
     // For each layer, read the keys for each cell, one row is one cell, read as one contiguous block
     for (uint32_t il = 0; il < n_layer; ++il) {
         // skip null layers
@@ -1261,7 +1295,12 @@ bool llama_memory_recurrent::state_read_data(llama_io_read_i & io, uint32_t cell
             return false;
         }
 
-        if (cell_count) {
+        if (rs_lazy) {
+            const size_t r_size_step = r_size_row / (n_state_r + n_updates_max);
+            for (uint32_t i = 0; i < cell_count; ++i) {
+                io.read_tensor(r_l[il], (head + i) * r_size_row, (n_state_r + n_fac[i]) * r_size_step);
+            }
+        } else if (cell_count) {
             // Read and set the keys for the whole cell range
             io.read_tensor(r_l[il], head * r_size_row, cell_count * r_size_row);
         }
@@ -1323,21 +1362,17 @@ bool llama_memory_recurrent::state_read_data(llama_io_read_i & io, uint32_t cell
                     return false;
                 }
 
-                if (cell_count) {
-                    io.read_tensor(f_l[il], head * f_size_row, cell_count * f_size_row);
+                const size_t f_size_update = f_size_row / n_updates_max;
+                for (uint32_t i = 0; i < cell_count; ++i) {
+                    if (n_fac[i] > 0) {
+                        io.read_tensor(f_l[il], (head + i) * f_size_row, n_fac[i] * f_size_update);
+                    }
                 }
             }
 
             for (uint32_t i = 0; i < cell_count; ++i) {
-                uint32_t n;
-                io.read(&n, sizeof(n));
-                if (n > n_rs_seq + 1) {
-                    LLAMA_LOG_ERROR("%s: %u stored s updates, more than %u\n", __func__, n, n_rs_seq + 1);
-                    return false;
-                }
-                // these belong to the state as it is: none of them can be rolled back any more
-                cells[head + i].n_fac    = n;
-                cells[head + i].n_fac_in = n;
+                cells[head + i].n_fac    = n_fac[i];
+                cells[head + i].n_fac_in = n_fac[i];
                 cells[head + i].rs_max   = 0;
             }
         }
