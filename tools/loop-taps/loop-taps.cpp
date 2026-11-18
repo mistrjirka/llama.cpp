@@ -7,13 +7,17 @@
 // llama_get_embeddings_layer_inp, the call the DFlash driver itself uses.
 //
 // input  (--tokens):  u32 "LTK1", u32 n_seq, then per sequence u32 n, i32 token[n]
-// output (--out):     raw fp16, for each sequence in order, for each token, n_taps * n_embd values
-//        (--out).json: n_embd, taps, the first sequence, and the length of every sequence written
+//        (--first):   optional, u32 per sequence of the token file: the first token whose states are written
+// output (--out):     raw fp16, for each sequence in order, for each written token, n_taps * n_embd values
+//        (--out).json: n_embd, taps, the first sequence, and per sequence its length and its first written token
+//        (--topk-out): optional, for each written token the --topk largest logits of the next token,
+//                      as (i32 token, f32 logit), largest first
 
 #include "llama.h"
 #include "../../src/llama-ext.h"
 #include "ggml.h"
 
+#include <algorithm>
 #include <clocale>
 #include <cstdio>
 #include <cstdlib>
@@ -22,15 +26,16 @@
 #include <vector>
 
 static void usage(const char * prog) {
-    fprintf(stderr, "usage: %s -m model.gguf --tokens seqs.bin --taps 2,30,34 --out taps.f16 [--start N] [--count N] [-ngl N] [--n-batch N]\n", prog);
+    fprintf(stderr, "usage: %s -m model.gguf --tokens seqs.bin --taps 2,30,34 --out taps.f16 [--first first.bin] [--topk K --topk-out file] [--start N] [--count N] [-ngl N] [--n-batch N]\n", prog);
 }
 
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
 
-    std::string model_path, tokens_path, out_path, taps_arg;
+    std::string model_path, tokens_path, out_path, taps_arg, first_path, topk_path;
     int ngl = 99;
     int n_batch = 4096;
+    int topk = 0;
     long start = 0;
     long count = -1;
 
@@ -41,13 +46,16 @@ int main(int argc, char ** argv) {
         else if (arg == "--tokens"  && has_value) { tokens_path = argv[++i]; }
         else if (arg == "--out"     && has_value) { out_path    = argv[++i]; }
         else if (arg == "--taps"    && has_value) { taps_arg    = argv[++i]; }
+        else if (arg == "--first"   && has_value) { first_path  = argv[++i]; }
+        else if (arg == "--topk"    && has_value) { topk        = atoi(argv[++i]); }
+        else if (arg == "--topk-out" && has_value) { topk_path  = argv[++i]; }
         else if (arg == "--start"   && has_value) { start       = atol(argv[++i]); }
         else if (arg == "--count"   && has_value) { count       = atol(argv[++i]); }
         else if (arg == "-ngl"      && has_value) { ngl         = atoi(argv[++i]); }
         else if (arg == "--n-batch" && has_value) { n_batch     = atoi(argv[++i]); }
         else { usage(argv[0]); return 1; }
     }
-    if (model_path.empty() || tokens_path.empty() || out_path.empty() || taps_arg.empty()) {
+    if (model_path.empty() || tokens_path.empty() || out_path.empty() || taps_arg.empty() || (topk > 0) != !topk_path.empty()) {
         usage(argv[0]);
         return 1;
     }
@@ -81,6 +89,20 @@ int main(int argc, char ** argv) {
     }
     fclose(fin);
 
+    // optionally, per sequence of the token file, the first token whose states are written: a long shared
+    // prompt (a system prompt, tool definitions) is decoded but need not be stored for every sequence
+    std::vector<uint32_t> first(seqs.size(), 0);
+    if (!first_path.empty()) {
+        FILE * ffirst = fopen(first_path.c_str(), "rb");
+        if (!ffirst) { fprintf(stderr, "cannot open %s\n", first_path.c_str()); return 1; }
+        std::vector<uint32_t> all((size_t) n_seq_total);
+        if (fread(all.data(), sizeof(uint32_t), all.size(), ffirst) != all.size()) { fprintf(stderr, "%s is too short\n", first_path.c_str()); return 1; }
+        fclose(ffirst);
+        for (size_t s = 0; s < seqs.size(); ++s) {
+            first[s] = std::min<uint32_t>(all[(size_t) start + s], (uint32_t) seqs[s].size());
+        }
+    }
+
     size_t n_longest = 0;
     for (const auto & s : seqs) { n_longest = std::max(n_longest, s.size()); }
 
@@ -108,6 +130,17 @@ int main(int argc, char ** argv) {
     FILE * fout = fopen(out_path.c_str(), "wb");
     if (!fout) { fprintf(stderr, "cannot write %s\n", out_path.c_str()); return 1; }
 
+    // optionally, the target's own next-token distribution at every written token: its top logits
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+    FILE * ftopk = nullptr;
+    if (topk > 0) {
+        ftopk = fopen(topk_path.c_str(), "wb");
+        if (!ftopk) { fprintf(stderr, "cannot write %s\n", topk_path.c_str()); return 1; }
+    }
+    std::vector<int32_t> order((size_t) n_vocab);
+    struct topk_entry { int32_t id; float logit; };
+    std::vector<topk_entry> best((size_t) std::max(topk, 1));
+
     llama_batch_ext * batch = llama_batch_ext_init(ctx);
     std::vector<ggml_fp16_t> row((size_t) taps.size() * n_embd);
 
@@ -127,7 +160,13 @@ int main(int argc, char ** argv) {
                 const llama_pos pos = (llama_pos) (off + i);
                 llama_batch_ext_set_pos(batch, idx, &pos);
             }
-            llama_batch_ext_set_output_logits(batch, n - 1, true);
+            if (topk > 0) {
+                for (int32_t i = 0; i < n; ++i) {
+                    llama_batch_ext_set_output_logits(batch, i, true);
+                }
+            } else {
+                llama_batch_ext_set_output_logits(batch, n - 1, true);
+            }
 
             if (llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch)) {
                 fprintf(stderr, "decode failed at sequence %zu\n", s);
@@ -141,12 +180,25 @@ int main(int argc, char ** argv) {
                 layers.push_back(layer);
             }
             for (int32_t i = 0; i < n; ++i) {
+                if (off + i < first[s]) {
+                    continue;
+                }
                 for (size_t k = 0; k < taps.size(); ++k) {
                     ggml_fp32_to_fp16_row(layers[k] + (size_t) i * n_embd, row.data() + k * n_embd, n_embd);
                 }
                 if (fwrite(row.data(), sizeof(ggml_fp16_t), row.size(), fout) != row.size()) {
                     fprintf(stderr, "write failed\n");
                     return 1;
+                }
+                if (topk > 0) {
+                    const float * logits = llama_get_logits_ith(ctx, i);
+                    for (int32_t v = 0; v < n_vocab; ++v) { order[(size_t) v] = v; }
+                    std::partial_sort(order.begin(), order.begin() + topk, order.end(), [logits](int32_t a, int32_t b) { return logits[a] > logits[b]; });
+                    for (int k = 0; k < topk; ++k) { best[(size_t) k] = { order[(size_t) k], logits[order[(size_t) k]] }; }
+                    if (fwrite(best.data(), sizeof(topk_entry), (size_t) topk, ftopk) != (size_t) topk) {
+                        fprintf(stderr, "write failed\n");
+                        return 1;
+                    }
                 }
             }
         }
@@ -158,6 +210,7 @@ int main(int argc, char ** argv) {
         }
     }
     fclose(fout);
+    if (ftopk) { fclose(ftopk); }
 
     FILE * fmeta = fopen((out_path + ".json").c_str(), "w");
     if (!fmeta) { fprintf(stderr, "cannot write the index\n"); return 1; }
@@ -165,7 +218,9 @@ int main(int argc, char ** argv) {
     for (size_t k = 0; k < taps.size(); ++k) { fprintf(fmeta, "%s%u", k ? ", " : "", taps[k]); }
     fprintf(fmeta, "], \"first_sequence\": %ld, \"lengths\": [", start);
     for (size_t s = 0; s < seqs.size(); ++s) { fprintf(fmeta, "%s%zu", s ? ", " : "", seqs[s].size()); }
-    fprintf(fmeta, "]}\n");
+    fprintf(fmeta, "], \"first\": [");
+    for (size_t s = 0; s < seqs.size(); ++s) { fprintf(fmeta, "%s%u", s ? ", " : "", first[s]); }
+    fprintf(fmeta, "], \"topk\": %d}\n", topk);
     fclose(fmeta);
 
     llama_batch_ext_free(batch);
