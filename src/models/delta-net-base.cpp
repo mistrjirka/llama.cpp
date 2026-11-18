@@ -526,6 +526,70 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
     return conv_input;
 }
 
+ggml_tensor * llm_build_delta_net_base::build_conv_state_lazy(
+        llm_graph_input_rs * inp,
+        ggml_tensor *        conv_states_all,
+        ggml_tensor *        qkv_mixed,
+        int64_t              conv_kernel_size,
+        int64_t              conv_channels,
+        int                  il) {
+    const auto * mctx_cur = inp->mctx;
+    const auto   kv_head  = mctx_cur->get_head();
+    const int32_t rs_zero = mctx_cur->get_rs_z();
+
+    const int64_t n_seqs       = ubatch.n_seqs;
+    const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+
+    const int64_t n_state = conv_kernel_size - 1;         // time steps of a conv state
+    const int64_t K       = (int64_t) cparams.n_rs_seq + 1;
+    const int64_t n_hist  = n_state + K;                  // time steps the cache keeps
+
+    GGML_ASSERT(n_seqs == 1);
+    GGML_ASSERT(inp->s_conv_idx != nullptr && inp->s_conv_idx->ne[0] == n_state * n_seqs);
+    GGML_ASSERT(conv_states_all->ne[0] == conv_channels * n_hist);
+
+    const size_t row_size = ggml_row_size(conv_states_all->type, conv_channels);
+
+    // a sequence that starts gets a zero history, as build_rs() zeroes the states it gathers.
+    // the view is empty when there is nothing to clear, so the graph stays the same
+    ggml_tensor * hist_zero = ggml_view_1d(ctx0, conv_states_all, conv_states_all->ne[0]*(rs_zero >= 0), rs_zero*conv_states_all->nb[1]*(rs_zero >= 0));
+    ggml_build_forward_expand(gf, ggml_scale_inplace(ctx0, hist_zero, 0));
+
+    // the history of the cell, one row per time step: the state the last ubatch started from, then its tokens.
+    // the state after the tokens of it that were kept is the n_state rows that follow them
+    ggml_tensor * hist = ggml_view_2d(ctx0, conv_states_all, conv_channels, n_hist, row_size, kv_head * conv_states_all->nb[1]);
+
+    ggml_tensor * state_rows = ggml_get_rows(ctx0, hist, inp->s_conv_idx); // (channels, n_state)
+    ggml_build_forward_expand(gf, state_rows); // read before the history is written below
+    cb(state_rows, "conv_states", il);
+
+    ggml_tensor * conv_states = ggml_cont(ctx0, ggml_transpose(ctx0, state_rows));
+    conv_states = ggml_reshape_3d(ctx0, conv_states, n_state, conv_channels, n_seqs);
+    cb(conv_states, "conv_states_reshaped", il);
+
+    ggml_tensor * conv_input = ggml_concat(ctx0, conv_states, ggml_transpose(ctx0, qkv_mixed), 0);
+    cb(conv_input, "conv_input", il);
+
+    // qkv_mixed has a token per row already: (channels, n_seq_tokens)
+    ggml_tensor * tokens = ggml_reshape_2d(ctx0, qkv_mixed, conv_channels, n_seq_tokens);
+
+    if (n_seq_tokens <= K) {
+        // the new history: the state these tokens started from, then the tokens
+        ggml_build_forward_expand(gf, ggml_cpy(ctx0, state_rows,
+                    ggml_view_2d(ctx0, conv_states_all, conv_channels, n_state, row_size, kv_head * conv_states_all->nb[1])));
+        ggml_build_forward_expand(gf, ggml_cpy(ctx0, tokens,
+                    ggml_view_2d(ctx0, conv_states_all, conv_channels, n_seq_tokens, row_size, kv_head * conv_states_all->nb[1] + n_state * row_size)));
+    } else {
+        // too many tokens to roll any back: the state after them is all that is kept
+        GGML_ASSERT(n_seq_tokens >= n_state);
+        ggml_build_forward_expand(gf, ggml_cpy(ctx0,
+                    ggml_view_2d(ctx0, tokens, conv_channels, n_state, row_size, (n_seq_tokens - n_state) * row_size),
+                    ggml_view_2d(ctx0, conv_states_all, conv_channels, n_state, row_size, kv_head * conv_states_all->nb[1])));
+    }
+
+    return conv_input;
+}
+
 ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         llm_graph_input_rs * inp,
         ggml_tensor *        ssm_states_all,

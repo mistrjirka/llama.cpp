@@ -135,6 +135,13 @@ public:
     // floats per cell in f_l
     uint32_t n_embd_f = 0;
 
+    // lazy: floats per cell in r_l, which then holds the conv inputs of the last ubatch, one row of
+    // n_embd_r / (d_conv - 1) channels per time step: the d_conv - 1 steps it started from, then its tokens.
+    // the conv state of the cell is the d_conv - 1 rows after the tokens that were kept
+    uint32_t n_embd_h = 0;
+    // lazy: time steps of a conv state, d_conv - 1
+    uint32_t n_state_r = 0;
+
 private:
     //const llama_model & model;
     const llama_hparams & hparams;
@@ -201,6 +208,7 @@ public:
     uint32_t get_head() const;
     int32_t  get_rs_z() const;
     uint32_t get_size() const;
+    uint32_t get_n_state_r() const;
 
     ggml_tensor * get_r_l(int32_t il) const;
     ggml_tensor * get_s_l(int32_t il) const;

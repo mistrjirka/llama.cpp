@@ -294,8 +294,10 @@ public:
     ggml_tensor * s_copy_main; // I32 [n_seqs]
     ggml_tensor * s_copy_tail; // I32 [n_rs - 1]
 
-    // lazy s states: stored updates that belong to the state of each sequence, I32 [n_seqs]
-    ggml_tensor * s_apply = nullptr;
+    // lazy s states: stored updates that belong to the state of each sequence, I32 [n_seqs],
+    // and the rows of the conv history that are its conv state, I32 [(d_conv - 1)*n_seqs]
+    ggml_tensor * s_apply    = nullptr;
+    ggml_tensor * s_conv_idx = nullptr;
 
     const llama_memory_recurrent_context * mctx;
 

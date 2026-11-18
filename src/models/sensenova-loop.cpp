@@ -535,10 +535,13 @@ ggml_tensor * llama_model_sensenova_loop::graph::build_layer_attn_linear(
     const int64_t conv_kernel_size = conv_kernel->ne[0];
     const int64_t conv_channels    = d_inner + 2 * hparams.ssm_n_group * hparams.ssm_d_state;
 
-    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
-
-    // the state is gathered here, unless it is kept as a base and its last updates, which the op reads in place
+    // the states are gathered here, unless the memory keeps them lazily: the delta-net state as a base and
+    // its last updates, which the op reads in place, and the conv state as rows of the last conv inputs
     const bool lazy = mctx_cur->rs_lazy();
+
+    ggml_tensor * conv_input = lazy
+        ? build_conv_state_lazy(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il)
+        : build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
 
     ggml_tensor * state = nullptr;
     if (!lazy) {
