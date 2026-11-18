@@ -12000,6 +12000,9 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         test_cases.emplace_back(new test_top_k_inf({4096, 2, 1, 1}, k));
         test_cases.emplace_back(new test_top_k_inf({248320, 1, 1, 1}, k));
     }
+    // the best token of each slot of a draft block
+    test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {248320, 8, 1, 1}, 1));
+    test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {248320, 8, 1, 1}, 1, true));
 
     for (int i = 0; i < 20; ++i) {
         for (int k : {1, 2, 3, 7, 15, 100, 500, 1023, 9999}) {

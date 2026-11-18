@@ -5680,11 +5680,12 @@ int ggml_metal_op_argmax(ggml_metal_op_t ctx, int idx) {
         npart = (int) std::min<int64_t>(N_ARGMAX_NPART_MAX, (ne00 + N_ARGMAX_CHUNK - 1)/N_ARGMAX_CHUNK);
     }
 
+    // rows, whatever dimensions they are spread over: a top_k of one value comes here with more than two
     ggml_metal_kargs_argmax args = {
         /*.ne00  = */ ne00,
         /*.nb01  = */ nb01,
         /*.npart = */ npart,
-        /*.ne01  = */ ne01,
+        /*.ne01  = */ (int32_t) nrows,
     };
 
     const size_t smem = 32*(sizeof(float) + sizeof(int32_t));
@@ -6120,6 +6121,12 @@ int ggml_metal_op_top_k(ggml_metal_op_t ctx, int idx) {
     const int ncols = op->src[0]->ne[0];
     const int k     = op->ne[0];
     const int nrows = ggml_nrows(op->src[0]);
+
+    // the largest value alone is an argmax, which scans a long row in parallel parts: for 8 rows of 248320
+    // it takes a fraction of the radix-select's time (the top_k buffer is larger than the parts need)
+    if (k == 1 && ncols > N_ARGMAX_CHUNK) {
+        return ggml_metal_op_argmax(ctx, idx);
+    }
 
     const bool use_radix =
         ncols > 2048 && (k > 64 || (nrows > 4 && ncols >= 8192));
