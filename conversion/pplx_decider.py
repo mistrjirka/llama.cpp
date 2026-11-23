@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from .base import ModelBase, gguf, jinja_str_or_json, logger
 from .qwen import Qwen3_5TextModel
 from .qwen3vl import Qwen3VLVisionModel
+from .pplx_decider_v4 import is_v4, systemone_template_v4
 
 
 def _is_pplx_decider_checkpoint(dir_model: Path) -> bool:
@@ -53,9 +54,13 @@ class PplxDeciderModel(Qwen3_5TextModel):
     _STATE = jinja_str_or_json("state")
     _FINAL = "Return only the letter code of the best option."
 
+    def _protocol_v4(self) -> bool:
+        return is_v4(self.dir_model, self.hparams["decision"])
+
     def set_vocab(self):
         super().set_vocab()
-        self.gguf_writer.add_chat_template([{"name": "systemone", "template": self._systemone_template()}])
+        template = systemone_template_v4() if self._protocol_v4() else self._systemone_template()
+        self.gguf_writer.add_chat_template([{"name": "systemone", "template": template}])
 
     def _systemone_template(self) -> str:
         description = jinja_str_or_json("o.description")
@@ -78,6 +83,11 @@ class PplxDeciderModel(Qwen3_5TextModel):
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
         self.gguf_writer.add_decision_type(self._DECISION_TYPE)
+        if self._protocol_v4():
+            # Noncausal *full* attention; Qwen3.5's recurrent GDN stays causal.
+            # The server reads logits at the marker and keeps each question separate.
+            self.gguf_writer.add_causal_attention(False)
+            self.gguf_writer.add_uint32(f"{self.gguf_writer.arch}.decision.protocol_version", 4)
         for name in ("choice", "score", "noul"):
             self.gguf_writer.add_decision_temperature(name, self.hparams["decision"]["temperature"])
 

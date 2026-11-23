@@ -32,19 +32,23 @@ struct server_decision_question {
 
 struct server_decision_context {
     common_decision_type type = COMMON_DECISION_TYPE_NONE;
+    bool pplx_protocol_v4 = false; // noncausal joint-chunked-readout checkpoint
 
     // read the "<arch>.decision.*" metadata, type stays NONE if the model has none
     void init(const llama_model * model);
 
     // true if the questions of a request start with the same tokens, and the model can continue from them
     bool can_share_prompt() const {
+        if (type == COMMON_DECISION_TYPE_PPLX_DECIDER) {
+            // Noncausal attention makes the context depend on the question.
+            return !pplx_protocol_v4;
+        }
         switch (type) {
             case COMMON_DECISION_TYPE_OPENJEV:
             case COMMON_DECISION_TYPE_GRANITE_SWITCH:
             case COMMON_DECISION_TYPE_LEV:
             case COMMON_DECISION_TYPE_KEV:
             case COMMON_DECISION_TYPE_NIMBLE:
-            case COMMON_DECISION_TYPE_PPLX_DECIDER:
             case COMMON_DECISION_TYPE_VLLM_DECISION2:
             case COMMON_DECISION_TYPE_LFM2_D1:
             case COMMON_DECISION_TYPE_H2O_LIGHTNING:

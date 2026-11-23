@@ -46,8 +46,25 @@ void server_decision_context::init(const llama_model * model) {
 
     const std::string prefix    = decision_meta_str(model, "general.architecture") + ".decision.";
     const std::string type_name = decision_meta_str(model, prefix + "type");
+    const std::string protocol_version = decision_meta_str(model, prefix + "protocol_version");
+    if (model_type == COMMON_DECISION_TYPE_PPLX_DECIDER && !protocol_version.empty()) {
+        if (protocol_version != "4") {
+            throw std::runtime_error("unsupported pplx-decider protocol_version: " + protocol_version);
+        }
+        pplx_protocol_v4 = true;
+        strict_payload = true;
+    }
 
     vocab = llama_model_get_vocab(model);
+    if (pplx_protocol_v4) {
+        const auto marker = common_tokenize(vocab, "<|fim_suffix|>", false, true);
+        const auto sep    = common_tokenize(vocab, "<|fim_middle|>", false, true);
+        if (marker.size() != 1 || sep.size() != 1) {
+            throw std::runtime_error("pplx-decider v4 requires one-token fim suffix and middle markers");
+        }
+        token_marker = marker[0];
+        token_sep = sep[0];
+    }
 
     const char * tmpl_src = llama_model_chat_template(model, "systemone");
     if (tmpl_src == nullptr) {
@@ -1157,6 +1174,9 @@ std::string server_decision_context::render(
     if (is_lfm3_d1()) {
         inp = decision_escape(inp, [this](const std::string & text) { return d1_break(text); });
     }
+    if (pplx_protocol_v4) {
+        inp = decision_escape(inp, server_decision_escape_special_tokens);
+    }
 
     if (type == COMMON_DECISION_TYPE_LFM2_D1_OMNI) {
         inp = decision_replace_text(decision_escape(inp, server_decision_escape_special_tokens), D1OMNI_MARKER, "<<d1omni ");
@@ -1225,6 +1245,9 @@ void server_decision_context::fill_task(
         // lev reads the ratings of a noul question at its first labels, not at the digits
         task.decision.labels.assign(labels.begin(), labels.begin() + n_outputs(question));
     }
+    if (pplx_protocol_v4) {
+        task.decision.no_batching = true;
+    }
     if (type == COMMON_DECISION_TYPE_LFM2_D1 || type == COMMON_DECISION_TYPE_LFM3_D1 || type == COMMON_DECISION_TYPE_LFM3_D1_OMNI) {
         std::vector<std::string>  texts;
         std::vector<llama_tokens> groups;
@@ -1262,6 +1285,11 @@ void server_decision_context::fill_task(
             throw std::runtime_error("unexpected layout of the decision prompt");
         }
         task.decision.pointer = tokens.size() - 1;
+    }
+    if (pplx_protocol_v4 && (tokens.empty() || tokens.back() != token_marker ||
+                             std::count(tokens.begin(), tokens.end(), token_marker) != 1 ||
+                             std::count(tokens.begin(), tokens.end(), token_sep) != 1)) {
+        throw std::runtime_error("pplx-decider v4 needs one context separator and one final readout marker");
     }
     task.tokens = server_tokens(tokens, false);
 }
