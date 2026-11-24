@@ -1,6 +1,6 @@
 # RTX 3060 hub experiment results
 
-**Draft, 2026-11-24.** Final settings keep microbatch 256 and change only the draft KV to Q4. The original-versus-final 100K comparison is complete. Final 8K/32K, full-cache soak, vision, and deployment checks remain pending.
+**Draft, 2026-11-24.** Final settings keep microbatch 256 and change only the draft KV to Q4. The original-versus-final 100K comparison is complete. Final 8K/32K answer checks pass. The new final full-cache pressure run including vision, and deployment verification, remain pending.
 
 ## Current decision
 
@@ -187,9 +187,9 @@ See [COMPRESSION_RESEARCH.md](COMPRESSION_RESEARCH.md) and [rtx3060-paper-review
 | Item | Status to fill before final report |
 | --- | --- |
 | Final no-warmup / logical-batch comparison | Complete. Reject batch 512 after cache-pressure analysis. Keep batch 2048 and normal warmup. |
-| Context validation | Final draft-Q4 100K comparison complete: all five response hashes match original, including its wrong JSON answer. Final 8K/32K cold/repeat/followup checks remain pending. |
+| Context validation | Final draft-Q4 100K comparison complete: all five response hashes match original, including its wrong JSON answer. All eight final 8K/32K cold, repeat, followup, and restored answer checks pass. |
 | Repeated-cache soak | Earlier batch-512 and microbatch-128 runs completed without swap/OOM. New final microbatch-256 run, 83 total requests including vision, remains pending. |
-| Vision regression | Pending if included in final gate |
+| Vision regression | Included in the pending final pressure run. Earlier rejected configurations passed the basic image check. |
 | Selected settings and release | MTP2, draft Q4, target Q8, `-b 2048 -ub 256`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
 | Source push | Root reports commit `3f8ed81` pushed and verified. Later changes may supersede it. |
 | Running hub deployment | Pending: service, binary/commit, MTP depth, draft/target types |

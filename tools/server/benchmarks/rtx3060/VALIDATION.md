@@ -1,6 +1,6 @@
 # Validation of the final RTX 3060 settings
 
-**Final choice: draft Q4 with microbatch 256. The 100K original-versus-final comparison is complete. Final 8K/32K, full-cache pressure, vision, and deployment checks remain pending.**
+**Final choice: draft Q4 with microbatch 256. The 100K comparison is complete and all eight final 8K/32K answer checks pass. The new final pressure run including vision, and deployment verification, remain pending.**
 
 Settings: native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, microbatch 256, configured context 110,000, cache budget 4,096 MiB, three checkpoints with a 384 MiB checkpoint cap. The context allocation is 110,080 tokens. The clean release was prepared from `1af6247`.
 
@@ -40,6 +40,17 @@ Sources under `/home/jirka/.cache/rtx3060-experiments-20261124`:
 - `long-draft-q4/draft_q4_only/{config,results,long-context-input}.json`
 - `long-text/selected/{config,results,long-context-input}.json` for the rejected microbatch-128 comparison
 
+## Completed final 8K/32K checks
+
+The final settings completed ten requests, including two auxiliary prompts. All eight cold, repeat, changed-followup, and restored answer checks passed. Times are single observations to first visible content.
+
+| Actual cold prompt tokens | Cold | Immediate repeat | Changed followup | Restore after parking |
+| --- | ---: | ---: | ---: | ---: |
+| 8,058 | 11.203 s | 0.325 s | 0.818 s | 1.023 s |
+| 32,059 | 49.483 s | 0.332 s | 0.853 s | 2.121 s |
+
+Source: `long-final-short/selected/{config,results,long-context-input}.json` under the same experiment directory. This uses the final microbatch 256, unlike the earlier `long-text` run.
+
 ## Historical pressure evidence, not final-setting results
 
 The earlier microbatch-128 run completed **83 total requests**, including one image request. Its measurements remain useful for diagnosing cache growth, but must not be labeled as the final microbatch-256 result.
@@ -67,9 +78,7 @@ Raw pressure evidence is under `soak-ub128/selected`. The earlier batch-512 run 
 
 | Gate | Required result |
 | --- | --- |
-| Final 8K/32K, `long-final-short` | Cold, repeat, followup, and restored answer checks, plus latency and memory |
-| Final pressure, `final-soak` | 83 total requests including vision, cache-budget maximum, retained capacity, memory plateau, swap/OOM counters |
-| Final vision | Expected left-red/right-blue answer, latency, peak and idle RAM |
+| Final pressure, `final-soak` | 83 total requests including vision, cache-budget maximum, retained capacity, memory plateau, swap/OOM counters, image answer and latency |
 | Deployment | Running service and binary, selected flags, installed commit, and post-restart health check |
 
 No claim of final deployment is made here. The short-suite final draft-Q4 result saves 108 MiB of GPU memory. The 56 MiB short-suite CPU RAM reduction belonged to rejected microbatch 128. Checkpoint sharing's separate 446.70 MiB fork peak-RSS saving remains supported by its own workload.
