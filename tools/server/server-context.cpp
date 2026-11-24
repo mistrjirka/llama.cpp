@@ -29,6 +29,7 @@
 #include <deque>
 #include <exception>
 #include <memory>
+#include <limits>
 #include <filesystem>
 #include <random>
 #include <utility>
@@ -2871,7 +2872,7 @@ private:
     static bool ckpt_read_buf(std::ifstream & ifs, std::vector<uint8_t> & buf, size_t n_avail, size_t & n_read) {
         uint64_t n = 0;
         // check the size against the bytes left in the file before allocating, the size field may be corrupted
-        if (!ckpt_read(ifs, &n, sizeof(n), n_read) || n > n_avail - n_read) {
+        if (!ckpt_read(ifs, &n, sizeof(n), n_read) || n_read > n_avail || n > n_avail - n_read) {
             return false;
         }
         buf.resize(n);
@@ -2948,28 +2949,64 @@ private:
             return 0;
         }
         std::list<std::shared_ptr<common_prompt_checkpoint>> checkpoints;
+        const size_t max_count = std::max(0, params_base.n_ctx_checkpoints);
+        const size_t max_bytes = params_base.ctx_checkpoint_ram_mib < 0 ? SIZE_MAX :
+            size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024;
+        size_t kept_bytes = 0;
+        size_t skipped = 0;
         for (uint32_t i = 0; i < count; ++i) {
             auto checkpoint = std::make_shared<common_prompt_checkpoint>();
             auto & cur = *checkpoint;
-            cur.id_task = -1; // not created by a task - marks a checkpoint restored from a slot file
+            cur.id_task = -1;
             if (!ckpt_read(ifs, &cur.n_tokens, sizeof(cur.n_tokens), n_read) ||
                 !ckpt_read(ifs, &cur.pos_min,  sizeof(cur.pos_min),  n_read) ||
-                !ckpt_read(ifs, &cur.pos_max,  sizeof(cur.pos_max),  n_read) ||
-                !ckpt_read_buf(ifs, cur.data_tgt,  n_avail, n_read) ||
-                !ckpt_read_buf(ifs, cur.data_dft,  n_avail, n_read) ||
-                !ckpt_read_buf(ifs, cur.data_spec, n_avail, n_read)) {
+                !ckpt_read(ifs, &cur.pos_max,  sizeof(cur.pos_max),  n_read)) {
                 SLT_WRN(slot, "truncated context checkpoint appendix in '%s' - ignored\n", filepath.c_str());
                 return 0;
             }
-            // a saved checkpoint always holds a target state - an empty blob would roll back without restoring anything
-            if (cur.data_tgt.empty()) {
+
+            // Scan sizes before allocating any checkpoint bytes.
+            struct span { uint64_t size; std::streampos start; } spans[3];
+            size_t needed = 0;
+            bool fits = max_count > 0;
+            for (auto & span : spans) {
+                if (!ckpt_read(ifs, &span.size, sizeof(span.size), n_read) || n_read > n_avail ||
+                        span.size > n_avail - n_read || span.size > uint64_t(std::numeric_limits<std::streamoff>::max())) {
+                    SLT_WRN(slot, "truncated context checkpoint appendix in '%s' - ignored\n", filepath.c_str());
+                    return 0;
+                }
+                span.start = ifs.tellg();
+                if (!ifs.seekg(std::streamoff(span.size), std::ios::cur)) { return 0; }
+                n_read += size_t(span.size);
+                if (fits && span.size <= max_bytes - needed) { needed += size_t(span.size); }
+                else { fits = false; }
+            }
+            const auto end = ifs.tellg();
+            if (spans[0].size == 0) {
                 SLT_WRN(slot, "invalid context checkpoint appendix in '%s' - ignored\n", filepath.c_str());
                 return 0;
             }
-            checkpoints.push_back(std::move(checkpoint));
-            if (checkpoints.size() > (size_t) params_base.n_ctx_checkpoints) {
+            if (!fits) { ++skipped; continue; }
+            while (!checkpoints.empty() && (checkpoints.size() >= max_count || kept_bytes > max_bytes - needed)) {
+                const auto & old = *checkpoints.front();
+                kept_bytes -= old.data_tgt.capacity() + old.data_dft.capacity() + old.data_spec.capacity();
                 checkpoints.pop_front();
             }
+            std::vector<uint8_t> * buffers[] = { &cur.data_tgt, &cur.data_dft, &cur.data_spec };
+            for (size_t j = 0; j < 3; ++j) {
+                auto & buffer = *buffers[j];
+                buffer.resize(size_t(spans[j].size));
+                if (!ifs.seekg(spans[j].start) || (spans[j].size && !ifs.read((char *) buffer.data(), buffer.size()))) {
+                    SLT_WRN(slot, "truncated context checkpoint appendix in '%s' - ignored\n", filepath.c_str());
+                    return 0;
+                }
+            }
+            if (!ifs.seekg(end)) { return 0; }
+            kept_bytes += cur.data_tgt.capacity() + cur.data_dft.capacity() + cur.data_spec.capacity();
+            checkpoints.push_back(std::move(checkpoint));
+        }
+        if (skipped) {
+            SLT_WRN(slot, "skipped %zu context checkpoint(s) above the count or RAM limit in '%s'\n", skipped, filepath.c_str());
         }
         // the slot file does not check the draft context - test-load one draft checkpoint, drop the draft data if it does not fit
         if (ctx_dft != nullptr && !checkpoints.empty() && !checkpoints.back()->data_dft.empty()) {
