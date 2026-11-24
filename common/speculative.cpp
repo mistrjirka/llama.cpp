@@ -16,6 +16,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -1527,6 +1528,19 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
 
+    bool adaptive_depth = false;
+    std::vector<int32_t> draft_depth;
+    std::vector<int32_t> draft_limit_last;
+    std::vector<int32_t> draft_size_last;
+    std::vector<int32_t> draft_full_accepts;
+
+    void reset_draft_depth(llama_seq_id seq_id) {
+        draft_depth[seq_id] = std::min(params.n_max, std::max(params.n_min, 2));
+        draft_limit_last[seq_id] = 0;
+        draft_size_last[seq_id] = 0;
+        draft_full_accepts[seq_id] = 0;
+    }
+
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
         , params(params.draft)
@@ -1601,6 +1615,20 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
+
+        const char * adaptive_env = std::getenv("LLAMA_MTP_ADAPTIVE");
+        adaptive_depth = adaptive_env && std::strcmp(adaptive_env, "1") == 0 && this->params.n_max > 0;
+        draft_depth.resize(n_seq);
+        draft_limit_last.resize(n_seq);
+        draft_size_last.resize(n_seq);
+        draft_full_accepts.resize(n_seq);
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            reset_draft_depth(seq_id);
+        }
+        if (adaptive_depth) {
+            SPC_INF("experimental adaptive MTP depth enabled: min=%d, max=%d\n",
+                    std::max(1, this->params.n_min), this->params.n_max);
+        }
     }
 
     ~common_speculative_impl_draft_mtp() override {
@@ -1620,6 +1648,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
+        reset_draft_depth(seq_id);
 
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -1775,6 +1804,12 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 continue;
             }
 
+            draft_limit_last[seq_id] = adaptive_depth ? draft_depth[seq_id] : params.n_max;
+            if (dp.n_max > 0) {
+                draft_limit_last[seq_id] = std::min(draft_limit_last[seq_id], dp.n_max);
+            }
+            draft_size_last[seq_id] = 0;
+
             n_drafting++;
             drafting[seq_id] = true;
             // greedy drafting leaves no candidates behind, so the verifier falls back to sample-and-match
@@ -1872,8 +1907,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
                 }
 
-                if (params.n_max <= (int) result.size() ||
-                    (dp.n_max > 0 && dp.n_max <= (int) result.size())) {
+                if (draft_limit_last[seq_id] <= (int) result.size()) {
                     drafting[seq_id] = false;
                     n_drafting--;
                     continue;
@@ -1923,6 +1957,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             if (dp.result->size() < (size_t) params.n_min) {
                 dp.result->clear();
             }
+            draft_size_last[seq_id] = (int32_t) dp.result->size();
         }
     }
 
@@ -1940,11 +1975,28 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         if (data.size() != row.size() * sizeof(float)) { return; }
         std::memcpy(row.data(), data.data(), data.size());
         verify_h_rows[seq_id] = 0;
+        reset_draft_depth(seq_id);
     }
 
-    void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
+    void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) override {
         if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
             return;
+        }
+
+        if (adaptive_depth && !is_other) {
+            const int32_t n_drafted = draft_size_last[seq_id];
+            if (n_drafted > 0 && n_accepted < n_drafted) {
+                draft_depth[seq_id] = std::min(params.n_max, std::max(std::max(1, params.n_min), (int32_t) n_accepted + 1));
+                draft_full_accepts[seq_id] = 0;
+            } else if (n_drafted > 0 && n_drafted == draft_limit_last[seq_id] &&
+                       draft_limit_last[seq_id] == draft_depth[seq_id]) {
+                // Probe one more token after two full accepts. Caller and confidence limits do not count.
+                if (++draft_full_accepts[seq_id] >= 2) {
+                    draft_depth[seq_id] = std::min(params.n_max, draft_depth[seq_id] + 1);
+                    draft_full_accepts[seq_id] = 0;
+                }
+            }
+            draft_size_last[seq_id] = 0;
         }
 
         const int32_t n_rows = verify_h_rows[seq_id];
