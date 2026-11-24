@@ -717,6 +717,10 @@ struct server_prompt_data {
 struct server_prompt_cache_state {
     server_prompt prompt;
     server_prompt_data data;
+    // Full snapshots at the first user-message boundary can be shared by
+    // different conversations. They are retained on load, within the RAM budget.
+    bool retained_prefix = false;
+    llama_pos pos_min = -1;
 
     size_t size() const {
         size_t res = data.size();
@@ -747,9 +751,17 @@ struct server_prompt_cache {
 
     size_t n_tokens() const;
 
-    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft);
+    size_t retained_prefix_size() const;
+    size_t retained_prefix_limit() const;
 
-    bool load(server_prompt & prompt, const server_tokens & tokens_new, llama_context * ctx_tgt, llama_context * ctx_dft, int32_t id_slot);
+    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft,
+            llama_pos pos_min, bool retained_prefix = false, const server_prompt_cache_state * protect = nullptr);
+
+    std::list<server_prompt_cache_state>::iterator find_best(const server_prompt & prompt, const server_tokens & tokens_new,
+            llama_context * ctx_tgt, int32_t id_slot, int32_t n_swa, bool allow_retained_prefix);
+
+    bool load(server_prompt & prompt, const server_tokens & tokens_new, llama_context * ctx_tgt, llama_context * ctx_dft,
+            int32_t id_slot, int32_t n_swa, bool allow_retained_prefix);
 
     void update();
 };

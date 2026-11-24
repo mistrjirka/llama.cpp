@@ -348,7 +348,7 @@ struct server_slot {
 
     server_prompt prompt;
 
-    bool prompt_save(server_prompt_cache & prompt_cache) const {
+    bool prompt_save(server_prompt_cache & prompt_cache, const server_prompt_cache_state * protect = nullptr) const {
         if (prompt.tokens.size() == 0) {
             return false;
         }
@@ -361,7 +361,8 @@ struct server_slot {
         SRV_TRC(" - saving prompt with length %d, total state size = %.3f MiB (draft: %.3f MiB)\n",
                 (int) prompt.tokens.size(), cur_size / (1024.0 * 1024.0), cur_size_dft / (1024.0 * 1024.0));
 
-        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft);
+        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft,
+                llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id), false, protect);
         if (cur == nullptr) {
             return false;
         }
@@ -374,8 +375,9 @@ struct server_slot {
         return true;
     }
 
-    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
-        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id);
+    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens,
+            int32_t n_swa, bool allow_retained_prefix) {
+        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id, n_swa, allow_retained_prefix);
         if (!res) {
             SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
         }
@@ -1885,20 +1887,22 @@ private:
             }
         }
 
-        if (ret) {
-            update_cache = update_cache && prompt_cache;
+        if (ret && prompt_cache && !task.is_stateless() && task.params.cache_prompt) {
+            // The retained prefix is only produced for the unadapted model.
+            const bool allow_retained_prefix = !ctx_dft && params_base.lora_adapters.empty() &&
+                    task.params.lora.empty() && ret->lora.empty();
+            auto best = prompt_cache->find_best(ret->prompt, task.tokens, ctx_tgt, ret->id, n_swa, allow_retained_prefix);
 
-            // cache prompts only for the tasks that reuse them
-            update_cache = update_cache && !task.is_stateless();
-
-            if (update_cache) {
+            if (update_cache || best != prompt_cache->states.end()) {
                 SRV_TRC("%s", "updating prompt cache\n");
 
                 const int64_t t_start = ggml_time_us();
 
-                ret->prompt_save(*prompt_cache);
+                // Saving the displaced state must not evict the state we need.
+                const auto * protect = best == prompt_cache->states.end() ? nullptr : &*best;
+                ret->prompt_save(*prompt_cache, protect);
 
-                if (!ret->prompt_load(*prompt_cache, task.tokens)) {
+                if (!ret->prompt_load(*prompt_cache, task.tokens, n_swa, allow_retained_prefix)) {
                     ret->prompt_clear();
                 }
 
@@ -2726,6 +2730,49 @@ private:
         }
 
         return true;
+    }
+
+    bool can_retain_system_prefix(const server_slot & slot) const {
+        // A full text prefix snapshot is useful for recurrent models; ordinary
+        // attention-only models can already rewind their existing KV cache.
+        // Do not share adapter, draft, sliding-window, or stateless state.
+        return prompt_cache && slot.task->type == SERVER_TASK_TYPE_COMPLETION &&
+                slot.task->params.cache_prompt && !ctx_dft && n_swa == 0 &&
+                params_base.lora_adapters.empty() && slot.lora.empty() &&
+                (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
+                 ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS) &&
+                slot.task->params.message_spans.first_user_message_pos() >= 1024;
+    }
+
+    void retain_system_prefix(server_slot & slot, int64_t n_tokens_start, llama_pos pos_min, llama_pos pos_max) {
+        const int32_t n_base = slot.task->params.message_spans.first_user_message_pos();
+        if (!can_retain_system_prefix(slot) || n_tokens_start != n_base || pos_min < 0 ||
+                slot.prompt.tokens.pos_next(n_base) != pos_max + 1) {
+            return;
+        }
+        for (int32_t i = 0; i < n_base; ++i) {
+            if (slot.prompt.tokens[i] == LLAMA_TOKEN_NULL) {
+                return;
+            }
+        }
+        server_prompt prefix { slot.prompt.tokens.clone(), {} };
+        prefix.tokens.keep_first(n_base);
+        const size_t size = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE);
+        if (size == 0) {
+            return;
+        }
+        auto * state = prompt_cache->alloc(prefix, size, 0, pos_min, true);
+        if (!state) {
+            return;
+        }
+        if (llama_state_seq_get_data_ext(ctx_tgt, state->data.main.data(), size, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE) != size) {
+            prompt_cache->states.pop_back();
+            SLT_WRN(slot, "%s", "failed to retain system prefix\n");
+            return;
+        }
+        SLT_INF(slot, "retained system prefix: %d tokens, %.3f MiB (retained total %.3f MiB)\n",
+                n_base, state->size() / (1024.0 * 1024.0), prompt_cache->retained_prefix_size() / (1024.0 * 1024.0));
+        prompt_cache->update();
     }
 
     // n_tokens_cur: the number of tokens added to the batch for the current slot
@@ -4479,6 +4526,8 @@ private:
 
                     const auto & spans = slot.task->params.message_spans;
                     const auto last_user_pos = spans.last_user_message_pos();
+                    const bool retain_prefix = can_retain_system_prefix(slot);
+                    const auto first_user_pos = spans.first_user_message_pos();
 
                     const int32_t n_decision_first = slot.task->type == SERVER_TASK_TYPE_DECISION ? slot.task->decision.pos_first() : -1;
 
@@ -4543,6 +4592,12 @@ private:
                             batch.set_decision_order(batch.size() - 1, slot.task->decision.order[slot.prompt.n_tokens()]);
                         }
                         slot.prompt.tokens.push_back(cur_tok);
+
+                        // A retained full prefix must be captured at the exact
+                        // user boundary, rather than the approximate turn checkpoint.
+                        if (retain_prefix && (int64_t) slot.prompt.n_tokens() == first_user_pos) {
+                            break;
+                        }
 
                         // break at the last user message, or at user messages at least min step past the last checkpoint
                         if (do_checkpoint && spans.is_user_start(slot.prompt.n_tokens())) {
@@ -4655,6 +4710,13 @@ private:
                             is_last_user_message || near_prompt_end ||
                             n_tokens_start > slot.prompt.checkpoints.back().n_tokens + params_base.checkpoint_min_step);
                     SLT_DBG(slot, "main/do_checkpoint = %s, pos_min = %d, pos_max = %d\n", do_checkpoint ? "yes" : "no", pos_min, pos_max);
+
+                    // Both snapshots are taken before decoding the current batch.
+                    // Retention owns the complete state, while normal checkpoints
+                    // store only the non-rewindable part of memory.
+                    if (retain_prefix && !has_mtmd && n_tokens_start == first_user_pos) {
+                        retain_system_prefix(slot, n_tokens_start, pos_min, pos_max);
+                    }
 
                     // note: we create the checkpoint before calling llama_decode(), so the current batch is not
                     //       yet processed and therefore it is not part of the checkpoint.
