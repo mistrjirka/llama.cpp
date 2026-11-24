@@ -10,7 +10,9 @@ The Linux driver returns `-ENOMEM` when a new compressed allocation exceeds the 
 
 ## Immediate administrator fix
 
-`hub-zram-cap.py` is read-only without arguments. The prepared script has not been executed with `--apply` or `--restore`.
+The user applied the repair on 2026-11-24 at 21:32 CET. Backup: `/var/backups/llama-zram-cap/20261124T203220.037173Z.json`. The live resident limit and persistent configuration both report `0`. The failed-write counter remained at 47,732,577, with zero delta during the ten-second observation. No zram reset or swap drain was performed.
+
+`hub-zram-cap.py` remains read-only without arguments. Apply mode requires the original `3000` setting and will refuse to apply the same change twice.
 
 ```sh
 python3 tools/server/benchmarks/cache-research/hub-zram-cap.py
@@ -35,9 +37,9 @@ sudo python3 tools/server/benchmarks/cache-research/hub-zram-cap.py --restore /v
 
 Rollback refuses unrelated configuration edits and refuses to restore a cap at or below the current resident allocation. The original cap can reproduce the failure under pressure. A stable counter while idle is an initial check, not a replacement for repeating the workload.
 
-## Current workaround
+## Additional service protection
 
-The working account cannot use passwordless sudo. Root confirmed that a user service can set `MemorySwapMax=0` and obtains `memory.swap.max=0`. Applying that setting to the llama service prevents its own anonymous pages from entering the broken swap path. It does not repair global zram or prevent RAM exhaustion, so process and cache bounds still matter.
+The working account cannot use passwordless sudo. Root confirmed that a user service can set `MemorySwapMax=0` and obtains `memory.swap.max=0`. Applying that setting to the llama service keeps its own anonymous pages out of swap. The global zram cap has now been repaired separately. Neither setting prevents RAM exhaustion, so process and cache bounds still matter.
 
 ## Later capacity adjustment
 

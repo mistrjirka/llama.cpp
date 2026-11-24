@@ -1,0 +1,402 @@
+[
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.23813932498167878,
+    "encode_ms_per_mib": 0.27835126153984263,
+    "decode_ms_per_mib": 0.1437188828254724
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 3.516441452815211,
+    "encode_ms_per_mib": 1.4427256833800053,
+    "decode_ms_per_mib": 0.980318194880871
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split_bits",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.2658351579292506,
+    "encode_ms_per_mib": 3.0467752388487224,
+    "decode_ms_per_mib": 3.970763278163003
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split_bits",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.014601276195125301,
+    "encode_ms_per_mib": 4.343475633689275,
+    "decode_ms_per_mib": 3.9867098874109104
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split_zigzag",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.23813181017148244,
+    "encode_ms_per_mib": 0.2788429904215227,
+    "decode_ms_per_mib": 0.1474118925418214
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split_zigzag",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 3.599095597603752,
+    "encode_ms_per_mib": 1.455337960532618,
+    "decode_ms_per_mib": 0.9860993253439879
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split_zigzag_bits",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.2928183363773318,
+    "encode_ms_per_mib": 3.0416774883428253,
+    "decode_ms_per_mib": 3.9735762006097626
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "q8_split_zigzag_bits",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.07012319880019824,
+    "encode_ms_per_mib": 4.384029161497079,
+    "decode_ms_per_mib": 3.97492427214755
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "raw",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.0,
+    "encode_ms_per_mib": 0.22532144965057135,
+    "decode_ms_per_mib": 0.07736907822416415
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 128,
+    "preprocess": "raw",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 3.2690852131380566,
+    "encode_ms_per_mib": 1.3140835400711723,
+    "decode_ms_per_mib": 0.893767620958585
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.6579116122053308,
+    "encode_ms_per_mib": 0.3836298477583622,
+    "decode_ms_per_mib": 0.32335090255715965
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 4.6782223405888335,
+    "encode_ms_per_mib": 1.6006371865961437,
+    "decode_ms_per_mib": 0.9878316183486416
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split_bits",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.73802950855546,
+    "encode_ms_per_mib": 3.15766698340289,
+    "decode_ms_per_mib": 4.225033010115536
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split_bits",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 1.5292388238740906,
+    "encode_ms_per_mib": 3.4972684735396524,
+    "decode_ms_per_mib": 4.236167618470481
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split_zigzag",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.6579116122053308,
+    "encode_ms_per_mib": 0.38477389685672525,
+    "decode_ms_per_mib": 0.3238833439951456
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split_zigzag",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 4.6834025497450416,
+    "encode_ms_per_mib": 1.6095112236956595,
+    "decode_ms_per_mib": 0.9875902979544086
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split_zigzag_bits",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.7670992992990566,
+    "encode_ms_per_mib": 3.166643983870612,
+    "decode_ms_per_mib": 4.225504185722823
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "q8_split_zigzag_bits",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 3.974047051929941,
+    "encode_ms_per_mib": 3.783000895271601,
+    "decode_ms_per_mib": 4.398482552377425
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "raw",
+    "codec": "lz4",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 0.0,
+    "encode_ms_per_mib": 0.14166727204855328,
+    "decode_ms_per_mib": 0.13181810356009627
+  },
+  {
+    "group": "q8_kv",
+    "block_kib": 4096,
+    "preprocess": "raw",
+    "codec": "zstd1",
+    "sample_mib": 76.14358520507812,
+    "saved_percent": 3.304739230074627,
+    "encode_ms_per_mib": 1.357026330211581,
+    "decode_ms_per_mib": 0.8319356230651368
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_bits",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 11.156061276867613,
+    "encode_ms_per_mib": 3.431862248756218,
+    "decode_ms_per_mib": 4.312715064676617
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_bits",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 11.228551912070506,
+    "encode_ms_per_mib": 4.467458865671642,
+    "decode_ms_per_mib": 4.357054447761194
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_bytes",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 3.397600923604638,
+    "encode_ms_per_mib": 1.019377273631841,
+    "decode_ms_per_mib": 0.5071992835820895
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_bytes",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 6.249442029355179,
+    "encode_ms_per_mib": 1.6308779303482588,
+    "decode_ms_per_mib": 1.2992889552238807
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_exponent",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 4.760852263341498,
+    "encode_ms_per_mib": 0.9914762985074627,
+    "decode_ms_per_mib": 0.5101761592039802
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_exponent",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 7.591118504158889,
+    "encode_ms_per_mib": 2.2788297711442786,
+    "decode_ms_per_mib": 1.3712710049751247
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_xor_bytes",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 2.25442155676695,
+    "encode_ms_per_mib": 1.1337727363184078,
+    "decode_ms_per_mib": 0.4972017114427861
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "f32_xor_bytes",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 5.366694512058845,
+    "encode_ms_per_mib": 1.8049914029850747,
+    "decode_ms_per_mib": 1.2953632636815924
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "raw",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 0.0,
+    "encode_ms_per_mib": 0.2024421094527363,
+    "decode_ms_per_mib": 0.069785631840796
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 128,
+    "preprocess": "raw",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 6.023873855818563,
+    "encode_ms_per_mib": 1.3946111044776117,
+    "decode_ms_per_mib": 0.9017702288557213
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_bits",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 11.435866474512203,
+    "encode_ms_per_mib": 3.3960491940298505,
+    "decode_ms_per_mib": 4.482377830845771
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_bits",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 12.588686966777441,
+    "encode_ms_per_mib": 3.9022617711442784,
+    "decode_ms_per_mib": 4.587126089552239
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_bytes",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 4.687879571867226,
+    "encode_ms_per_mib": 0.9896094328358209,
+    "decode_ms_per_mib": 0.5790319601990049
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_bytes",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 14.252726236979163,
+    "encode_ms_per_mib": 1.5468730746268657,
+    "decode_ms_per_mib": 0.7153814527363185
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_exponent",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 5.2056118030453185,
+    "encode_ms_per_mib": 1.0405451542288557,
+    "decode_ms_per_mib": 0.5567564975124377
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_exponent",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 14.30364580296758,
+    "encode_ms_per_mib": 1.5723112437810944,
+    "decode_ms_per_mib": 0.6849715024875622
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_xor_bytes",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 3.3558328353350486,
+    "encode_ms_per_mib": 1.1027018905472636,
+    "decode_ms_per_mib": 0.5672022686567164
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "f32_xor_bytes",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 13.373641588201568,
+    "encode_ms_per_mib": 1.5139719402985075,
+    "decode_ms_per_mib": 0.6912474825870647
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "raw",
+    "codec": "lz4",
+    "sample_mib": 25.125,
+    "saved_percent": 0.0,
+    "encode_ms_per_mib": 0.1120769353233831,
+    "decode_ms_per_mib": 0.09079128358208956
+  },
+  {
+    "group": "recurrent_f32",
+    "block_kib": 4096,
+    "preprocess": "raw",
+    "codec": "zstd1",
+    "sample_mib": 25.125,
+    "saved_percent": 6.163400678492303,
+    "encode_ms_per_mib": 1.5099542686567164,
+    "decode_ms_per_mib": 0.8576482388059701
+  }
+]
