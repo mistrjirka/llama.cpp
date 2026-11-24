@@ -1,16 +1,18 @@
 # RTX 3060 hub experiment results
 
-**Draft, 2026-11-24.** Launch settings are selected and the clean release builds. Long-context validation, soak results, vision validation, and the running deployment remain pending.
+**Draft, 2026-11-24.** Final settings keep microbatch 256 and change only the draft KV to Q4. The original-versus-final 100K comparison is complete. Final 8K/32K, full-cache soak, vision, and deployment checks remain pending.
 
 ## Current decision
 
-Select native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, and microbatch 128. Keep the 110,000-token configured context, 4,096 MiB cache budget, three checkpoints with a 384 MiB checkpoint cap, CUDA graphs, lazy recurrent updates, immutable checkpoint sharing, and startup warmup. The clean release excludes the adaptive-MTP and pinned-staging runtime experiments. Runtime compression is not enabled.
+Select native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, and microbatch 256. Keep the 110,000-token configured context, 4,096 MiB cache budget, three checkpoints with a 384 MiB checkpoint cap, CUDA graphs, lazy recurrent updates, immutable checkpoint sharing, and startup warmup. The clean release excludes the adaptive-MTP and pinned-staging runtime experiments. Runtime compression is not enabled.
 
-Against its matched followup control, the selected combination saves **170 MiB of GPU use and 56.09 MiB of sampled peak PSS**. Decode is 0.92% slower and total request time is 2.11% longer on the short suite. The separate branching workload saves 446.70 MiB of peak RSS from checkpoint sharing. These are different workloads and must not be added as one guaranteed saving. Final long-context and sustained-load checks for the selected settings remain pending.
+Draft Q4 alone saves **108 MiB of measured GPU use**, with short-suite decode at 40.45 tok/s versus 40.62-40.75 tok/s for repeated controls. It does not establish a steady CPU RAM reduction. The separate branching workload saves **446.70 MiB of peak RSS** from checkpoint sharing. These are different memory measurements and workloads.
+
+Reject microbatch 128: its additional 62 MiB GPU saving costs about 5.5% more cold-start time at 100K tokens and changes response behavior. The earlier 56 MiB short-suite RAM saving belonged to that rejected configuration. It is not a final-deployment gain.
 
 Reject logical batch 512 despite its favorable short test. It creates more retained recurrent checkpoints in the matched cache-pressure trace, consuming 340.75 MiB more accounted cache for the same seven entries.
 
-The original setup already used MTP2. New measured savings come from checkpoint sharing, draft Q4, and the smaller microbatch. The MTP-versus-disabled comparison is not a new speed improvement.
+The original setup already used MTP2. Final measured savings come from checkpoint sharing and draft Q4. The MTP-versus-disabled comparison is not a new speed improvement.
 
 ## Test conditions and evidence
 
@@ -35,10 +37,10 @@ The repeated MTP2 controls measured 40.60-40.75 generation tokens/s and 11,255 M
 | Enable extra graph optimization | 40.61 tok/s, same GPU peak | No demonstrated benefit. Keep the default. |
 | Graph chunk size 128 | 40.68 tok/s, saves 8 MiB GPU | No material benefit established. Keep the default. |
 | CPU threads 2 | 40.70 tok/s, same GPU peak | No material speed or RAM benefit. Keep the existing setting. |
-| Microbatch 128 | 40.74 tok/s. Saves 62 MiB GPU and about 57 MiB sampled PSS. Prompt time rises 19.19 -> 20.01 s. | Keep 128 in the selected combination for the memory goal. |
+| Microbatch 128 | Saves another 62 MiB GPU. Its 100K cold-start time is 216.83 s versus 205.60 s original, with changed output behavior. | Reject. Keep microbatch 256. |
 | Microbatch 512 | 40.09 tok/s, costs 184 MiB GPU. Prompt time falls to 18.63 s. | Reject for the memory goal. |
 | Microbatch 64 | 40.16 tok/s. Saves 106 MiB GPU, but total time rises 56.84 -> 61.26 s. | Reject. |
-| Draft Q4 plus microbatch 128, logical batch 2048 | 40.28 tok/s, 11,085 MiB GPU, 2,737.10 MiB peak PSS. Control: 40.65 tok/s, 11,255 MiB GPU, 2,793.19 MiB PSS. Total time 58.04 versus 56.84 s. | Keep as the final candidate. |
+| Draft Q4 plus microbatch 128, logical batch 2048 | 40.28 tok/s, 11,085 MiB GPU, 2,737.10 MiB peak PSS. Control: 40.65 tok/s, 11,255 MiB GPU, 2,793.19 MiB PSS. Total time 58.04 versus 56.84 s. | Rejected after the 100K comparison. These are not final-setting savings. |
 | Disable lazy recurrent updates | 40.14 tok/s, costs 158 MiB GPU. Prompt processing is about 1.3 s faster on this suite. | Keep lazy updates for the memory goal. |
 | Logical batch 512 / no warmup | Completed below | Reject both. Keep batch 2048 and normal warmup. |
 
@@ -72,7 +74,19 @@ The four additional checkpoints cost about 351.82 MiB, partly offset by about 11
 
 This is a checkpoint-placement tradeoff, not growing unbounded memory. The rejected candidate completed three rounds of 20 branches, each interleaved with 20 auxiliary requests. Maximum recorded per-request PSS was 6,763.28 / 6,763.73 / 6,763.96 MiB, a 0.68 MiB spread, with zero process swap. That validates a plateau for this trace but does not restore the lost cache capacity or validate the final configuration.
 
-The earlier candidate is stored under `final-soak/selected`; its configuration explicitly has `-b 512`. Do not infer final selection from that directory name. The final `-b 2048 -ub 128` candidate is being validated separately. Its short-suite figures come from `followup/{control,q4_ub128}/results.json` and `followup-summary.json`.
+The earlier batch-512 candidate is now stored under `soak-b512/selected`. The later rejected microbatch-128 candidate is under `soak-ub128/selected`. The new `final-soak` run uses the final `-b 2048 -ub 256` settings. Historical microbatch-128 short-suite figures come from `followup/{control,q4_ub128}/results.json` and `followup-summary.json`.
+
+### 100K comparison selects draft Q4 alone
+
+All cold requests contain 100,052 prompt tokens. Times are single observations to first visible content.
+
+| Configuration | Cold first content, seconds | Cold input tokens/s | Output result |
+| --- | ---: | ---: | --- |
+| Original, draft Q8, microbatch 256 | 205.602 | 486.759 | JSON, but incorrect middle and last values |
+| Final, draft Q4, microbatch 256 | 205.669 | 486.596 | All five response hashes match original |
+| Rejected, draft Q4, microbatch 128 | 216.830 | 461.560 | Prose instead of requested JSON, truncated at 96 tokens |
+
+The original and final configurations both returned middle `7707` and last `54116`, instead of `77082` and `154116`. The 100K quality failure therefore exists in the original. Draft Q4 preserves the tested behavior. This arithmetic catalog is not a difficult retrieval benchmark. See [VALIDATION.md](VALIDATION.md) for reuse, restoration, and the remaining final gates.
 
 ## Checkpoint sharing: measured RAM saving
 
@@ -173,9 +187,9 @@ See [COMPRESSION_RESEARCH.md](COMPRESSION_RESEARCH.md) and [rtx3060-paper-review
 | Item | Status to fill before final report |
 | --- | --- |
 | Final no-warmup / logical-batch comparison | Complete. Reject batch 512 after cache-pressure analysis. Keep batch 2048 and normal warmup. |
-| 8K / 32K / approximately 100K validation | Pending for final settings: cold, repeated and followup requests, answer checks, peak RAM/VRAM, latency |
-| Repeated-cache soak | Earlier batch-512 candidate completed three rounds with stable recorded RAM and zero process swap. Two full-pressure rounds for the selected batch-2048 configuration remain pending. |
+| Context validation | Final draft-Q4 100K comparison complete: all five response hashes match original, including its wrong JSON answer. Final 8K/32K cold/repeat/followup checks remain pending. |
+| Repeated-cache soak | Earlier batch-512 and microbatch-128 runs completed without swap/OOM. New final microbatch-256 run, 83 total requests including vision, remains pending. |
 | Vision regression | Pending if included in final gate |
-| Selected settings and release | MTP2, draft Q4, target Q8, `-b 2048 -ub 128`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
+| Selected settings and release | MTP2, draft Q4, target Q8, `-b 2048 -ub 256`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
 | Source push | Root reports commit `3f8ed81` pushed and verified. Later changes may supersede it. |
 | Running hub deployment | Pending: service, binary/commit, MTP depth, draft/target types |

@@ -1,64 +1,75 @@
-# Validation of the selected RTX 3060 configuration
+# Validation of the final RTX 3060 settings
 
-**Status: runtime stability, cache limits, and basic vision checked. The 100K answer check failed. Original-baseline comparison and deployment verification remain pending.**
+**Final choice: draft Q4 with microbatch 256. The 100K original-versus-final comparison is complete. Final 8K/32K, full-cache pressure, vision, and deployment checks remain pending.**
 
-Tested settings: native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, microbatch 128, configured context 110,000, cache budget 4,096 MiB, three checkpoints with a 384 MiB checkpoint cap. The context allocation is 110,080 tokens. Tests used the clean release prepared from `1af6247`.
+Settings: native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, microbatch 256, configured context 110,000, cache budget 4,096 MiB, three checkpoints with a 384 MiB checkpoint cap. The context allocation is 110,080 tokens. The clean release was prepared from `1af6247`.
 
-Directory names matter: `soak-b512` contains the earlier rejected batch-512 candidate. `final-soak` contains the selected batch-2048 run.
+Archives: `soak-b512` is the rejected batch-512 run. `soak-ub128` is the rejected microbatch-128 run. The new `final-soak` uses the final microbatch-256 settings.
 
-## Full-cache pressure and vision
+## Completed 100K comparison
 
-The selected run completed **83 total requests**: two rounds of 20 catalog branches, 40 interleaved auxiliary requests, two cold comparisons, and one image request.
+The original and final cold requests contain **100,052 prompt tokens**. Times below are seconds to first visible response content. Each cell is one observation, not a repeated-trial statistic.
 
-| Measurement | Observed |
+| Configuration | Cold | Immediate repeat | Restore after parking | Cold input tokens/s |
+| --- | ---: | ---: | ---: | ---: |
+| Original, draft Q8, microbatch 256 | 205.602 | 0.418 | 5.613 | 486.759 |
+| Final, draft Q4, microbatch 256 | 205.669 | 0.418 | 5.441 | 486.596 |
+| Rejected, draft Q4, microbatch 128 | 216.830 | 0.406 | 5.427 | 461.560 |
+
+**All five final response hashes match the corresponding original hashes:** cold, repeat, changed followup, auxiliary prompt, and restored request. The final changed followup reached first visible content in 1.104 seconds, versus 1.102 seconds originally.
+
+Both original and final configurations nevertheless fail the expected-answer check on all four catalog requests. They return:
+
+| Field | Expected | Original and final |
+| --- | ---: | ---: |
+| first | 640 | 640 |
+| middle | 77,082 | 7,707 |
+| last | 154,116 | 54,116 |
+
+They produce valid JSON in 36 generated tokens. The answer error therefore exists in the original setup. The draft-Q4 change preserves the tested response behavior. Matching incorrect answers is not a quality pass.
+
+The rejected microbatch-128 configuration instead produces prose, reaches the 96-token response cap, and fails the required JSON format. Its cold first-content time is about 5.5% longer. Its additional 62 MiB GPU saving does not justify this tradeoff.
+
+A changed followup includes the preceding answer. When earlier answers differ, followup prompts can differ too. Judge a followup against its expected JSON, not against the cold text or a different configuration's followup hash alone.
+
+This is an arithmetic catalog with a predictable rule. It tests runtime behavior and a small answer check, not difficult long-context retrieval or broad quality.
+
+Sources under `/home/jirka/.cache/rtx3060-experiments-20261124`:
+
+- `long-control/original/{config,results,long-context-input}.json`
+- `long-draft-q4/draft_q4_only/{config,results,long-context-input}.json`
+- `long-text/selected/{config,results,long-context-input}.json` for the rejected microbatch-128 comparison
+
+## Historical pressure evidence, not final-setting results
+
+The earlier microbatch-128 run completed **83 total requests**, including one image request. Its measurements remain useful for diagnosing cache growth, but must not be labeled as the final microbatch-256 result.
+
+| Earlier microbatch-128 measurement | Observed |
 | --- | ---: |
-| Peak accounted parked-cache storage | 4,084.972 MiB of 4,096 MiB |
-| Entries at peak accounted storage | 17 |
-| Logical snapshot bytes represented at that point | 7,079.433 MiB |
-| Token references represented at that point | 130,145 |
+| Peak accounted parked cache | 4,084.972 MiB of 4,096 MiB |
+| Entries at that point | 17 |
+| Logical snapshot bytes represented | 7,079.433 MiB |
+| Token references at peak bytes | 130,145 |
 | Maximum token references, at a different point | 131,161 |
 | Kernel peak process RSS | 6,869.406 MiB |
 | Sampled peak process PSS | 6,783.139 MiB |
 | Minimum available host RAM | 5,472.375 MiB |
 | Peak reported GPU memory | 11,089 MiB |
-| Process swap / cgroup OOM events | 0 / 0 |
-| New zram failed writes | 0 |
+| Process swap / cgroup OOM / new zram failed writes | 0 / 0 / 0 |
 
-The 17 entries include retained prefixes and auxiliary prompts. Token references count shared prefixes more than once. They are not 130K unique tokens or a larger active-context limit. Cache sharing lets these logical snapshots fit within the parked-cache budget. The full process still needs RAM beyond that budget.
+Entries include retained prefixes and auxiliary prompts. Token references count shared prefixes more than once. They do not represent 130K unique tokens or a larger active-context limit. The process needs RAM beyond the 4 GiB parked-cache budget.
 
-Repeated responses were identical, but the expected-answer check failed for branch 4 and branch 13 in both rounds. This establishes cache and memory behavior for the trace, not perfect model accuracy. The independent branches had no identical checkpoint objects to share at their peak. The separate fork experiment remains the evidence for checkpoint-sharing savings.
+That run's repeated responses were identical, but branch 4 and branch 13 failed the expected-answer check in both rounds. Its basic two-color image check passed in 83.67 seconds. Its earlier 8K and 32K tests passed all expected-answer checks. These results do not replace validation of the final settings.
 
-The image check passed with `left color: red, right color: blue.` It took **83.67 seconds** after the cache-pressure workload. This checks a simple two-color image, not general vision quality.
+Raw pressure evidence is under `soak-ub128/selected`. The earlier batch-512 run is separately archived under `soak-b512`. Repository evidence is collected under [results/2026-11-24](results/2026-11-24).
 
-Sources: [final-soak.json](results/2026-11-24/final-soak.json), [configs.json](results/2026-11-24/configs.json), [traces.json](results/2026-11-24/traces.json), and [runtime-limits.json](results/2026-11-24/runtime-limits.json). Raw captures are under `/home/jirka/.cache/rtx3060-experiments-20261124/final-soak`.
+## Final gates still pending
 
-## Context length, reuse, and restoration
+| Gate | Required result |
+| --- | --- |
+| Final 8K/32K, `long-final-short` | Cold, repeat, followup, and restored answer checks, plus latency and memory |
+| Final pressure, `final-soak` | 83 total requests including vision, cache-budget maximum, retained capacity, memory plateau, swap/OOM counters |
+| Final vision | Expected left-red/right-blue answer, latency, peak and idle RAM |
+| Deployment | Running service and binary, selected flags, installed commit, and post-restart health check |
 
-The selected run completed 15 requests across three context lengths. Each length has a cold request, immediate repeat, changed followup, auxiliary request that parks the long state, and restoration of the original request.
-
-Times below are **seconds to first visible response content**, not full-response times. Each cell is one observation, not a repeated-trial statistic.
-
-| Actual cold prompt tokens | Cold | Immediate repeat | Changed followup | Restore after parking | Cold input tokens/s |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 8,058 | 11.845 | 0.324 | 0.828 | 1.052 | 680.63 |
-| 32,059 | 52.105 | 0.337 | 0.870 | 2.104 | 615.50 |
-| 100,052 | 216.830 | 0.406 | 1.139 | 5.427 | 461.56 |
-
-- **8K and 32K:** every checked cold, repeat, followup, and restored answer matched the expected JSON values.
-- **100K:** all four answer/format checks failed. Each response used the 96-token limit and did not produce the required JSON.
-- At 100K, the cold, repeated, and restored requests returned byte-identical text. This supports correct reuse of that tested state despite the answer failure.
-- The followup changes the prompt. Judge its answer against the expected JSON, not against the cold-response text. Its different text is not by itself a cache error.
-
-This is an arithmetic catalog with a predictable rule. It tests runtime behavior and a small answer check, not difficult long-context retrieval or broad quality.
-
-The complete context-length run recorded a 6,225.801 MiB kernel peak RSS, 6,139.924 MiB sampled peak PSS, at least 6,127.781 MiB available host RAM, zero process swap, zero cgroup OOM events, and no new zram failed writes.
-
-Sources: `/home/jirka/.cache/rtx3060-experiments-20261124/long-text/selected/{config,results,long-context-input}.json` and `long-text/runtime-limits.json`. The long-text result archive is awaiting its repository refresh.
-
-## Remaining decision
-
-The original binary's 100K control is running under `long-control/original`. **Do not attribute the selected configuration's failed 100K answer check to the optimization until that comparison completes.** Record whether the original also fails, the exact request/configuration differences, and its response hash.
-
-The selected final soak and long-text run stayed within the cache budget without swap-write failures or OOM events. This is evidence from the tested workloads, not a claim that every historical crash is fixed.
-
-Deployment is not verified by this document. Before marking it complete, record the running service and binary, selected flags, installed commit, and post-restart health check.
+No claim of final deployment is made here. The short-suite final draft-Q4 result saves 108 MiB of GPU memory. The 56 MiB short-suite CPU RAM reduction belonged to rejected microbatch 128. Checkpoint sharing's separate 446.70 MiB fork peak-RSS saving remains supported by its own workload.
