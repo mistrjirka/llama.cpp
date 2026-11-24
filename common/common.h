@@ -640,6 +640,7 @@ struct common_params {
     bool    cache_system_prefix = true;  // retain a bounded, exact system-prefix RAM state
     bool    cache_idle_slots    = true;  // save and clear idle slots upon starting a new task
     bool    slot_fork_prefix    = true;  // fork an exact idle prefix into an empty slot when using unified KV
+    int32_t ctx_checkpoint_ram_mib = 512; // host checkpoint bytes per slot; -1 = unlimited
     int32_t n_ctx_checkpoints   = 32;    // max number of context checkpoints per slot
     bool checkpoint_recurrent_prev = false; // server: keep one recurrent rollback plane for exact replay checkpoints
     int32_t kv_unified_per_slot = 0;     // max context per parallel slot; 0 = unset

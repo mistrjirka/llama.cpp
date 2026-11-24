@@ -35,3 +35,38 @@ Run `benchmark.py --help` for a private localhost capture of five synthetic bran
 An additional Qwen3.5-0.8B CPU capture produced 158,969,656 bytes across five snapshots. Fixed 64 KiB dedup reduced the payload by 16.49%; content-defined 64 KiB dedup reduced it by 23.93%. Both reconstructed every byte. The tensor parser rejected that serializer layout, motivating a general streaming tensor-boundary interface rather than a collection of architecture-specific file parsers.
 
 Next steps: compare generic content-defined chunking and serializer-provided boundaries using a bounded streaming store, reference counts, exact restores, cache-budget stress tests, and GPU latency/quality tests. Keep storage experiments opt-in until validated in a live inference server. Evaluate SSD tiering and demand-aware retention separately.
+
+
+## Bounded streaming cache (runtime implementation)
+
+The RAM prompt cache now stores shared, reference-counted exact byte blocks.
+Hash matches are verified byte-for-byte. Tensor-boundary-aligned 128 KiB blocks
+are read or written through a bounded 4 MiB transport buffer instead of a
+complete temporary sequence buffer. Cache admission accounts for unique blocks,
+recipe capacity, token metadata and portable host checkpoint allocations.
+Large evictions can release unused glibc heap pages. This does not cap the
+whole process RSS, file mappings, CUDA allocations or active inference buffers.
+
+The existing PRC1 v1 cache file format is preserved. Import now streams each
+entry under the configured byte budget and skips entries that cannot fit.
+After validating the file header it replaces the parked cache; malformed
+payloads discard partially loaded entries without touching live slots.
+The existing live GPU-prefix restore is supported by the streaming reader.
+The existing speculative driver, value-aware checkpoint eviction and deferred
+MTP optimization are retained. Independent retained prefixes support native
+hybrid/recurrent MTP with synchronous catch-up; deferred MTP keeps its prior
+checkpoint and parked-state reuse path.
+
+The active per-slot checkpoint host budget defaults to 512 MiB
+(`--ctx-checkpoint-ram`); the existing `--ctx-checkpoints` count still applies.
+Device-backed checkpoint envelopes count toward the host budget, but their
+device-resident data do not. Set `--ctx-checkpoint-ram -1` for the former
+count-only policy. The existing 8 GiB RAM cache default is unchanged.
+A smaller host checkpoint budget can reduce cache hits, not state precision.
+
+Validation: CPU build; ordinary attention, Mamba and Qwen3.5 hybrid
+retained-prefix/greedy-output regressions; 1,000 standalone block
+allocation/eviction cycles; PRC1 save/restore and oversized/truncated file
+handling. The SenseNova implementation was separately exercised on RTX 3060
+with native MTP. CUDA and MTP performance of this adapted V100 build still
+require dedicated validation; the available GPUs were busy.

@@ -1701,13 +1701,33 @@ json server_task_result_apply_lora::to_json() {
 //
 // server_prompt_cache
 //
-size_t server_prompt_cache::size() const {
-    size_t res = 0;
-
-    for (const auto & state : states) {
-        res += state.size();
+static size_t cache_prompt_metadata(const server_prompt & prompt) {
+    // Cache snapshots contain cloned token vectors, not the mutable live
+    // vector's spare capacity. Do not access the text-only get_tokens()
+    // accessor on a context with a vision projector.
+    size_t bytes = prompt.tokens.size() * sizeof(llama_token);
+    for (size_t i = 0; i < prompt.tokens.size(); ++i) {
+        if (prompt.tokens[i] == LLAMA_TOKEN_NULL) { bytes += 128; }
     }
+    for (const auto & ckpt : prompt.checkpoints) {
+        if (ckpt.data_tgt_on_device) { continue; }
+        bytes += sizeof(common_prompt_checkpoint) + 128 +
+                ckpt.data_tgt.capacity() + ckpt.data_dft.capacity() + ckpt.data_spec.capacity();
+    }
+    return bytes;
+}
 
+size_t server_prompt_cache::size() const {
+    size_t res = pool.size();
+    for (const auto & state : states) {
+        res += state.overhead();
+    }
+    return res;
+}
+
+size_t server_prompt_cache::logical_size() const {
+    size_t res = 0;
+    for (const auto & state : states) { res += state.size(); }
     return res;
 }
 
@@ -1722,126 +1742,101 @@ size_t server_prompt_cache::n_tokens() const {
 }
 
 size_t server_prompt_cache::retained_prefix_size() const {
-    size_t result = 0;
+    size_t res = 0;
     for (const auto & state : states) {
         if (state.retained_prefix) {
-            result += state.size();
+            res += state.size();
         }
     }
-    return result;
+    return res;
 }
 
 size_t server_prompt_cache::retained_prefix_limit() const {
-    constexpr size_t max_prefix = 2ull * 1024 * 1024 * 1024;
-    return limit_size ? std::min(limit_size / 3, max_prefix) : max_prefix;
+    // The prefix cache shares the existing RAM budget; never let retained
+    // prefixes monopolize it. Bound this even for an unlimited prompt cache.
+    constexpr size_t max_prefix_bytes = 2ull * 1024ull * 1024ull * 1024ull;
+    return limit_size > 0 ? std::min(limit_size / 3, max_prefix_bytes) : max_prefix_bytes;
 }
 
-server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & prompt, size_t state_size_tgt,
-        size_t state_size_dft, size_t state_size_spec, llama_pos pos_min, bool retained_prefix,
-        const server_prompt_cache_state * protect) {
+server_prompt_cache_state * server_prompt_cache::save(const server_prompt & prompt, llama_context * ctx_tgt,
+        llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
+        bool retained_prefix, const server_prompt_cache_state * protect) {
+    if (prompt.tokens.empty()) { return nullptr; }
     for (auto it = states.begin(); it != states.end(); ++it) {
-        if (it->retained_prefix != retained_prefix) {
-            continue;
-        }
-        const size_t lcp = it->prompt.tokens.get_common_prefix(prompt.tokens);
-        // A longer recurrent state does not necessarily represent the exact
-        // earlier boundary. Retained prefixes require exact equality.
-        if (lcp == prompt.tokens.size() && (!retained_prefix || lcp == it->prompt.tokens.size())) {
-            if (retained_prefix) {
-                states.splice(states.end(), states, it);
-            }
+        if (it->retained_prefix == retained_prefix &&
+            it->prompt.tokens.size() == prompt.tokens.size() &&
+            it->prompt.tokens.get_common_prefix(prompt.tokens) == prompt.tokens.size()) {
+            // The cached state remains valid. Do not reserialize it.
+            states.splice(states.end(), states, it);
             return nullptr;
         }
     }
 
-    // Device-backed checkpoints reference transient context memory. Count
-    // host-backed checkpoints before copying, so admission respects the budget.
-    size_t checkpoints_size = 0;
-    if (!retained_prefix) {
-        for (const auto & ckpt : prompt.checkpoints) {
-            if (!ckpt.data_tgt_on_device) {
-                checkpoints_size += ckpt.size();
-            }
-        }
-    }
-    const size_t state_size_new = state_size_tgt + state_size_dft + state_size_spec + checkpoints_size;
-    if (state_size_new == 0 || (limit_size && state_size_new > limit_size)) {
-        return nullptr;
-    }
+    const size_t main_size = llama_state_seq_get_size_ext(ctx_tgt, id_slot, LLAMA_STATE_SEQ_FLAGS_NONE);
+    const size_t draft_size = ctx_dft ? llama_state_seq_get_size_ext(ctx_dft, id_slot, LLAMA_STATE_SEQ_FLAGS_NONE) : 0;
+    if (!main_size || (ctx_dft && !draft_size)) { return nullptr; }
+    std::vector<uint8_t> spec_state;
+    common_speculative_get_state(spec, id_slot, spec_state);
+    const size_t metadata = cache_prompt_metadata(prompt) + sizeof(server_prompt_cache_state) + 256;
 
     if (retained_prefix) {
+        // Bound retained logical bytes as before, regardless of sharing.
+        const size_t needed = main_size + draft_size + spec_state.size();
         const size_t cap = retained_prefix_limit();
-        if (state_size_new > cap) {
-            return nullptr;
-        }
-        while (retained_prefix_size() + state_size_new > cap) {
-            auto it = std::find_if(states.begin(), states.end(), [&](const auto & st) {
-                return st.retained_prefix && &st != protect;
+        if (needed > cap) { return nullptr; }
+        while (retained_prefix_size() > cap - needed) {
+            auto it = std::find_if(states.begin(), states.end(), [&](const auto & s) {
+                return s.retained_prefix && &s != protect;
             });
-            if (it == states.end()) {
-                return nullptr;
-            }
+            if (it == states.end()) { return nullptr; }
             states.erase(it);
         }
     }
 
-    if (limit_size) {
-        size_t reserved = 0;
-        for (const auto & state : states) {
-            if (state.retained_prefix || &state == protect) {
-                reserved += state.size();
-            }
-        }
-        if (reserved > limit_size - state_size_new) {
-            return nullptr;
-        }
-    }
-
-    // Preserve the existing whole-state subsumption policy, but never delete
-    // a retained prefix or the state selected for the impending restore.
-    if (!retained_prefix) {
-        for (auto it = states.begin(); it != states.end();) {
-            if (!it->retained_prefix && &*it != protect &&
-                    it->prompt.tokens.get_common_prefix(prompt.tokens) == it->prompt.tokens.size()) {
-                it = states.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-    if (limit_size) {
-        while (size() > limit_size - state_size_new) {
-            auto it = std::find_if(states.begin(), states.end(), [&](const auto & st) {
-                return !st.retained_prefix && &st != protect;
+    server_prompt_cache_state * pending = nullptr;
+    // A fixed 4 MiB transport scratch, 128 KiB chunk buffer and small
+    // speculative state are not stored in the pool. Reserve headroom while
+    // capturing instead of materializing a second whole sequence.
+    const size_t scratch = std::min<size_t>(8 * 1024 * 1024, main_size + draft_size + 256 * 1024) + spec_state.capacity();
+    const auto admit = [&](size_t extra) {
+        if (!limit_size) { return true; }
+        if (scratch >= limit_size || extra > limit_size - scratch) { return false; }
+        while (size() > limit_size - scratch - extra) {
+            auto it = std::find_if(states.begin(), states.end(), [&](const auto & s) {
+                return !s.retained_prefix && &s != protect && &s != pending;
             });
-            if (it == states.end()) {
-                return nullptr;
-            }
+            if (it == states.end()) { return false; }
             states.erase(it);
         }
-    }
+        return true;
+    };
 
     try {
-        server_prompt saved { prompt.tokens.clone(), {} };
-        if (!retained_prefix) {
-            for (const auto & ckpt : prompt.checkpoints) {
-                if (!ckpt.data_tgt_on_device) {
-                    saved.checkpoints.push_back(ckpt);
-                }
-            }
+        if (!admit(metadata)) { return nullptr; }
+        server_prompt portable { prompt.tokens.clone(), {} };
+        for (const auto & ckpt : prompt.checkpoints) {
+            if (!ckpt.data_tgt_on_device) { portable.checkpoints.push_back(ckpt); }
         }
         states.push_back({
-            std::move(saved),
-            { std::vector<uint8_t>(state_size_tgt), std::vector<uint8_t>(state_size_dft),
-              std::vector<uint8_t>(state_size_spec) },
-            retained_prefix,
-            pos_min,
+            std::move(portable), {}, retained_prefix,
+            llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id_slot),
+            metadata,
         });
-    } catch (const std::bad_alloc & e) {
-        SRV_ERR("failed to allocate memory for prompt cache state: %s\n", e.what());
+        pending = &states.back();
+        pending->metadata_bytes = sizeof(*pending) + 256 + cache_prompt_metadata(pending->prompt);
+        if (!pending->data.main.capture(ctx_tgt, id_slot, main_size, pool, admit) ||
+            (ctx_dft && !pending->data.drft.capture(ctx_dft, id_slot, draft_size, pool, admit)) ||
+            !pending->data.spec.capture_bytes(spec_state.data(), spec_state.size(), pool, admit) ||
+            !admit(0)) {
+            states.pop_back();
+            return nullptr;
+        }
+    } catch (const std::exception & e) {
+        if (pending) { states.pop_back(); }
+        SRV_WRN("prompt cache save skipped: %s\n", e.what());
         return nullptr;
     }
-    return &states.back();
+    return pending;
 }
 
 // Estimate the usable prefix using the same rewind constraints as the
@@ -1898,7 +1893,8 @@ std::list<server_prompt_cache_state>::iterator server_prompt_cache::find_best(
         const size_t reusable = allow_retained_prefix
                 ? cache_reusable_tokens(it->prompt, tokens_new, it->pos_min, n_swa, can_remove_suffix)
                 : lcp;
-        if (reusable > best) {
+        if (reusable > best || (reusable > 0 && reusable == best &&
+                it_best != states.end() && it->retained_prefix && !it_best->retained_prefix)) {
             best = reusable;
             it_best = it;
         }
@@ -1921,56 +1917,27 @@ bool server_prompt_cache::load(
             restore_lcp = (int) it_best->prompt.tokens.get_common_prefix(*prefix_tokens);
         }
 
-        {
-            auto & data = it_best->data.main;
-
-            const size_t size = data.size();
-            size_t n = 0;
-            if (restore_lcp > 0) {
-                n = llama_state_seq_set_data_prefix(ctx_tgt, data.data(), size, id_slot, prefix_seq_id, restore_lcp);
-                if (n == size) {
-                    SRV_TRC(" - restored target RAM state onto live prefix seq %d, n_tokens = %d\n", prefix_seq_id, restore_lcp);
-                }
+        auto restore = [&](const server_cache_blob & data, llama_context * ctx) {
+            if (data.empty()) { return true; }
+            if (!ctx) { return false; }
+            if (restore_lcp > 0 && data.restore(ctx, id_slot, prefix_seq_id, restore_lcp)) {
+                return true;
             }
-            if (n != size) {
-                n = llama_state_seq_set_data_ext(ctx_tgt, data.data(), size, id_slot, 0);
-            }
-            if (n != size) {
-                SRV_ERR("failed to restore state with size %zu\n", size);
-
-                states.erase(it_best);
-                return false;
-            }
-        }
-
-        {
-            auto & data = it_best->data.drft;
-
-            if (!data.empty()) {
-                GGML_ASSERT(ctx_dft);
-
-                const size_t size = data.size();
-                size_t n = 0;
-                if (restore_lcp > 0) {
-                    n = llama_state_seq_set_data_prefix(ctx_dft, data.data(), size, id_slot, prefix_seq_id, restore_lcp);
-                    if (n == size) {
-                        SRV_TRC(" - restored draft RAM state onto live prefix seq %d, n_tokens = %d\n", prefix_seq_id, restore_lcp);
-                    }
-                }
-                if (n != size) {
-                    n = llama_state_seq_set_data_ext(ctx_dft, data.data(), size, id_slot, 0);
-                }
-                if (n != size) {
-                    SRV_WRN("failed to restore state with size %zu\n", size);
-
-                    states.erase(it_best);
-                    return false;
-                }
-            }
+            return data.restore(ctx, id_slot);
+        };
+        if (!restore(it_best->data.main, ctx_tgt) || !restore(it_best->data.drft, ctx_dft)) {
+            SRV_ERR("%s", "failed to restore streamed prompt state\n");
+            states.erase(it_best);
+            return false;
         }
 
         if (!it_best->data.spec.empty()) {
-            common_speculative_set_state(spec, id_slot, it_best->data.spec);
+            std::vector<uint8_t> spec_state;
+            if (!it_best->data.spec.restore_bytes(spec_state)) {
+                states.erase(it_best);
+                return false;
+            }
+            common_speculative_set_state(spec, id_slot, spec_state);
         }
 
         if (it_best->retained_prefix) {
@@ -2016,7 +1983,9 @@ size_t server_prompt_cache::save_file(const std::string & filepath) const {
 
         for (const auto * data : { &state.data.main, &state.data.drft, &state.data.spec }) {
             write_u64((uint64_t) data->size());
-            if (!data->empty()) write_raw(data->data(), data->size());
+            for (const auto & block : data->refs) {
+                write_raw(block->bytes.data(), block->bytes.size());
+            }
         }
     }
 
@@ -2053,36 +2022,79 @@ size_t server_prompt_cache::load_file(const std::string & filepath, bool has_mtm
     const uint64_t count = read_u64();
     if (count > 1000000) throw std::runtime_error("Invalid prompt-cache entry count");
 
-    std::list<server_prompt_cache_state> loaded;
-    for (uint64_t i = 0; i < count; ++i) {
-        uint8_t entry_has_mtmd = 0;
-        read_raw(&entry_has_mtmd, sizeof(entry_has_mtmd));
-        if (entry_has_mtmd && !has_mtmd_runtime) {
-            throw std::runtime_error("Prompt-cache file contains media state but no mmproj is loaded");
-        }
-
-        const uint64_t packed_size = read_u64();
-        if (packed_size > file_size - nread || packed_size % sizeof(llama_token) != 0) {
-            throw std::runtime_error("Invalid prompt-cache token payload size");
-        }
-        llama_tokens packed(packed_size / sizeof(llama_token));
-        if (packed_size) read_raw(packed.data(), packed_size);
-
-        server_prompt_cache_state state;
-        state.prompt.tokens = server_tokens::deserialize(packed, entry_has_mtmd != 0);
-        for (auto * data : { &state.data.main, &state.data.drft, &state.data.spec }) {
-            const uint64_t sz = read_u64();
-            if (sz > file_size - nread || sz > std::numeric_limits<size_t>::max()) {
-                throw std::runtime_error("Invalid prompt-cache state payload size");
+    states.clear();
+    try {
+        for (uint64_t i = 0; i < count; ++i) {
+            uint8_t entry_has_mtmd = 0;
+            read_raw(&entry_has_mtmd, sizeof(entry_has_mtmd));
+            if (entry_has_mtmd && !has_mtmd_runtime) {
+                throw std::runtime_error("Prompt-cache file contains media state but no mmproj is loaded");
             }
-            data->resize((size_t) sz);
-            if (sz) read_raw(data->data(), (size_t) sz);
-        }
-        loaded.push_back(std::move(state));
-    }
-    if (nread != file_size) throw std::runtime_error("Trailing data in prompt-cache file");
 
-    states = std::move(loaded);
+            const uint64_t packed_size = read_u64();
+            if (packed_size > file_size - nread || packed_size % sizeof(llama_token) != 0 ||
+                    packed_size > std::numeric_limits<size_t>::max()) {
+                throw std::runtime_error("Invalid prompt-cache token payload size");
+            }
+            // A malformed or enormous token payload must not bypass admission.
+            // Token parsing can briefly hold more than one copy.
+            const size_t scratch = 512 * 1024;
+            if (limit_size && (packed_size > limit_size / 4 || limit_size < scratch)) {
+                throw std::runtime_error("Prompt-cache token metadata exceeds RAM budget");
+            }
+            while (limit_size && !states.empty() &&
+                    size() > limit_size - std::min<uint64_t>(limit_size, packed_size * 3 + scratch)) {
+                states.pop_front();
+            }
+
+            server_prompt_cache_state state;
+            {
+                llama_tokens packed(packed_size / sizeof(llama_token));
+                if (packed_size) read_raw(packed.data(), packed_size);
+                state.prompt.tokens = server_tokens::deserialize(packed, entry_has_mtmd != 0);
+            }
+            state.metadata_bytes = sizeof(state) + 256 + cache_prompt_metadata(state.prompt);
+            states.push_back(std::move(state));
+            auto * pending = &states.back();
+            const auto admit = [&](size_t extra) {
+                if (!limit_size) { return true; }
+                if (scratch >= limit_size || extra > limit_size - scratch) { return false; }
+                while (size() > limit_size - scratch - extra) {
+                    if (states.size() <= 1) { return false; }
+                    states.pop_front();
+                }
+                return true;
+            };
+
+            bool keep = admit(0);
+            for (auto * data : { &pending->data.main, &pending->data.drft, &pending->data.spec }) {
+                const uint64_t sz = read_u64();
+                if (sz > file_size - nread || sz > std::numeric_limits<size_t>::max()) {
+                    throw std::runtime_error("Invalid prompt-cache state payload size");
+                }
+                const uint64_t end = nread + sz;
+                if (keep) {
+                    keep = data->capture_input((size_t) sz,
+                            [&](uint8_t * dst, size_t n) { read_raw(dst, n); }, pool, admit);
+                }
+                // Skip the unread remainder of an oversized entry. Do not
+                // allocate the complete serialized state to discard it later.
+                if (nread < end) {
+                    in.seekg((std::streamoff) (end - nread), std::ios::cur);
+                    if (!in) { throw std::runtime_error("Unable to skip prompt-cache payload"); }
+                    nread = end;
+                }
+            }
+            if (!keep || !admit(0)) {
+                states.pop_back();
+            }
+        }
+        if (nread != file_size) { throw std::runtime_error("Trailing data in prompt-cache file"); }
+    } catch (...) {
+        states.clear();
+        pool.trim_unused();
+        throw;
+    }
     update();
     return (size_t) nread;
 }
@@ -2117,6 +2129,10 @@ void server_prompt_cache::update() {
         }
     }
 
+    pool.trim_unused();
+    SRV_INF("prompt cache memory: %zu entries, %.3f MiB accounted, %.3f MiB logical, %.3f MiB unique payload, %zu blocks, %.3f MiB limit\n",
+            states.size(), size()/1048576.0, logical_size()/1048576.0, pool.payload_size()/1048576.0,
+            pool.blocks(), limit_size/1048576.0);
     SRV_TRC(" - cache state: %zu prompts, %.3f MiB (limits: %.3f MiB, %zu tokens, %zu est)\n",
             states.size(), size() / (1024.0 * 1024.0), limit_size / (1024.0 * 1024.0), limit_tokens, limit_tokens_cur);
 

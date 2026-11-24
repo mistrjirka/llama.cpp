@@ -305,32 +305,7 @@ struct server_slot {
             return false;
         }
 
-        const size_t cur_size_tgt =           llama_state_seq_get_size_ext(ctx_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        const size_t cur_size_dft = ctx_dft ? llama_state_seq_get_size_ext(ctx_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE) : 0;
-        std::vector<uint8_t> spec_state;
-        common_speculative_get_state(spec, id, spec_state);
-        const size_t cur_size_spec = spec_state.size();
-
-        const size_t cur_size = cur_size_tgt + cur_size_dft + cur_size_spec;
-
-        SRV_TRC(" - saving prompt with length %d, total state size = %.3f MiB (draft: %.3f MiB, spec: %.3f MiB)\n",
-                (int) prompt.tokens.size(), cur_size / (1024.0 * 1024.0), cur_size_dft / (1024.0 * 1024.0),
-                cur_size_spec / (1024.0 * 1024.0));
-
-        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft, cur_size_spec,
-                llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id), false, protect);
-        if (cur == nullptr) {
-            return false;
-        }
-
-        if (llama_state_seq_get_data_ext(ctx_tgt, cur->data.main.data(), cur_size_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE) != cur_size_tgt ||
-                (ctx_dft && llama_state_seq_get_data_ext(ctx_dft, cur->data.drft.data(), cur_size_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE) != cur_size_dft)) {
-            prompt_cache.states.pop_back();
-            return false;
-        }
-        cur->data.spec = std::move(spec_state);
-
-        return true;
+        return prompt_cache.save(prompt, ctx_tgt, ctx_dft, spec, id, false, protect) != nullptr;
     }
 
     bool prompt_load(
@@ -2449,10 +2424,22 @@ private:
 
     // Exact whole-sequence snapshots for the validated non-speculative text
     // path. Existing speculative and sliding-window policies remain intact.
+    bool prefix_cache_spec_supported() const {
+        if (!ctx_dft && !spec) { return true; }
+        const auto & types = params_base.speculative.types;
+        return ctx_dft && !params_base.speculative.has_dft() &&
+                !params_base.speculative.mtp_defer_prompt &&
+                (llama_model_is_hybrid(model_tgt) || llama_model_is_recurrent(model_tgt)) &&
+                std::find(types.begin(), types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != types.end() &&
+                std::all_of(types.begin(), types.end(), [](auto type) {
+                    return type == COMMON_SPECULATIVE_TYPE_NONE || type == COMMON_SPECULATIVE_TYPE_DRAFT_MTP;
+                });
+    }
+
     bool can_retain_system_prefix(const server_slot & slot, const server_task & task) const {
         return prompt_cache && params_base.cache_system_prefix &&
                 task.type == SERVER_TASK_TYPE_COMPLETION && task.params.cache_prompt &&
-                !full_request_prefill && !ctx_dft && !spec && n_swa == 0 &&
+                !full_request_prefill && prefix_cache_spec_supported() && n_swa == 0 &&
                 params_base.lora_adapters.empty() && task.params.lora.empty() && slot.lora.empty() &&
                 !task.tokens.has_media() && task.params.message_spans.first_user_message_pos() >= 1024;
     }
@@ -2473,15 +2460,8 @@ private:
                 return;
             }
         }
-        const size_t bytes = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        auto * saved = prompt_cache->alloc(prefix, bytes, 0, 0, pos_min, true);
-        if (!saved) {
-            return;
-        }
-        if (llama_state_seq_get_data_ext(ctx_tgt, saved->data.main.data(), bytes, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE) != bytes) {
-            prompt_cache->states.pop_back();
-            return;
-        }
+        auto * saved = prompt_cache->save(prefix, ctx_tgt, ctx_dft, spec.get(), slot.id, true);
+        if (!saved) { return; }
         SLT_INF(slot, "retained system prefix: %" PRId64 " tokens, %.3f MiB\n",
                 boundary, saved->size() / (1024.0 * 1024.0));
         prompt_cache->update();
@@ -2507,12 +2487,39 @@ private:
             }
         }
 
+        const auto host_bytes = [](const common_prompt_checkpoint & c) {
+            return c.data_tgt.capacity() + c.data_dft.capacity() + c.data_spec.capacity();
+        };
+        const auto used_bytes = [&]() {
+            size_t total = 0;
+            for (const auto & c : slot.prompt.checkpoints) { total += host_bytes(c); }
+            return total;
+        };
+        const bool bounded = params_base.ctx_checkpoint_ram_mib >= 0;
+        const size_t cap = bounded ? size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024 : 0;
+        size_t required = 0;
+        if (bounded) {
+            required = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
+            if (ctx_dft && ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
+                required += llama_state_seq_get_size_ext(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+            }
+            std::vector<uint8_t> spec_state;
+            common_speculative_get_state(spec.get(), slot.id, spec_state);
+            required += spec_state.capacity();
+            if (!cap || required > cap) { return; }
+        }
+
         // If this exact prefix is already represented, refresh it in place instead of
         // consuming another ~constant-size recurrent checkpoint slot. A checkpoint that
         // survived invalidation is guaranteed to lie inside the current common prefix.
-        for (auto & cur : slot.prompt.checkpoints) {
+        for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ++it) {
+            auto & cur = *it;
             if (cur.n_tokens != checkpoint_n_tokens) {
                 continue;
+            }
+            if (bounded && used_bytes() > cap - required) {
+                slot.prompt.checkpoints.erase(it);
+                break;
             }
 
             cur.id_task = id_task;
@@ -2551,7 +2558,9 @@ private:
             ++it;
         }
 
-        while (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints) {
+        while (!slot.prompt.checkpoints.empty() &&
+                (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints ||
+                 (bounded && used_bytes() > cap - required))) {
             // Constant-size recurrent checkpoints make compute-saved-per-byte close to
             // compute saved. Under a locally uniform overlap distribution, removing a
             // checkpoint c between neighbors p,n loses (c-p)*(n-c) token-replay area.
@@ -2661,7 +2670,7 @@ private:
     void complete_checkpoint(server_slot & slot, int64_t checkpoint_n_tokens) {
         auto it = std::find_if(slot.prompt.checkpoints.begin(), slot.prompt.checkpoints.end(),
                 [&](const common_prompt_checkpoint & cur) { return cur.n_tokens == checkpoint_n_tokens; });
-        GGML_ASSERT(it != slot.prompt.checkpoints.end());
+        if (it == slot.prompt.checkpoints.end()) { return; }
 
         if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
             it->update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);

@@ -974,6 +974,17 @@ extern "C" {
 
     typedef uint32_t llama_state_seq_flags;
 
+    // Stream full host sequence state in the existing serialization format.
+    typedef bool (*llama_state_stream_write_cb)(void * user_data, const uint8_t * data, size_t size, bool tensor_start);
+    typedef bool (*llama_state_stream_read_cb)(void * user_data, uint8_t * data, size_t size);
+    LLAMA_API size_t llama_state_seq_get_stream(
+            struct llama_context * ctx, llama_seq_id seq_id, llama_state_stream_write_cb callback, void * user_data);
+    LLAMA_API size_t llama_state_seq_set_stream(
+            struct llama_context * ctx, llama_seq_id seq_id, llama_state_stream_read_cb callback, void * user_data);
+    LLAMA_API size_t llama_state_seq_set_stream_prefix(
+            struct llama_context * ctx, llama_seq_id seq_id, llama_seq_id prefix_seq_id, llama_pos prefix_pos,
+            llama_state_stream_read_cb callback, void * user_data);
+
     LLAMA_API size_t llama_state_seq_get_size_ext(
             struct llama_context * ctx,
                     llama_seq_id   seq_id,

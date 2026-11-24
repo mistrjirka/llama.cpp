@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "llama.h"
+#include "server-cache-store.h"
 
 #include <string>
 #include <unordered_set>
@@ -607,13 +608,14 @@ struct server_prompt {
 };
 
 struct server_prompt_data {
-    std::vector<uint8_t> main;
-    std::vector<uint8_t> drft;
-    std::vector<uint8_t> spec;
+    server_cache_blob main;
+    server_cache_blob drft;
+    server_cache_blob spec;
 
     size_t size() const {
         return main.size() + drft.size() + spec.size();
     }
+    size_t overhead() const { return main.overhead() + drft.overhead() + spec.overhead(); }
 };
 
 struct server_prompt_cache_state {
@@ -624,6 +626,8 @@ struct server_prompt_cache_state {
     bool retained_prefix = false;
     // -1 means the position is unknown (e.g. an older persisted cache file).
     llama_pos pos_min = -1;
+    size_t metadata_bytes = 0;
+    size_t overhead() const { return metadata_bytes + data.overhead(); }
 
     size_t size() const {
         size_t res = data.size();
@@ -642,6 +646,8 @@ struct server_prompt_cache {
         this->limit_tokens = limit_tokens;
     }
 
+    // Pool must outlive all recipes.
+    server_cache_pool pool;
     std::list<server_prompt_cache_state> states;
 
     // in bytes, 0 = no limit
@@ -652,14 +658,15 @@ struct server_prompt_cache {
 
     size_t size() const;
 
+    size_t logical_size() const;
     size_t n_tokens() const;
 
     size_t retained_prefix_size() const;
     size_t retained_prefix_limit() const;
 
-    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft,
-            size_t state_size_spec, llama_pos pos_min, bool retained_prefix = false,
-            const server_prompt_cache_state * protect = nullptr);
+    server_prompt_cache_state * save(const server_prompt & prompt, llama_context * ctx_tgt,
+            llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
+            bool retained_prefix = false, const server_prompt_cache_state * protect = nullptr);
 
     std::list<server_prompt_cache_state>::iterator find_best(
             const server_prompt & prompt, const server_tokens & tokens_new,
