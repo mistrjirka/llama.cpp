@@ -11,6 +11,8 @@
 #include "server-common.h"
 
 #include <sstream>
+#include <cstdlib>
+#include <cstring>
 
 //
 // task_params
@@ -1741,10 +1743,7 @@ static size_t cache_prompt_metadata(const server_prompt & prompt) {
     for (size_t i = 0; i < prompt.tokens.size(); ++i) {
         if (prompt.tokens[i] == LLAMA_TOKEN_NULL) { bytes += 128; }
     }
-    for (const auto & ckpt : prompt.checkpoints) {
-        bytes += sizeof(common_prompt_checkpoint) + 128 +
-                ckpt.data_tgt.capacity() + ckpt.data_dft.capacity() + ckpt.data_spec.capacity();
-    }
+    bytes += prompt.checkpoints.size() * (sizeof(std::shared_ptr<const common_prompt_checkpoint>) + 128);
     return bytes;
 }
 
@@ -1752,11 +1751,29 @@ size_t server_prompt_cache_state::overhead() const {
     return metadata_bytes + data.overhead();
 }
 
-size_t server_prompt_cache::size() const {
+server_prompt_cache::server_prompt_cache(int32_t limit_size_mib, size_t limit_tokens)
+    : limit_size(1024ull * 1024ull * (limit_size_mib < 0 ? 0 : limit_size_mib)), limit_tokens(limit_tokens) {
+    const char * sharing = std::getenv("LLAMA_SERVER_CHECKPOINT_SHARING");
+    share_checkpoints = !sharing || std::strcmp(sharing, "0") != 0;
+}
+
+size_t server_prompt_cache::size(const server_prompt * incoming) const {
     size_t res = pool.size();
+    std::unordered_set<const common_prompt_checkpoint *> seen;
+    const auto count = [&](const server_prompt & prompt, bool unique) {
+        for (const auto & checkpoint : prompt.checkpoints) {
+            if (!unique || seen.insert(checkpoint.get()).second) {
+                res += sizeof(common_prompt_checkpoint) + 128 + checkpoint->data_tgt.capacity() +
+                    checkpoint->data_dft.capacity() + checkpoint->data_spec.capacity();
+            }
+        }
+    };
     for (const auto & state : states) {
         res += state.overhead();
+        count(state.prompt, true);
     }
+    // Include references about to enter the cache before evicting or allocating.
+    if (incoming) { count(*incoming, share_checkpoints); }
     return res;
 }
 
@@ -1836,7 +1853,7 @@ server_prompt_cache_state * server_prompt_cache::save(const server_prompt & prom
     const auto admit = [&](size_t extra) {
         if (!limit_size) { return true; }
         if (scratch >= limit_size || extra > limit_size - scratch) { return false; }
-        while (size() > limit_size - scratch - extra) {
+        while (size(pending ? nullptr : &prompt) > limit_size - scratch - extra) {
             auto it = std::find_if(states.begin(), states.end(), [&](const auto & s) {
                 return !s.retained_prefix && &s != protect && &s != pending;
             });
@@ -1849,7 +1866,7 @@ server_prompt_cache_state * server_prompt_cache::save(const server_prompt & prom
     try {
         if (!admit(metadata)) { return nullptr; }
         states.push_back({
-            prompt.clone(), {}, retained_prefix,
+            prompt.clone(share_checkpoints), {}, retained_prefix,
             llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id_slot),
             metadata,
         });
@@ -1888,10 +1905,10 @@ static size_t prompt_reusable_tokens(const server_prompt & prompt, const server_
     }
 
     for (auto it = prompt.checkpoints.rbegin(); it != prompt.checkpoints.rend(); ++it) {
-        if (it->n_tokens <= (int64_t) lcp && it->pos_max <= pos_next &&
-                (it->pos_min < threshold || it->pos_min == 0)) {
-            const llama_pos restore_pos = std::min(pos_next, std::max(it->pos_min + 1, it->pos_max));
-            return std::min(prompt.tokens.size_up_to_pos(restore_pos), (size_t) it->n_tokens);
+        if ((*it)->n_tokens <= (int64_t) lcp && (*it)->pos_max <= pos_next &&
+                ((*it)->pos_min < threshold || (*it)->pos_min == 0)) {
+            const llama_pos restore_pos = std::min(pos_next, std::max((*it)->pos_min + 1, (*it)->pos_max));
+            return std::min(prompt.tokens.size_up_to_pos(restore_pos), (size_t) (*it)->n_tokens);
         }
     }
     return 0;
@@ -1960,7 +1977,7 @@ bool server_prompt_cache::load(server_prompt & prompt, const server_tokens & tok
     }
 
     if (it_best->retained_prefix) {
-        prompt = it_best->prompt.clone();
+        prompt = it_best->prompt.clone(share_checkpoints);
         SRV_INF("restored retained system prefix: %d tokens, %.3f MiB\n",
                 prompt.n_tokens(), it_best->size() / (1024.0 * 1024.0));
         states.splice(states.end(), states, it_best);
