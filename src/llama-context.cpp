@@ -16,6 +16,7 @@
 
 #include <cinttypes>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -3474,21 +3475,55 @@ static constexpr uint32_t io_magic = 0xaf143cd8;
 // are explicit so storage backends can deduplicate matching rows across states.
 static constexpr size_t state_stream_buffer_size = 4 * 1024 * 1024;
 
+class llama_io_stream_buffer {
+public:
+    explicit llama_io_stream_buffer(ggml_backend_dev_t dev) : dev(dev) {}
+
+    uint8_t * data(size_t size) {
+        GGML_ASSERT(size <= state_stream_buffer_size);
+        if (!checked) {
+            checked = true;
+            const char * pinned = std::getenv("LLAMA_STATE_STREAM_PINNED");
+            auto * buft = dev && pinned && std::strcmp(pinned, "1") == 0 ? ggml_backend_dev_host_buffer_type(dev) : nullptr;
+            if (buft && ggml_backend_buft_is_host(buft)) {
+                // Keep one bounded buffer per stream. The backend can fall back to pageable memory.
+                buffer.reset(ggml_backend_buft_alloc_buffer(buft, state_stream_buffer_size));
+                if (buffer) {
+                    LLAMA_LOG_DEBUG("%s: state stream staging %s, %.2f MiB\n", __func__,
+                        ggml_backend_buft_name(ggml_backend_buffer_get_type(buffer.get())), state_stream_buffer_size / (1024.0 * 1024.0));
+                }
+            }
+        }
+        if (buffer) {
+            return static_cast<uint8_t *>(ggml_backend_buffer_get_base(buffer.get()));
+        }
+        fallback.resize(size);
+        return fallback.data();
+    }
+
+private:
+    ggml_backend_dev_t dev;
+    ggml_backend_buffer_ptr buffer;
+    std::vector<uint8_t> fallback;
+    bool checked = false;
+};
+
 class llama_io_write_stream final : public llama_io_write_i {
 public:
-    llama_io_write_stream(llama_state_stream_write_cb cb, void * user) : cb(cb), user(user) {}
+    llama_io_write_stream(llama_state_stream_write_cb cb, void * user, ggml_backend_dev_t dev) : cb(cb), user(user), scratch(dev) {}
 
     void write(const void * src, size_t size) override {
         emit(static_cast<const uint8_t *>(src), size, false);
     }
     void write_tensor(ggml_tensor * tensor, size_t offset, size_t size) override {
         if (!size) { return; }
-        scratch.resize(std::min(size, state_stream_buffer_size));
+        const size_t chunk_size = std::min(size, state_stream_buffer_size);
+        uint8_t * data = scratch.data(chunk_size);
         bool first = true;
         while (size) {
-            const size_t n = std::min(size, scratch.size());
-            ggml_backend_tensor_get(tensor, scratch.data(), offset, n);
-            emit(scratch.data(), n, first);
+            const size_t n = std::min(size, chunk_size);
+            ggml_backend_tensor_get(tensor, data, offset, n);
+            emit(data, n, first);
             first = false;
             offset += n;
             size -= n;
@@ -3505,13 +3540,13 @@ private:
     }
     llama_state_stream_write_cb cb;
     void * user;
-    std::vector<uint8_t> scratch;
+    llama_io_stream_buffer scratch;
     size_t written = 0;
 };
 
 class llama_io_read_stream final : public llama_io_read_i {
 public:
-    llama_io_read_stream(llama_state_stream_read_cb cb, void * user) : cb(cb), user(user) {}
+    llama_io_read_stream(llama_state_stream_read_cb cb, void * user, ggml_backend_dev_t dev) : cb(cb), user(user), scratch(dev) {}
 
     void read(void * dst, size_t size) override {
         if (size && !cb(user, static_cast<uint8_t *>(dst), size)) {
@@ -3521,11 +3556,12 @@ public:
     }
     void read_tensor(ggml_tensor * tensor, size_t offset, size_t size) override {
         if (!size) { return; }
-        scratch.resize(std::min(size, state_stream_buffer_size));
+        const size_t chunk_size = std::min(size, state_stream_buffer_size);
+        uint8_t * data = scratch.data(chunk_size);
         while (size) {
-            const size_t n = std::min(size, scratch.size());
-            read(scratch.data(), n);
-            ggml_backend_tensor_set(tensor, scratch.data(), offset, n);
+            const size_t n = std::min(size, chunk_size);
+            read(data, n);
+            ggml_backend_tensor_set(tensor, data, offset, n);
             offset += n;
             size -= n;
         }
@@ -3535,14 +3571,14 @@ public:
 private:
     llama_state_stream_read_cb cb;
     void * user;
-    std::vector<uint8_t> scratch;
+    llama_io_stream_buffer scratch;
     size_t consumed = 0;
 };
 
 size_t llama_context::state_seq_get_stream(llama_seq_id seq_id, llama_state_stream_write_cb callback, void * user_data) {
     if (!callback) { return 0; }
     try {
-        llama_io_write_stream io(callback, user_data);
+        llama_io_write_stream io(callback, user_data, model.dev_output());
         io.write(&io_magic, sizeof(io_magic));
         io.write(&seq_id, sizeof(seq_id));
         return state_seq_write_data(io, seq_id, LLAMA_STATE_SEQ_FLAGS_NONE);
@@ -3555,7 +3591,7 @@ size_t llama_context::state_seq_get_stream(llama_seq_id seq_id, llama_state_stre
 size_t llama_context::state_seq_set_stream(llama_seq_id seq_id, llama_state_stream_read_cb callback, void * user_data) {
     if (!callback) { return 0; }
     try {
-        llama_io_read_stream io(callback, user_data);
+        llama_io_read_stream io(callback, user_data, model.dev_output());
         uint32_t magic;
         llama_seq_id source_id;
         io.read(&magic, sizeof(magic));
