@@ -4,11 +4,13 @@
 
 ## Current decision
 
-Select native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 512, and microbatch 128. Keep the 110,000-token configured context, 4,096 MiB cache budget, three checkpoints with a 384 MiB checkpoint cap, CUDA graphs, lazy recurrent updates, immutable checkpoint sharing, and startup warmup. The clean release excludes the adaptive-MTP and pinned-staging runtime experiments. Runtime compression is not enabled.
+Select native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, and microbatch 128. Keep the 110,000-token configured context, 4,096 MiB cache budget, three checkpoints with a 384 MiB checkpoint cap, CUDA graphs, lazy recurrent updates, immutable checkpoint sharing, and startup warmup. The clean release excludes the adaptive-MTP and pinned-staging runtime experiments. Runtime compression is not enabled.
 
-Against the last control, the selected combination saves 170 MiB of GPU use and about 170 MiB of sampled peak PSS. Decode is 1.03% slower and total request time is 2.23% longer on the short suite. This is the selected memory tradeoff, with final long-context and sustained-load checks still pending.
+Against its matched followup control, the selected combination saves **170 MiB of GPU use and 56.09 MiB of sampled peak PSS**. Decode is 0.92% slower and total request time is 2.11% longer on the short suite. The separate branching workload saves 446.70 MiB of peak RSS from checkpoint sharing. These are different workloads and must not be added as one guaranteed saving. Final long-context and sustained-load checks for the selected settings remain pending.
 
-The original setup already used MTP2. New measured savings come from checkpoint sharing, draft Q4, and batch settings. The MTP-versus-disabled comparison is not a new speed improvement.
+Reject logical batch 512 despite its favorable short test. It creates more retained recurrent checkpoints in the matched cache-pressure trace, consuming 340.75 MiB more accounted cache for the same seven entries.
+
+The original setup already used MTP2. New measured savings come from checkpoint sharing, draft Q4, and the smaller microbatch. The MTP-versus-disabled comparison is not a new speed improvement.
 
 ## Test conditions and evidence
 
@@ -36,13 +38,13 @@ The repeated MTP2 controls measured 40.60-40.75 generation tokens/s and 11,255 M
 | Microbatch 128 | 40.74 tok/s. Saves 62 MiB GPU and about 57 MiB sampled PSS. Prompt time rises 19.19 -> 20.01 s. | Keep 128 in the selected combination for the memory goal. |
 | Microbatch 512 | 40.09 tok/s, costs 184 MiB GPU. Prompt time falls to 18.63 s. | Reject for the memory goal. |
 | Microbatch 64 | 40.16 tok/s. Saves 106 MiB GPU, but total time rises 56.84 -> 61.26 s. | Reject. |
-| Draft Q4 plus microbatch 128 | 40.28 tok/s, 11,085 MiB GPU. Total time 58.04 s versus 56.84 s control. | An intermediate result. The selected combination also uses logical batch 512. |
+| Draft Q4 plus microbatch 128, logical batch 2048 | 40.28 tok/s, 11,085 MiB GPU, 2,737.10 MiB peak PSS. Control: 40.65 tok/s, 11,255 MiB GPU, 2,793.19 MiB PSS. Total time 58.04 versus 56.84 s. | Keep as the final candidate. |
 | Disable lazy recurrent updates | 40.14 tok/s, costs 158 MiB GPU. Prompt processing is about 1.3 s faster on this suite. | Keep lazy updates for the memory goal. |
-| Logical batch 512 / no warmup | Completed below | Keep batch 512 and normal warmup. |
+| Logical batch 512 / no warmup | Completed below | Reject both. Keep batch 2048 and normal warmup. |
 
 Some changes produce different greedy output text even though repeated runs are stable. Microbatch changes differ from the MTP2 reference on the catalog prompt. Disabling lazy updates differs on explanation and catalog prompts. MTP depths 0, 1, and 4 also differ on some prompts. Draft Q4, adaptive MTP, graph changes, and two CPU threads match the reference hashes on the recorded cases. These checks are not a broad quality evaluation or proof of universal output identity.
 
-### Last settings comparison
+### Short test that initially favored batch 512
 
 All four runs contain the same eight short-suite requests. Source: `last-settings-summary.json` and `last-settings/*/{config,results}.json`.
 
@@ -51,11 +53,26 @@ All four runs contain the same eight short-suite requests. Source: `last-setting
 | Control: draft Q8, microbatch 256, logical batch 2048 | 40.79 | 56.40 | 11,255 | 2,786.66 | 8/8 |
 | Logical batch 512 only | 40.75 | 56.38 | 11,255 | 2,674.00 | 8/8 |
 | Disable startup warmup | 40.73 | 56.47 | 11,255 | 2,766.04 | 8/8 |
-| Selected: draft Q4, microbatch 128, logical batch 512 | 40.37 | 57.66 | 11,085 | 2,616.62 | 6/8 |
+| Rejected after pressure test: draft Q4, microbatch 128, logical batch 512 | 40.37 | 57.66 | 11,085 | 2,616.62 | 6/8 |
 
-The selected combination's two differing outputs are the repeated catalog prompt, matching the earlier microbatch-128 difference. Each variant remains repeatable. This is not a claim that changing the microbatch preserves every output.
+The Q4/microbatch-128 combinations with either logical batch size differ on the two repeated catalog outputs. Both match the control on the other six responses and remain repeatable. This is not a claim that changing the microbatch preserves every output.
 
 Logical batch 512 saves 112.66 MiB of sampled peak PSS and 112.64 MiB of kernel peak RSS on this suite. Only 24 MiB is the smaller fixed hidden-output reservation. The approximately 6K-token prompt also retains two checkpoints instead of three. Do not promise a fixed 112 MiB saving for every prompt length. Disabling warmup saves only about 20.6 MiB here by deferring allocations, so normal warmup remains enabled.
+
+### Why cache pressure reverses the batch-512 decision
+
+The matched comparison after branch 4 contains seven parked entries in both runs:
+
+| Configuration | Accounted cache MiB | Parked checkpoint references |
+| --- | ---: | ---: |
+| Original: batch 2048, microbatch 256, draft Q8 | 1,800.00 | 8 |
+| Rejected candidate: batch 512, microbatch 128, draft Q4 | 2,140.75 | 12 |
+
+The four additional checkpoints cost about 351.82 MiB, partly offset by about 11.04 MiB less other state payload. Source inspection and logs identify the logical batch size as the cause. A 1,480-token suffix starts at position 6679. Batch 512 processes outer batches starting at 6679, 7191, and 7703, retaining an extra checkpoint at 7703. Batch 2048 handles that suffix in one outer batch. The microbatch reduction does not cause this count increase.
+
+This is a checkpoint-placement tradeoff, not growing unbounded memory. The rejected candidate completed three rounds of 20 branches, each interleaved with 20 auxiliary requests. Maximum recorded per-request PSS was 6,763.28 / 6,763.73 / 6,763.96 MiB, a 0.68 MiB spread, with zero process swap. That validates a plateau for this trace but does not restore the lost cache capacity or validate the final configuration.
+
+The earlier candidate is stored under `final-soak/selected`; its configuration explicitly has `-b 512`. Do not infer final selection from that directory name. The final `-b 2048 -ub 128` candidate is being validated separately. Its short-suite figures come from `followup/{control,q4_ub128}/results.json` and `followup-summary.json`.
 
 ## Checkpoint sharing: measured RAM saving
 
@@ -110,7 +127,7 @@ A standalone copy benchmark restored every byte exactly. Median bandwidth:
 | 64 MiB CPU -> GPU | 0.786 GB/s | 0.788 GB/s |
 | 64 MiB GPU -> CPU | 0.821 GB/s | 0.823 GB/s |
 
-Pinned 4 MiB staging has a small copy-level benefit. It did not show a clear end-to-end cache benefit: sharing-off took 77.29 s and pinned-only 77.26 s. Sharing-on took 76.75 s and sharing-plus-pinned 76.67 s. Leave `LLAMA_STATE_STREAM_PINNED` off for deployment.
+Pinned 4 MiB staging has a small copy-level benefit. It did not show a clear end-to-end cache benefit: sharing-off took 77.29 s and pinned-only 77.26 s. Sharing-on took 76.75 s and sharing-plus-pinned 76.67 s. Keep this experimental staging out of the release.
 
 At 0.787 GB/s, a full 3.123 GiB target KV upload takes at least 4.26 s. This is a calculated transfer lower bound, not a measured whole-cache restoration time. It makes frequent full CPU-cache reloads expensive on this hub. Pinned memory cannot remove the PCIe x1 limit.
 
@@ -155,10 +172,10 @@ See [COMPRESSION_RESEARCH.md](COMPRESSION_RESEARCH.md) and [rtx3060-paper-review
 
 | Item | Status to fill before final report |
 | --- | --- |
-| Final no-warmup / logical-batch comparison | Complete. Keep batch 512 and normal warmup. |
-| Approximately 100K-token request | Pending: tokens, answer check, peak RAM/VRAM, latency |
-| Repeated-cache soak | Pending: requests, retained entries, memory plateau, swap-write delta |
+| Final no-warmup / logical-batch comparison | Complete. Reject batch 512 after cache-pressure analysis. Keep batch 2048 and normal warmup. |
+| 8K / 32K / approximately 100K validation | Pending for final settings: cold, repeated and followup requests, answer checks, peak RAM/VRAM, latency |
+| Repeated-cache soak | Earlier batch-512 candidate completed three rounds with stable recorded RAM and zero process swap. Two full-pressure rounds for the selected batch-2048 configuration remain pending. |
 | Vision regression | Pending if included in final gate |
-| Selected settings and release | MTP2, draft Q4, target Q8, `-b 512 -ub 128`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
+| Selected settings and release | MTP2, draft Q4, target Q8, `-b 2048 -ub 128`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
 | Source push | Root reports commit `3f8ed81` pushed and verified. Later changes may supersede it. |
 | Running hub deployment | Pending: service, binary/commit, MTP depth, draft/target types |
