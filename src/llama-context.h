@@ -161,6 +161,9 @@ struct llama_context {
     size_t state_set_data(const uint8_t * src, size_t size);
 
     size_t state_seq_get_size(llama_seq_id seq_id, llama_state_seq_flags flags);
+    size_t state_seq_get_stream(llama_seq_id seq_id, llama_state_stream_write_cb callback, void * user_data);
+    size_t state_seq_set_stream(llama_seq_id seq_id, llama_state_stream_read_cb callback, void * user_data);
+
 
     size_t state_seq_get_data(llama_seq_id seq_id,       uint8_t * dst, size_t size, llama_state_seq_flags flags);
     size_t state_seq_set_data(llama_seq_id seq_id, const uint8_t * src, size_t size, llama_state_seq_flags flags);

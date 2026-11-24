@@ -353,31 +353,12 @@ struct server_slot {
             return false;
         }
 
-        const size_t cur_size_tgt =           llama_state_seq_get_size_ext(ctx_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        const size_t cur_size_dft = ctx_dft ? llama_state_seq_get_size_ext(ctx_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE) : 0;
-
-        const size_t cur_size = cur_size_tgt + cur_size_dft;
-
-        SRV_TRC(" - saving prompt with length %d, total state size = %.3f MiB (draft: %.3f MiB)\n",
-                (int) prompt.tokens.size(), cur_size / (1024.0 * 1024.0), cur_size_dft / (1024.0 * 1024.0));
-
-        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft,
-                llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id), false, protect);
-        if (cur == nullptr) {
-            return false;
-        }
-
-        llama_state_seq_get_data_ext(ctx_tgt, cur->data.main.data(), cur_size_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        if (ctx_dft) {
-            llama_state_seq_get_data_ext(ctx_dft, cur->data.drft.data(), cur_size_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        }
-
-        return true;
+        return prompt_cache.save(prompt, ctx_tgt, ctx_dft, spec, id, false, protect) != nullptr;
     }
 
     bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens,
             int32_t n_swa, bool allow_retained_prefix) {
-        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id, n_swa, allow_retained_prefix);
+        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, spec, id, n_swa, allow_retained_prefix);
         if (!res) {
             SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
         }
@@ -1889,7 +1870,7 @@ private:
 
         if (ret && prompt_cache && !task.is_stateless() && task.params.cache_prompt) {
             // The retained prefix is only produced for the unadapted model.
-            const bool allow_retained_prefix = !ctx_dft && params_base.lora_adapters.empty() &&
+            const bool allow_retained_prefix = prefix_cache_spec_supported() && params_base.lora_adapters.empty() &&
                     task.params.lora.empty() && ret->lora.empty();
             auto best = prompt_cache->find_best(ret->prompt, task.tokens, ctx_tgt, ret->id, n_swa, allow_retained_prefix);
 
@@ -2732,12 +2713,21 @@ private:
         return true;
     }
 
+    bool prefix_cache_spec_supported() const {
+        const auto & types = params_base.speculative.types;
+        return !ctx_dft || (!params_base.speculative.has_dft() &&
+                std::find(types.begin(), types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != types.end() &&
+                std::all_of(types.begin(), types.end(), [](auto type) {
+                    return type == COMMON_SPECULATIVE_TYPE_NONE || type == COMMON_SPECULATIVE_TYPE_DRAFT_MTP;
+                }));
+    }
+
     bool can_retain_system_prefix(const server_slot & slot) const {
         // A full text prefix snapshot is useful for recurrent models; ordinary
         // attention-only models can already rewind their existing KV cache.
         // Do not share adapter, draft, sliding-window, or stateless state.
         return prompt_cache && slot.task->type == SERVER_TASK_TYPE_COMPLETION &&
-                slot.task->params.cache_prompt && !ctx_dft && n_swa == 0 &&
+                slot.task->params.cache_prompt && prefix_cache_spec_supported() && n_swa == 0 &&
                 params_base.lora_adapters.empty() && slot.lora.empty() &&
                 (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
                  ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS) &&
@@ -2757,19 +2747,8 @@ private:
         }
         server_prompt prefix { slot.prompt.tokens.clone(), {} };
         prefix.tokens.keep_first(n_base);
-        const size_t size = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        if (size == 0) {
-            return;
-        }
-        auto * state = prompt_cache->alloc(prefix, size, 0, pos_min, true);
-        if (!state) {
-            return;
-        }
-        if (llama_state_seq_get_data_ext(ctx_tgt, state->data.main.data(), size, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE) != size) {
-            prompt_cache->states.pop_back();
-            SLT_WRN(slot, "%s", "failed to retain system prefix\n");
-            return;
-        }
+        auto * state = prompt_cache->save(prefix, ctx_tgt, ctx_dft, spec.get(), slot.id, true);
+        if (!state) { return; }
         SLT_INF(slot, "retained system prefix: %d tokens, %.3f MiB (retained total %.3f MiB)\n",
                 n_base, state->size() / (1024.0 * 1024.0), prompt_cache->retained_prefix_size() / (1024.0 * 1024.0));
         prompt_cache->update();
@@ -2826,6 +2805,30 @@ private:
                 } else {
                     ++it;
                 }
+            }
+        }
+
+        // Check the byte budget before allocating. Count capacity, not just
+        // size, so allocator-retained checkpoint vectors cannot hide bytes.
+        if (params_base.ctx_checkpoint_ram_mib >= 0) {
+            const size_t cap = size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024;
+            const size_t next_bytes = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) +
+                (ctx_dft ? llama_state_seq_get_size_ext(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) : 0);
+            std::vector<uint8_t> draft_state;
+            common_speculative_get_state(spec.get(), slot.id, draft_state);
+            const size_t needed = next_bytes + draft_state.capacity();
+            if (needed > cap || cap == 0) { return; }
+            const auto used = [&]() {
+                size_t bytes = 0;
+                for (const auto & c : slot.prompt.checkpoints) {
+                    bytes += c.data_tgt.capacity() + c.data_dft.capacity() + c.data_spec.capacity();
+                }
+                return bytes;
+            };
+            while (used() > cap - needed && !slot.prompt.checkpoints.empty()) {
+                auto victim = slot.prompt.checkpoints.begin();
+                if (victim->n_tokens == n_tokens_base && std::next(victim) != slot.prompt.checkpoints.end()) { ++victim; }
+                slot.prompt.checkpoints.erase(victim);
             }
         }
 

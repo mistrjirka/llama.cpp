@@ -2,6 +2,8 @@
 
 #include "common.h"
 #include "llama.h"
+#include "server-cache-store.h"
+#include "speculative.h"
 
 #include <string>
 #include <unordered_set>
@@ -706,62 +708,64 @@ struct server_prompt {
 };
 
 struct server_prompt_data {
-    std::vector<uint8_t> main;
-    std::vector<uint8_t> drft;
+    server_cache_blob main;
+    server_cache_blob drft;
+    server_cache_blob spec;
 
     size_t size() const {
-        return main.size() + drft.size();
+        return main.size() + drft.size() + spec.size();
+    }
+
+    size_t overhead() const {
+        return main.overhead() + drft.overhead() + spec.overhead();
     }
 };
 
 struct server_prompt_cache_state {
     server_prompt prompt;
     server_prompt_data data;
-    // Full snapshots at the first user-message boundary can be shared by
-    // different conversations. They are retained on load, within the RAM budget.
     bool retained_prefix = false;
     llama_pos pos_min = -1;
+    size_t metadata_bytes = 0;
 
     size_t size() const {
         size_t res = data.size();
-
         for (const auto & ckpt : prompt.checkpoints) {
             res += ckpt.size();
         }
-
         return res;
     }
+
+    size_t overhead() const;
 };
 
 struct server_prompt_cache {
     server_prompt_cache(int32_t limit_size_mib, size_t limit_tokens) {
-        this->limit_size   = 1024ull*1024ull*(limit_size_mib < 0 ? 0 : limit_size_mib);
+        this->limit_size = 1024ull*1024ull*(limit_size_mib < 0 ? 0 : limit_size_mib);
         this->limit_tokens = limit_tokens;
     }
 
+    // Must outlive all recipes.
+    server_cache_pool pool;
     std::list<server_prompt_cache_state> states;
-
-    // in bytes, 0 = no limit
     size_t limit_size = 0;
-
-    // in tokens, 0 = no limit
     size_t limit_tokens = 0;
 
     size_t size() const;
-
+    size_t logical_size() const;
     size_t n_tokens() const;
-
     size_t retained_prefix_size() const;
     size_t retained_prefix_limit() const;
 
-    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft,
-            llama_pos pos_min, bool retained_prefix = false, const server_prompt_cache_state * protect = nullptr);
+    server_prompt_cache_state * save(const server_prompt & prompt, llama_context * ctx_tgt,
+            llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
+            bool retained_prefix = false, const server_prompt_cache_state * protect = nullptr);
 
     std::list<server_prompt_cache_state>::iterator find_best(const server_prompt & prompt, const server_tokens & tokens_new,
             llama_context * ctx_tgt, int32_t id_slot, int32_t n_swa, bool allow_retained_prefix);
 
     bool load(server_prompt & prompt, const server_tokens & tokens_new, llama_context * ctx_tgt, llama_context * ctx_dft,
-            int32_t id_slot, int32_t n_swa, bool allow_retained_prefix);
+            common_speculative * spec, int32_t id_slot, int32_t n_swa, bool allow_retained_prefix);
 
     void update();
 };

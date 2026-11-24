@@ -1684,6 +1684,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_PROMPT_TILE").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--ctx-checkpoint-ram"}, "N",
+        string_format("host context checkpoint memory limit per slot in MiB (default: %d, -1 = unlimited, 0 = disabled)", params.ctx_checkpoint_ram_mib),
+        [](common_params & params, int value) {
+            if (value < -1) { throw std::invalid_argument("invalid checkpoint memory limit"); }
+            params.ctx_checkpoint_ram_mib = value;
+        }
+    ).set_env("LLAMA_ARG_CTX_CHECKPOINT_RAM").set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"-cram", "--cache-ram"}, "N",
         string_format("set the maximum cache size in MiB (default: %d, 0 for decision models, -1 - no limit, 0 - disable)"
             "[(more info)](https://github.com/ggml-org/llama.cpp/pull/16391)", params.cache_ram_mib),

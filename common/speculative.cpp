@@ -1664,6 +1664,14 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
         }
 
+        // A new sequence must not inherit the hidden carry from a displaced
+        // conversation. Restored prefixes never start at position zero.
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            if (i_batch_beg[seq_id] >= 0 && batch_in.tokens[i_batch_beg[seq_id]].pos[0] == 0) {
+                std::fill(pending_h[seq_id].begin(), pending_h[seq_id].end(), 0.0f);
+            }
+        }
+
         auto * ctx_tgt = this->params.ctx_tgt;
         auto * ctx_dft = this->params.ctx_dft;
 
@@ -1915,6 +1923,22 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 dp.result->clear();
             }
         }
+    }
+
+    bool get_state(llama_seq_id seq_id, std::vector<uint8_t> & data) const override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) { return false; }
+        const auto & row = pending_h[seq_id];
+        data.resize(row.size() * sizeof(float));
+        std::memcpy(data.data(), row.data(), data.size());
+        return true;
+    }
+
+    void set_state(llama_seq_id seq_id, const std::vector<uint8_t> & data) override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) { return; }
+        auto & row = pending_h[seq_id];
+        if (data.size() != row.size() * sizeof(float)) { return; }
+        std::memcpy(row.data(), data.data(), data.size());
+        verify_h_rows[seq_id] = 0;
     }
 
     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
