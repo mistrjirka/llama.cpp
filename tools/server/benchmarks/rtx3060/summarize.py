@@ -25,11 +25,12 @@ def summarize(path):
         'start_PSS_MiB': result.get('start_MiB', {}).get('Pss'),
         'peak_anon_MiB': result['peak_MiB']['Pss_Anon'],
         'peak_swap_MiB': result['peak_MiB']['Swap'],
+        'host_min_available_MiB': result.get('host_min_available_MiB'),
         'idle_PSS_MiB': result['idle_MiB']['Pss'],
         'cached_tokens': sum(r['timings'].get('cache_n', 0) for r in records),
         'drafted': sum(r['timings'].get('draft_n', 0) for r in records),
         'accepted': sum(r['timings'].get('draft_n_accepted', 0) for r in records),
-        'output_mismatches': [r['case'] for r in records if r.get('same_as_first') is False],
+        'output_mismatches': [r['case'] for r in records if r.get('same_as_first') is False and not r['case'].endswith('_followup')],
         'answer_errors': [r['case'] for r in records if r.get('expected_match') is False],
         'by_case': {},
     }
@@ -39,6 +40,10 @@ def summarize(path):
             'median_generation_tok_s': statistics.median(r['timings'].get('predicted_per_second', 0) for r in subset),
             'median_wall_s': statistics.median(r['wall_s'] for r in subset),
             'hashes': [r['content_sha256'] for r in subset],
+            'first_content_s': [r.get('first_content_s') for r in subset],
+            'prompt_tokens': [r['usage'].get('prompt_tokens') for r in subset],
+            'cached_tokens': [r['timings'].get('cache_n', 0) for r in subset],
+            'prompt_tok_s': [r['timings'].get('prompt_per_second') for r in subset],
         }
     text = (path / 'server.log').read_text(errors='replace')
     cache = [tuple(map(float, m)) for m in re.findall(r'prompt cache memory: (\d+) entries, ([\d.]+) MiB accounted, ([\d.]+) MiB logical, ([\d.]+) MiB unique payload, (\d+) blocks, ([\d.]+) MiB limit', text)]
@@ -60,6 +65,26 @@ def summarize(path):
             'peak_unique_MiB': max(c[3] for c in checkpoints),
             'max_sharing_saving_MiB': max(c[2]-c[3] for c in checkpoints),
         }
+    snapshots = []
+    current = None
+    for line in text.splitlines():
+        match = re.search(r'prompt cache memory: (\d+) entries, ([\d.]+) MiB accounted, ([\d.]+) MiB logical', line)
+        if match:
+            current = {'entries':int(match[1]), 'accounted_MiB':float(match[2]), 'logical_MiB':float(match[3]), 'saved_token_references':0, 'checkpoint_references':0, 'entry_tokens':[]}
+        match = re.search(r'prompt 0x[0-9a-f]+:\s+(\d+) tokens, checkpoints:\s+(\d+),', line)
+        if match and current is not None:
+            current['saved_token_references'] += int(match[1])
+            current['checkpoint_references'] += int(match[2])
+            current['entry_tokens'].append(int(match[1]))
+            if len(current['entry_tokens']) == current['entries']:
+                snapshots.append(current)
+                current = None
+    if snapshots:
+        out['cache_capacity'] = {
+            'max_saved_token_references':max(x['saved_token_references'] for x in snapshots),
+            'at_peak_accounted':max(snapshots,key=lambda x:x['accounted_MiB']),
+            'at_peak_saved_tokens':max(snapshots,key=lambda x:x['saved_token_references']),
+            'note':'Token references include shared prefixes more than once. Entries include retained prefixes and auxiliary prompts.'}
     return out
 
 

@@ -1,0 +1,22 @@
+{
+  "captured_utc": "2026-11-24T21:46:53.725383+00:00",
+  "gpu": "NVIDIA GeForce RTX 3060, 12288 MiB, 615.71.09",
+  "cpu": "Intel(R) N95",
+  "CUDA_architecture": 86,
+  "build_type": "Release",
+  "model": "SenseNova-Loop-9B-native-Q6_K.gguf",
+  "projector": "mmproj-SenseNova-Loop-9B-F16.gguf",
+  "runtime_test_commit": "1af6247cab8e4f079422431332bf0b81a5362399",
+  "gpu_PCIe": {
+    "current_link_speed": "2.5 GT/s PCIe",
+    "current_link_width": "1",
+    "max_link_speed": "16.0 GT/s PCIe",
+    "max_link_width": "16"
+  },
+  "root_port_PCIe": {
+    "current_link_speed": "2.5 GT/s PCIe",
+    "current_link_width": "1",
+    "max_link_speed": "8.0 GT/s PCIe",
+    "max_link_width": "1"
+  }
+}

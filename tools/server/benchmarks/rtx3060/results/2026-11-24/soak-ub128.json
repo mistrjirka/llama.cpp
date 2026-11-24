@@ -1,0 +1,852 @@
+[
+  {
+    "variant": "selected",
+    "requests": 83,
+    "generation_tok_s": 38.45462660878992,
+    "wall_s": 318.80080546811223,
+    "prompt_s": 231.31197300000002,
+    "peak_VRAM_MiB": 11089.0,
+    "peak_PSS_MiB": 6783.139,
+    "peak_RSS_MiB": 6869.40625,
+    "RSS_peak_reset": true,
+    "start_PSS_MiB": 2491.937,
+    "peak_anon_MiB": 5684.906,
+    "peak_swap_MiB": 0.0,
+    "host_min_available_MiB": 5472.375,
+    "idle_PSS_MiB": 6784.651,
+    "cached_tokens": 261027,
+    "drafted": 1114,
+    "accepted": 769,
+    "output_mismatches": [],
+    "answer_errors": [
+      "branch4",
+      "branch13",
+      "branch4",
+      "branch13"
+    ],
+    "by_case": {
+      "aux": {
+        "median_generation_tok_s": 16.076524431006924,
+        "median_wall_s": 1.097613800317049,
+        "hashes": [
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+          "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526"
+        ],
+        "first_content_s": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "cached_tokens": [
+          0,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14,
+          14
+        ],
+        "prompt_tok_s": [
+          67.2173510388815,
+          12.196646532036016,
+          12.201818070892564,
+          12.16130758379141,
+          12.147642446292236,
+          12.191442217135682,
+          12.185277138896929,
+          12.199064331765753,
+          12.1751887915212,
+          11.87070428888546,
+          11.454950543251028,
+          12.170150879445528,
+          12.167559461342142,
+          12.068695012008352,
+          12.204945443893866,
+          12.2172844031093,
+          12.434949669541213,
+          12.444079418114846,
+          10.901974892751822,
+          12.487005709683359,
+          12.425949109525423,
+          11.621859555638201,
+          12.438042998314645,
+          12.451865756435279,
+          12.409372799275292,
+          12.39552893271397,
+          12.40079365079365,
+          12.387582687114437,
+          12.414919008172122,
+          12.35574665777053,
+          11.159250879488459,
+          12.650421417163459,
+          12.60720060262419,
+          12.652662278301634,
+          12.63771156319014,
+          11.760071030829026,
+          12.669253305883284,
+          12.601401905962037,
+          12.687899867094249,
+          12.64474279012572
+        ]
+      },
+      "branch0": {
+        "median_generation_tok_s": 38.9770334846888,
+        "median_wall_s": 8.327419620938599,
+        "hashes": [
+          "6736d9d8cc20ed553c263926ce484549f0ebc7748ffb4afb562deff1e2101a2c",
+          "6736d9d8cc20ed553c263926ce484549f0ebc7748ffb4afb562deff1e2101a2c"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          7967,
+          7967
+        ],
+        "cached_tokens": [
+          0,
+          6679
+        ],
+        "prompt_tok_s": [
+          636.9396707724638,
+          609.0105186708062
+        ]
+      },
+      "branch1": {
+        "median_generation_tok_s": 43.0103359190681,
+        "median_wall_s": 3.7209988615941256,
+        "hashes": [
+          "160e84e84cac0617f405414d65f6d5f9a9f023607ad770484d58f215ce037848",
+          "160e84e84cac0617f405414d65f6d5f9a9f023607ad770484d58f215ce037848"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          597.7209063387494,
+          612.7709751918843
+        ]
+      },
+      "branch2": {
+        "median_generation_tok_s": 42.9012072548014,
+        "median_wall_s": 3.722547173500061,
+        "hashes": [
+          "d3190b506a56f6acc32708f83fb4c4265ab29881e8af6b810aad70e1e3a98382",
+          "d3190b506a56f6acc32708f83fb4c4265ab29881e8af6b810aad70e1e3a98382"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          611.7788088914608,
+          612.8201985537444
+        ]
+      },
+      "branch3": {
+        "median_generation_tok_s": 36.52901727860881,
+        "median_wall_s": 3.8134448083583266,
+        "hashes": [
+          "247be196a0cfa0be2bc36f5faf9770961381e4d16bc6841074b5374fa750a5c9",
+          "247be196a0cfa0be2bc36f5faf9770961381e4d16bc6841074b5374fa750a5c9"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          612.143943166571,
+          612.9242533298767
+        ]
+      },
+      "branch4": {
+        "median_generation_tok_s": 39.45199814388354,
+        "median_wall_s": 3.7766687760595232,
+        "hashes": [
+          "80c3f4386d04d9daf36b9eb9d4344b901983eeced129f3109abf4d73e8d4f186",
+          "80c3f4386d04d9daf36b9eb9d4344b901983eeced129f3109abf4d73e8d4f186"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          612.2338385779298,
+          611.6640195666361
+        ]
+      },
+      "branch5": {
+        "median_generation_tok_s": 39.500440025791214,
+        "median_wall_s": 3.7633379283361137,
+        "hashes": [
+          "010793fba27e43dc7c7d83f9e52231a527f1c4426d63cc75540eb72b94217ae8",
+          "010793fba27e43dc7c7d83f9e52231a527f1c4426d63cc75540eb72b94217ae8"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          608.2295096519448,
+          611.2249815909773
+        ]
+      },
+      "branch6": {
+        "median_generation_tok_s": 42.946165507793,
+        "median_wall_s": 3.711853211047128,
+        "hashes": [
+          "1a95e3afa5d6ebbbcc5a1c59a25d49f7d6a0a1019e0ebafc8fda7b7ad554aa27",
+          "1a95e3afa5d6ebbbcc5a1c59a25d49f7d6a0a1019e0ebafc8fda7b7ad554aa27"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          613.1220547874269,
+          610.6522508724488
+        ]
+      },
+      "branch7": {
+        "median_generation_tok_s": 39.44390232278664,
+        "median_wall_s": 3.756293470505625,
+        "hashes": [
+          "1a38746ae7db0293eb0d638061c7f71c9aa590e2dfcc16af63f76864e82c6f57",
+          "1a38746ae7db0293eb0d638061c7f71c9aa590e2dfcc16af63f76864e82c6f57"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          613.170572452732,
+          610.727091234787
+        ]
+      },
+      "branch8": {
+        "median_generation_tok_s": 39.45429266303093,
+        "median_wall_s": 3.770071672042832,
+        "hashes": [
+          "37a95ad108018716bbc6949431c09282ec074465e7225a88b7e456627214b9fa",
+          "37a95ad108018716bbc6949431c09282ec074465e7225a88b7e456627214b9fa"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          612.4033188949595,
+          611.3471819992953
+        ]
+      },
+      "branch9": {
+        "median_generation_tok_s": 42.96808872074107,
+        "median_wall_s": 3.6961044799536467,
+        "hashes": [
+          "3c8f469323296aa867b17d513c09193a470cafea69e6bcf4f547caf673ad5408",
+          "3c8f469323296aa867b17d513c09193a470cafea69e6bcf4f547caf673ad5408"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8159,
+          8159
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          610.695086545397,
+          612.4033188949595
+        ]
+      },
+      "branch10": {
+        "median_generation_tok_s": 43.39345916528048,
+        "median_wall_s": 4.014659609179944,
+        "hashes": [
+          "2973b88c583fc8dc2c5f02ba611e794fa927b31f7fcb6698133a40861cd77650",
+          "2973b88c583fc8dc2c5f02ba611e794fa927b31f7fcb6698133a40861cd77650"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          617.4228371952673,
+          622.0973057234847
+        ]
+      },
+      "branch11": {
+        "median_generation_tok_s": 40.12811020802735,
+        "median_wall_s": 4.05341226211749,
+        "hashes": [
+          "440947f28367858d34d4033d6789992a2e223e02e775d5d3a430e6950e0eef5b",
+          "440947f28367858d34d4033d6789992a2e223e02e775d5d3a430e6950e0eef5b"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          620.2475093717471,
+          617.7028905559213
+        ]
+      },
+      "branch12": {
+        "median_generation_tok_s": 40.05855724463653,
+        "median_wall_s": 4.072055994300172,
+        "hashes": [
+          "163823a0e1e1b15f76fa30f16c41ff13f59f0e29fb9356c4e3d692cb5407a8fd",
+          "163823a0e1e1b15f76fa30f16c41ff13f59f0e29fb9356c4e3d692cb5407a8fd"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          615.3121612455328,
+          621.8189093576735
+        ]
+      },
+      "branch13": {
+        "median_generation_tok_s": 40.13180791986417,
+        "median_wall_s": 4.041595524409786,
+        "hashes": [
+          "0f4ca57617d5933a545867ec3d02997a47457d59cba7e5f1c1760df4acf4ef34",
+          "0f4ca57617d5933a545867ec3d02997a47457d59cba7e5f1c1760df4acf4ef34"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          621.2654507127517,
+          621.7621291923949
+        ]
+      },
+      "branch14": {
+        "median_generation_tok_s": 40.073485915048074,
+        "median_wall_s": 4.0655368110165,
+        "hashes": [
+          "6c5f85e80388730e6555751f387cf6782c862f4afcfbcd95d35ead964f08100b",
+          "6c5f85e80388730e6555751f387cf6782c862f4afcfbcd95d35ead964f08100b"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          617.8549927088593,
+          621.9725740795487
+        ]
+      },
+      "branch15": {
+        "median_generation_tok_s": 40.11653855210048,
+        "median_wall_s": 4.059971136040986,
+        "hashes": [
+          "3496dc1348bdb31b04db9a0dbef79a898ed9b16a522e178f4eda33b263b52dce",
+          "3496dc1348bdb31b04db9a0dbef79a898ed9b16a522e178f4eda33b263b52dce"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          621.0493728574553,
+          620.5801157206065
+        ]
+      },
+      "branch16": {
+        "median_generation_tok_s": 40.07725299671934,
+        "median_wall_s": 4.062583069317043,
+        "hashes": [
+          "8cf3a27cc9c046f6935ee73ce45b22f4c091629a075dea310ec7d10f71327562",
+          "8cf3a27cc9c046f6935ee73ce45b22f4c091629a075dea310ec7d10f71327562"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          621.7463456773285,
+          621.4682632707711
+        ]
+      },
+      "branch17": {
+        "median_generation_tok_s": 40.08254703998905,
+        "median_wall_s": 4.054579572053626,
+        "hashes": [
+          "4f68da1ad754dadeb95e40535af9902ae6fd826a5c37de83a76b26f45409c875",
+          "4f68da1ad754dadeb95e40535af9902ae6fd826a5c37de83a76b26f45409c875"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          622.5483129358028,
+          621.943343652312
+        ]
+      },
+      "branch18": {
+        "median_generation_tok_s": 37.28479011759684,
+        "median_wall_s": 4.121818525716662,
+        "hashes": [
+          "683320441eb5b4946c02353d3ab8f9f97d6d9748ca7aeeaea3daf996e0ca2d44",
+          "683320441eb5b4946c02353d3ab8f9f97d6d9748ca7aeeaea3daf996e0ca2d44"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          621.1866671612943,
+          620.7120372744954
+        ]
+      },
+      "branch19": {
+        "median_generation_tok_s": 40.09475337401199,
+        "median_wall_s": 4.055592147633433,
+        "hashes": [
+          "64f28c3b0cf89a20d0f61330fd8d13fc378bdd3947715f6f67ddd9b79fb58bbf",
+          "64f28c3b0cf89a20d0f61330fd8d13fc378bdd3947715f6f67ddd9b79fb58bbf"
+        ],
+        "first_content_s": [
+          null,
+          null
+        ],
+        "prompt_tokens": [
+          8320,
+          8320
+        ],
+        "cached_tokens": [
+          6679,
+          6679
+        ],
+        "prompt_tok_s": [
+          622.3360622320893,
+          621.7336252185162
+        ]
+      },
+      "branch0_cold": {
+        "median_generation_tok_s": 38.85211428349417,
+        "median_wall_s": 12.562038831412792,
+        "hashes": [
+          "6736d9d8cc20ed553c263926ce484549f0ebc7748ffb4afb562deff1e2101a2c"
+        ],
+        "first_content_s": [
+          null
+        ],
+        "prompt_tokens": [
+          7967
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "prompt_tok_s": [
+          667.5038322612386
+        ]
+      },
+      "branch19_cold": {
+        "median_generation_tok_s": 39.99870004224863,
+        "median_wall_s": 13.250934121198952,
+        "hashes": [
+          "64f28c3b0cf89a20d0f61330fd8d13fc378bdd3947715f6f67ddd9b79fb58bbf"
+        ],
+        "first_content_s": [
+          null
+        ],
+        "prompt_tokens": [
+          8320
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "prompt_tok_s": [
+          668.6955790702785
+        ]
+      },
+      "vision_red_blue": {
+        "median_generation_tok_s": 42.33072999343874,
+        "median_wall_s": 83.67372457683086,
+        "hashes": [
+          "28383637557fffc042549b2c04f3a03d9b67562a32ba520e884b5596c46e68d3"
+        ],
+        "first_content_s": [
+          null
+        ],
+        "prompt_tokens": [
+          918
+        ],
+        "cached_tokens": [
+          0
+        ],
+        "prompt_tok_s": [
+          11.087248968016256
+        ]
+      }
+    },
+    "cache": {
+      "peak_entries": 17.0,
+      "peak_accounted_MiB": 4084.972,
+      "peak_logical_MiB": 7079.433,
+      "peak_unique_block_MiB": 2518.149,
+      "max_snapshot_saving_MiB": 2994.915,
+      "within_budget": true
+    },
+    "checkpoints": {
+      "peak_references": 18.0,
+      "peak_unique": 18.0,
+      "peak_logical_MiB": 1583.18,
+      "peak_unique_MiB": 1583.18,
+      "max_sharing_saving_MiB": 0.0
+    },
+    "cache_capacity": {
+      "max_saved_token_references": 131161,
+      "at_peak_accounted": {
+        "entries": 17,
+        "accounted_MiB": 4084.972,
+        "logical_MiB": 7079.433,
+        "saved_token_references": 130145,
+        "checkpoint_references": 18,
+        "entry_tokens": [
+          7991,
+          8188,
+          8189,
+          8188,
+          8189,
+          8188,
+          8189,
+          8188,
+          8188,
+          8189,
+          8352,
+          8352,
+          8352,
+          8352,
+          8352,
+          19,
+          6679
+        ]
+      },
+      "at_peak_saved_tokens": {
+        "entries": 17,
+        "accounted_MiB": 3931.704,
+        "logical_MiB": 6926.314,
+        "saved_token_references": 131161,
+        "checkpoint_references": 16,
+        "entry_tokens": [
+          8188,
+          8189,
+          8188,
+          8188,
+          8189,
+          8352,
+          8352,
+          8352,
+          8352,
+          8352,
+          8352,
+          8352,
+          8353,
+          8352,
+          8352,
+          19,
+          6679
+        ]
+      },
+      "note": "Token references include shared prefixes more than once. Entries include retained prefixes and auxiliary prompts."
+    }
+  }
+]

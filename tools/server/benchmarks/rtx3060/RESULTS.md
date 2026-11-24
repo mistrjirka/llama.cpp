@@ -1,6 +1,6 @@
 # RTX 3060 hub experiment results
 
-**Draft, 2026-11-24.** Final settings keep microbatch 256 and change only the draft KV to Q4. The original-versus-final 100K comparison is complete. Final 8K/32K answer checks pass. The new final full-cache pressure run including vision, and deployment verification, remain pending.
+**Validated configuration, 2026-11-24.** Keep microbatch 256 and change only the draft KV to Q4. The final pressure, image, and long-text comparisons are complete. Deployment verification is recorded separately after the service restart.
 
 ## Current decision
 
@@ -21,7 +21,7 @@ The original setup already used MTP2. Final measured savings come from checkpoin
 - Speed suite: four prompts, two repetitions, temperature 0, seed 42, up to 192 output tokens, prompt reuse disabled. It includes code, JSON, explanation, and a 250-row catalog. This catalog test is not the separate 100K-token test.
 - Generation rate is generated tokens divided by recorded decode time. Total request time includes prompt processing. Results are workload-specific.
 - Speed/cache PSS and GPU use were sampled every 500 ms. PSS means process RAM with shared pages apportioned. The fork test also records the kernel's peak RSS after resetting its peak counter.
-- Data: `/home/jirka/.cache/rtx3060-experiments-20261124`. Read each variant's `results.json`, `config.json`, and `server.log`. The early `speed-summary.json` contains only four variants and is incomplete.
+- Data: `/home/jirka/.cache/rtx3060-experiments-20261124`. Read each variant's `results.json`, `config.json`, and `server.log`. The summary files were regenerated from every completed variant.
 - Reproduction and summarization: [run_experiments.py](run_experiments.py), [summarize.py](summarize.py). No new inference was run to prepare this report.
 
 ## Speed and VRAM decisions
@@ -86,7 +86,7 @@ All cold requests contain 100,052 prompt tokens. Times are single observations t
 | Final, draft Q4, microbatch 256 | 205.669 | 486.596 | All five response hashes match original |
 | Rejected, draft Q4, microbatch 128 | 216.830 | 461.560 | Prose instead of requested JSON, truncated at 96 tokens |
 
-The original and final configurations both returned middle `7707` and last `54116`, instead of `77082` and `154116`. The 100K quality failure therefore exists in the original. Draft Q4 preserves the tested behavior. This arithmetic catalog is not a difficult retrieval benchmark. See [VALIDATION.md](VALIDATION.md) for reuse, restoration, and the remaining final gates.
+The original and final configurations both returned middle `7707` and last `54116`, instead of `77082` and `154116`. The 100K quality failure therefore exists in the original. Draft Q4 preserves the tested behavior. This arithmetic catalog is not a difficult retrieval benchmark. See [VALIDATION.md](VALIDATION.md) for reuse, restoration, memory bounds, and the known 100K answer limitation.
 
 ## Checkpoint sharing: measured RAM saving
 
@@ -118,7 +118,7 @@ Sources: `fork-summary.json`, `fork/{original,sharing_off,sharing_on}/results.js
 - Including the one-layer MTP draft, combined target-plus-draft KV changes from 32,640 to 31,616 bytes/token. This is **32,896.5 -> 33,962.0 tokens/GiB**, a calculated **3.24%** increase. The exact calculation is `2**30 / bytes_per_token`.
 - At 110,080 tokens, combined KV payload changes from 3.34625 to 3.24127 GiB, saving exactly 107.5 MiB before allocator rounding. The configured context limit remains unchanged.
 - One full recurrent checkpoint is about 87.94 MiB. It captures the recurrent state across the model and does not grow one record per past token.
-- The CPU image projector also holds 875.61 MiB of weights and reserves 248.10 MiB of compute scratch. Reserved scratch is not necessarily resident before an image request. The final vision test will measure its actual peak and idle RAM. No projector lifecycle change was made.
+- The CPU image projector also holds 875.61 MiB of weights and reserves 248.10 MiB of compute scratch. Reserved scratch is not necessarily resident before an image request. The final image request passed during the full-cache pressure test. No projector lifecycle change was made.
 - Existing block deduplication remains useful. In the 22-request independent-prompt cache trace, peak logical cache reached 2,921.0 MiB while peak accounted storage was 1,891.4 MiB. All recorded entries stayed within the 4,096 MiB cache budget.
 - The token-density figures exclude recurrent states, checkpoint copies, weights, scratch, and metadata. A 4 GiB parked-cache budget therefore does not store four times that many tokens automatically. Conversation lengths, shared prefixes, checkpoint counts, and branch ancestry determine actual capacity.
 
@@ -128,7 +128,7 @@ The hub advertised a 16,000 MiB logical zram swap device but capped its compress
 
 The user applied the repair at 21:32 CET on 2026-11-24. The live and persistent resident cap now read zero, meaning no separate resident cap. The failed-write counter did not increase during the initial ten-second check. The comparison cache and fork suites used `memory.swap.max=0` and recorded zero process swap.
 
-This establishes the observed swap-write failure, not the cause of every historical llama.cpp crash. Final sustained-workload confirmation remains part of the soak test. See [hub-zram-recovery.md](../cache-research/hub-zram-recovery.md) for the captured evidence and kernel sources.
+This establishes the observed swap-write failure, not the cause of every historical llama.cpp crash. The final pressure and long-text tests recorded zero process swap, zero OOM events, and no new failed zram writes. See [hub-zram-recovery.md](../cache-research/hub-zram-recovery.md) for the captured evidence and kernel sources.
 
 ## PCIe and pinned staging
 
@@ -182,14 +182,13 @@ Full results: [exact-compression-rtx3060.md](../cache-research/exact-compression
 
 See [COMPRESSION_RESEARCH.md](COMPRESSION_RESEARCH.md) and [rtx3060-paper-review.md](../cache-research/rtx3060-paper-review.md) for primary sources, paper hardware, and applicability limits.
 
-## Completion fields
+## Final validation and deployment record
 
-| Item | Status to fill before final report |
-| --- | --- |
-| Final no-warmup / logical-batch comparison | Complete. Reject batch 512 after cache-pressure analysis. Keep batch 2048 and normal warmup. |
-| Context validation | Final draft-Q4 100K comparison complete: all five response hashes match original, including its wrong JSON answer. All eight final 8K/32K cold, repeat, followup, and restored answer checks pass. |
-| Repeated-cache soak | Earlier batch-512 and microbatch-128 runs completed without swap/OOM. New final microbatch-256 run, 83 total requests including vision, remains pending. |
-| Vision regression | Included in the pending final pressure run. Earlier rejected configurations passed the basic image check. |
-| Selected settings and release | MTP2, draft Q4, target Q8, `-b 2048 -ub 256`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
-| Source push | Root reports commit `3f8ed81` pushed and verified. Later changes may supersede it. |
-| Running hub deployment | Pending: service, binary/commit, MTP depth, draft/target types |
+- The final configuration completed 83 pressure-test requests including vision. Peak cache accounting was 4,082.173 MiB under the 4,096 MiB limit.
+- At that point, 17 saved states represented 7,076.833 MiB before sharing and 130,146 token references, including duplicated prefixes. The active context remains configured at 110,000 tokens.
+- Peak process RSS was 6,929.727 MiB. Host available RAM stayed above 5,378.551 MiB. Process swap, OOM events, and new failed zram writes were zero.
+- All eight final 8K/32K answer checks passed. All five final 100K response hashes matched the original. Both original and final give wrong middle/last values at 100K, so this is not a 100K quality pass.
+- The original-compatible V100 probability-history fix is pushed at `3f8ed81a3b40e72ecc42a34a6cfdc3dc238715b4` on `v100-optimized`. The hub release is separate because the V100 deferred checkpoint implementation still mutates its checkpoint objects.
+- Runtime code tested here is `1af6247cab8e4f079422431332bf0b81a5362399`. Later report and harness commits do not change it. Deployment status and the final build identity will be recorded after the service restart.
+
+Full data: [VALIDATION.md](VALIDATION.md), [all measurements](results/2026-11-24), and [deployment settings](deployment/README.md). The experimental runtime variants are preserved on `rtx3060-experiments-20261124`.

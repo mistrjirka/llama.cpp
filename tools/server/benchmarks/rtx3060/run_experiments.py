@@ -20,6 +20,41 @@ def request(base, route, body=None, timeout=300):
     with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.load(response)
 
+def stream_request(base, body, timeout=1800):
+    body = dict(body, stream=True, stream_options={'include_usage': True})
+    req = urllib.request.Request(base + '/v1/chat/completions', data=json.dumps(body).encode(), headers={'Content-Type':'application/json'})
+    started = time.monotonic()
+    first_content = None
+    content, reasoning, usage, timings = [], [], {}, {}
+    finish_reason = None
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        for raw_line in response:
+            line = raw_line.decode().strip()
+            if not line.startswith('data:'):
+                continue
+            payload = line[5:].strip()
+            if payload == '[DONE]':
+                break
+            if not payload:
+                continue
+            event = json.loads(payload)
+            if 'error' in event:
+                raise RuntimeError(event['error'])
+            usage = event.get('usage') or usage
+            timings = event.get('timings') or timings
+            for choice in event.get('choices', []):
+                delta = choice.get('delta', {})
+                piece = delta.get('content') or ''
+                thought = delta.get('reasoning_content') or ''
+                if first_content is None and (piece or thought):
+                    first_content = time.monotonic() - started
+                content.append(piece)
+                reasoning.append(thought)
+                finish_reason = choice.get('finish_reason') or finish_reason
+    if not usage or not timings or finish_reason is None:
+        raise RuntimeError('stream did not contain usage, timings and a final choice')
+    return {'choices':[{'message':{'content':''.join(content), 'reasoning_content':''.join(reasoning)}, 'finish_reason':finish_reason}], 'usage':usage, 'timings':timings, 'first_content_s':first_content}
+
 def memory(pid):
     out = {}
     for line in Path(f"/proc/{pid}/smaps_rollup").read_text().splitlines():
@@ -80,7 +115,17 @@ VARIANTS = {
     'threads2': {'depth': 2, 'threads': 2},
 }
 
-def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
+def vision_body():
+    import base64, struct, zlib
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+    width, height = 1280, 720
+    row = b'\0' + bytes((255, 0, 0)) * (width//2) + bytes((0, 0, 255)) * (width//2)
+    png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(row * height)) + chunk(b'IEND', b'')
+    body = {'messages':[{'role':'user','content':[{'type':'text','text':'What are the colors of the left and right halves of this image? Answer in English: left color, right color.'},{'type':'image_url','image_url':{'url':'data:image/png;base64,' + base64.b64encode(png).decode()}}]}], 'temperature':0, 'max_tokens':128, 'chat_template_kwargs':{'enable_thinking':False}}
+    return body
+
+def run_suite(base, pid, repeats, outdir, workload='speed', branches=5, with_vision=False, long_sizes=(8000, 32000, 100000)):
     samples = []
     start_memory = memory(pid)
     peak_reset = False
@@ -89,6 +134,7 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
         peak_reset = True
     except OSError:
         pass
+    available = []
     stop = threading.Event()
     gpu = subprocess.Popen(['nvidia-smi', '--query-gpu=memory.used,utilization.gpu,temperature.gpu,clocks.sm,power.draw', '--format=csv,noheader,nounits', '--loop-ms=500'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     gpu_samples = []
@@ -96,6 +142,9 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
         while not stop.is_set():
             try:
                 samples.append(memory(pid))
+                for line in Path('/proc/meminfo').read_text().splitlines():
+                    if line.startswith('MemAvailable:'):
+                        available.append(int(line.split()[1])/1024)
             except (FileNotFoundError, ProcessLookupError):
                 break
             stop.wait(.5)
@@ -118,31 +167,34 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
                     body = {'messages': [{'role': 'user', 'content': prompt}], 'temperature': 0, 'seed': 42, 'max_tokens': 192, 'cache_prompt': False, 'chat_template_kwargs': {'enable_thinking': False}}
                     requests.append((name, repeat, body, None))
         elif workload == 'vision':
-            import base64, struct, zlib
-            def chunk(kind, data):
-                return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
-            width, height = 1280, 720
-            row = b'\0' + bytes((255, 0, 0)) * (width//2) + bytes((0, 0, 255)) * (width//2)
-            png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(row * height)) + chunk(b'IEND', b'')
-            body = {'messages':[{'role':'user','content':[{'type':'text','text':'What are the colors of the left and right halves of this image? Answer in English: left color, right color.'},{'type':'image_url','image_url':{'url':'data:image/png;base64,' + base64.b64encode(png).decode()}}]}], 'temperature':0, 'max_tokens':128, 'chat_template_kwargs':{'enable_thinking':False}}
-            requests.append(('vision_red_blue', 0, body, None))
+            requests.append(('vision_red_blue', 0, vision_body(), None))
         elif workload == 'long':
-            count = 4200
-            for _ in range(4):
-                catalog = "\n".join(f"Reference {i:05d}: code={i*37+11:07d}; group={i%19:02d}." for i in range(count))
-                middle = count//2
-                prompt = "Read the full reference catalog. Each row gives an integer reference index and its code.\n" + catalog + f"\nReturn only a JSON object with keys first, middle and last, containing the integer codes at reference indices17,{middle} and{count-1}, respectively."
-                tokens = request(base, '/tokenize', {'content': prompt, 'add_special': False})['tokens']
-                if 96000 <= len(tokens) <= 103000:
-                    break
-                count = max(100, int(count * 100000 / len(tokens)))
-            if not 96000 <= len(tokens) <= 103000:
-                raise RuntimeError(f'long context sizing failed: {len(tokens)} tokens')
-            body = {'messages': [{'role':'user', 'content':prompt}], 'temperature':0, 'seed':42, 'max_tokens':96, 'cache_prompt':False, 'chat_template_kwargs':{'enable_thinking':False}}
-            expected = {'first':17*37+11, 'middle':middle*37+11, 'last':(count-1)*37+11}
-            (outdir / 'long-context-input.json').write_text(json.dumps({'rows':count, 'raw_prompt_tokens':len(tokens), 'expected':expected}))
-            print('LONG_CONTEXT_INPUT ' + str(len(tokens)) + ' tokens', flush=True)
-            requests.append(('long_100k', 0, body, expected))
+            inputs = []
+            for target_tokens in long_sizes:
+                count = max(100, target_tokens//24)
+                for _ in range(4):
+                    catalog = "\n".join(f"Reference {i:05d}: code={i*37+11:07d}; group={i%19:02d}." for i in range(count))
+                    middle = count//2
+                    prompt = "Read the full reference catalog. Each row gives an integer reference index and its code.\n" + catalog + f"\nReturn only a JSON object with keys first, middle and last, containing the integer codes at reference indices 17, {middle} and {count-1}, respectively."
+                    tokens = request(base, '/tokenize', {'content':prompt, 'add_special':False})['tokens']
+                    if target_tokens*.96 <= len(tokens) <= target_tokens*1.03:
+                        break
+                    count = max(100, int(count*target_tokens/len(tokens)))
+                if not target_tokens*.96 <= len(tokens) <= target_tokens*1.03:
+                    raise RuntimeError(f'long context sizing failed: {len(tokens)} tokens')
+                expected = {'first':17*37+11, 'middle':middle*37+11, 'last':(count-1)*37+11}
+                body = {'messages':[{'role':'user', 'content':prompt}], 'temperature':0, 'seed':42, 'max_tokens':96, 'cache_prompt':False, 'chat_template_kwargs':{'enable_thinking':False}}
+                name = f'long_{target_tokens}'
+                inputs.append({'case':name, 'rows':count, 'raw_prompt_tokens':len(tokens), 'expected':expected})
+                print('LONG_CONTEXT_INPUT ' + str(len(tokens)) + ' tokens', flush=True)
+                requests.append((name, 0, body, expected))
+                requests.append((name + '_repeat', 1, dict(body, cache_prompt=True), expected))
+                followup = dict(body, cache_prompt=True, _followup_from=name)
+                requests.append((name + '_followup', 2, followup, expected))
+                auxiliary = {'messages':[{'role':'user','content':'Return only the word READY.'}], 'temperature':0, 'max_tokens':8, 'cache_prompt':True, 'chat_template_kwargs':{'enable_thinking':False}}
+                requests.append((name + '_aux', 3, auxiliary, None))
+                requests.append((name + '_restored', 4, dict(body, cache_prompt=True), expected))
+            (outdir/'long-context-input.json').write_text(json.dumps(inputs,indent=2))
         elif workload == 'fork':
             import runpy
             trace = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'tests/integration/checkpoint_fork_trace.py'))['trace']
@@ -163,21 +215,31 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
             for branch in (0, branches-1):
                 original = next(x for x in requests if x[0] == f'branch{branch}')
                 requests.append((original[0] + '_cold', repeats, dict(original[2], cache_prompt=False), original[3]))
+        if with_vision and workload != 'vision':
+            requests.append(('vision_red_blue', 0, vision_body(), None))
         answers = {}
+        responses_by_case = {}
         for name, repeat, body, expected in requests:
+            if '_followup_from' in body:
+                body = dict(body)
+                previous = responses_by_case[body.pop('_followup_from')]
+                body['messages'] = body['messages'] + [{'role':'assistant','content':previous}, {'role':'user','content':'Check the same three references again. Return only the same JSON object with first, middle and last.'}]
             started = time.monotonic()
-            response = request(base, '/v1/chat/completions', body, timeout=1800 if workload == 'long' else 300)
+            response = stream_request(base, body) if workload == 'long' else request(base, '/v1/chat/completions', body, timeout=300)
             elapsed = time.monotonic() - started
             message = response['choices'][0]['message']
             content = message.get('content') or ''
+            responses_by_case[name] = content
             same_as_first = None
             expected_match = None
-            if workload == 'vision':
+            if name == 'vision_red_blue':
                 answer = content.lower().split('</think>')[-1]
                 expected_match = 'red' in answer and 'blue' in answer and answer.find('red') < answer.find('blue')
-            elif workload != 'speed' and name != 'aux':
-                key = name.removesuffix('_cold')
+            elif workload != 'speed' and expected is not None:
+                key = name.removesuffix('_cold').removesuffix('_repeat').removesuffix('_followup').removesuffix('_restored')
                 same_as_first = answers.setdefault(key, content) == content
+                if name.endswith('_followup'):
+                    same_as_first = None  # The followup changes the input. Judge its expected answer instead.
                 candidate = content.strip()
                 if candidate.startswith('```'):
                     candidate = candidate.split('\n', 1)[1].rsplit('```', 1)[0].strip()
@@ -185,10 +247,14 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
                     expected_match = json.loads(candidate) == expected
                 except ValueError:
                     expected_match = False
-            record = {'case': name, 'repeat': repeat, 'wall_s': elapsed, 'timings': response.get('timings', {}), 'usage': response['usage'], 'content_sha256': hashlib.sha256(content.encode()).hexdigest(), 'content': content, 'reasoning': message.get('reasoning_content'), 'same_as_first': same_as_first, 'expected_match': expected_match, 'memory_MiB': memory(pid)}
+            record = {'case': name, 'repeat': repeat, 'wall_s': elapsed, 'first_content_s':response.get('first_content_s'), 'timings': response.get('timings', {}), 'usage': response['usage'], 'content_sha256': hashlib.sha256(content.encode()).hexdigest(), 'content': content, 'reasoning': message.get('reasoning_content'), 'same_as_first': same_as_first, 'expected_match': expected_match, 'memory_MiB': memory(pid)}
+            if workload == 'long':
+                suffix = name.rsplit('_', 1)[-1]
+                record['phase'] = 'cold' if suffix.isdigit() else suffix
+                record['repeat'] = 0
             records.append(record)
             (outdir / 'partial.json').write_text(json.dumps(records, indent=2))
-            print(json.dumps({k: record[k] for k in ('case', 'repeat', 'wall_s', 'timings', 'content_sha256', 'same_as_first', 'expected_match', 'memory_MiB')}), flush=True)
+            print(json.dumps({k: record[k] for k in ('case', 'repeat', 'wall_s', 'first_content_s', 'timings', 'content_sha256', 'same_as_first', 'expected_match', 'memory_MiB')}), flush=True)
     finally:
         stop.set()
         host_thread.join()
@@ -197,6 +263,13 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
         gpu_thread.join(timeout=5)
     peak = {key: max(x[key] for x in samples if key in x) for key in samples[0]} if samples else {}
     result = {'records': records, 'start_MiB': start_memory, 'peak_MiB': peak, 'gpu': {'peak_used_MiB': max(x[0] for x in gpu_samples), 'max_temperature_C': max(x[2] for x in gpu_samples), 'mean_clock_MHz': statistics.mean(x[3] for x in gpu_samples)}, 'idle_MiB': memory(pid)}
+    result['validation'] = {
+        'expected_checked':sum(r['expected_match'] is not None for r in records),
+        'expected_passed':sum(r['expected_match'] is True for r in records),
+        'expected_failed':[r['case'] for r in records if r['expected_match'] is False],
+        'same_prompt_mismatches':[r['case'] for r in records if r['same_as_first'] is False],
+    }
+    result['host_min_available_MiB'] = min(available) if available else None
     result['RSS_peak_reset'] = peak_reset
     for line in Path(f'/proc/{pid}/status').read_text().splitlines():
         if line.startswith('VmHWM:'):
@@ -207,13 +280,15 @@ def run_suite(base, pid, repeats, outdir, workload='speed', branches=5):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--variants', default='mtp2,mtp0,mtp1,mtp3,mtp4,mtp2_repeat')
-    parser.add_argument('--repeats', type=int, default=2)
+    parser.add_argument('--repeats', type=int, default=2, help='Repetitions for speed/cache/fork. Long and vision run each named phase once.')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--binary', type=Path)
     parser.add_argument('--baseline-argv', type=Path)
     parser.add_argument('--variant-json', type=Path)
     parser.add_argument('--workload', choices=['speed', 'cache', 'fork', 'long', 'vision'], default='speed')
     parser.add_argument('--branches', type=int, default=5)
+    parser.add_argument('--with-vision', action='store_true')
+    parser.add_argument('--long-sizes', default='8000,32000,100000')
     parser.add_argument('--leave-stopped', action='store_true')
     parser.add_argument('--manage-service', action='store_true', required=True)
     args = parser.parse_args()
@@ -223,6 +298,8 @@ def main():
     runtime = {'cgroup':group}
     for field in ('memory.max', 'memory.high', 'memory.swap.max'):
         if (cg/field).exists(): runtime[field] = (cg/field).read_text().strip()
+    if (cg/'memory.events').exists():
+        runtime['memory.events_before'] = (cg/'memory.events').read_text().strip()
     for field in ('mm_stat', 'io_stat'):
         source = Path('/sys/block/zram0') / field
         if source.exists(): runtime['zram_' + field + '_before'] = source.read_text().strip()
@@ -282,7 +359,7 @@ def main():
                     proc = subprocess.Popen(launch, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
                     wait_ready('http://127.0.0.1:2346', proc)
                     request('http://127.0.0.1:2346', '/v1/chat/completions', {'messages':[{'role':'user','content':'Say ready.'}], 'max_tokens':16, 'temperature':0, 'cache_prompt':False, 'chat_template_kwargs':{'enable_thinking':False}})
-                    result = run_suite('http://127.0.0.1:2346', proc.pid, args.repeats, dest, args.workload, args.branches)
+                    result = run_suite('http://127.0.0.1:2346', proc.pid, args.repeats, dest, args.workload, args.branches, args.with_vision, tuple(map(int,args.long_sizes.split(','))))
                     print('DONE_VARIANT ' + name + ' ' + json.dumps({k: result[k] for k in ('peak_MiB', 'gpu')}), flush=True)
             except Exception as error:
                 errors.append({'variant': name, 'error': str(error)})
@@ -300,6 +377,9 @@ def main():
     for field in ('mm_stat', 'io_stat'):
         source = Path('/sys/block/zram0') / field
         if source.exists(): runtime['zram_' + field + '_after'] = source.read_text().strip()
+    (args.output / 'runtime-limits.json').write_text(json.dumps(runtime, indent=2))
+    for field in ('memory.events', 'memory.peak'):
+        if (cg/field).exists(): runtime[field + '_after'] = (cg/field).read_text().strip()
     (args.output / 'runtime-limits.json').write_text(json.dumps(runtime, indent=2))
     (args.output / 'errors.json').write_text(json.dumps(errors, indent=2))
     if errors:

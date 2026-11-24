@@ -1,0 +1,123 @@
+{
+  "cache": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-cache.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "zram_mm_stat_before": "7403196416 2970817828 3041038336 3145728000 3145850880   101454   516834   115210  7686337",
+    "zram_io_stat_before": "0 47732577 0 69376912",
+    "zram_mm_stat_after": "7455748096 2983873913 3052363776 3145728000 3145850880   102895   522127   115258  7686471",
+    "zram_io_stat_after": "0 47732577 0 69483327"
+  },
+  "fork": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-fork.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "zram_mm_stat_before": "7347867648 2959546811 3042803712        0 3145850880   102859   522127   115217  7686471",
+    "zram_io_stat_before": "0 47732577 0 69555429",
+    "zram_mm_stat_after": "7387250688 2967046723 3028570112        0 3145850880   102891   527740   115215  7686471",
+    "zram_io_stat_after": "0 47732577 0 69560523"
+  },
+  "last-settings": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-last-settings.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "zram_mm_stat_before": "7381479424 2965539527 3028377600        0 3145850880   102886   527740   115213  7686471",
+    "zram_io_stat_before": "0 47732577 0 69561940",
+    "zram_mm_stat_after": "7377731584 2964607737 3028324352        0 3145850880   102885   527740   115212  7686471",
+    "zram_io_stat_after": "0 47732577 0 69563405"
+  },
+  "soak-b512": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-final-soak.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7376769024 2964394448 3028324352        0 3145850880   102883   527740   115212  7686471",
+    "zram_io_stat_before": "0 47732577 0 69564159",
+    "zram_mm_stat_after": "7397048320 2968230892 3032391680        0 3145850880   102881   527740   115216  7686497",
+    "zram_io_stat_after": "0 47732577 0 69570471",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "6150524928"
+  },
+  "soak-ub128": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-final-validation.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7396818944 2968183695 3032379392        0 3145850880   102881   527740   115216  7686497",
+    "zram_io_stat_before": "0 47732577 0 69570528",
+    "zram_mm_stat_after": "7484915712 3019830898 3080908800        0 3145850880   102881   527740   124715  7696016",
+    "zram_io_stat_after": "0 47732577 0 69572852",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "8629313536"
+  },
+  "final-soak": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-final-release-check.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7406723072 3003240281 3065483264        0 3145850880   102847   530883   124701  7696028",
+    "zram_io_stat_before": "0 47732577 0 69616940",
+    "zram_mm_stat_after": "7406915584 3003251942 3063783424        0 3145850880   102846   531295   124691  7696029",
+    "zram_io_stat_after": "0 47732577 0 69618768",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "9460424704"
+  },
+  "long-text": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-final-validation.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7484915712 3019830898 3080908800        0 3145850880   102881   527740   124715  7696016",
+    "zram_io_stat_before": "0 47732577 0 69572852",
+    "zram_mm_stat_after": "7496884224 3023031538 3084148736        0 3145850880   102879   527740   124726  7696028",
+    "zram_io_stat_after": "0 47732577 0 69577157",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "8710012928"
+  },
+  "long-control": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-long-control.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7488081920 3020896222 3083218944        0 3145850880   102879   527740   124726  7696028",
+    "zram_io_stat_before": "0 47732577 0 69580865",
+    "zram_mm_stat_after": "7412695040 3005099715 3065696256        0 3145850880   102847   530883   124714  7696028",
+    "zram_io_stat_after": "0 47732577 0 69614716",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "8418820096"
+  },
+  "long-draft-q4": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-long-draft-q4.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7407239168 3003449258 3065540608        0 3145850880   102847   530883   124708  7696028",
+    "zram_io_stat_before": "0 47732577 0 69616057",
+    "zram_mm_stat_after": "7406948352 3003315537 3065487360        0 3145850880   102847   530883   124701  7696028",
+    "zram_io_stat_after": "0 47732577 0 69616297",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "8508743680"
+  },
+  "long-final-short": {
+    "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-rtx3060-final-release-check.service",
+    "memory.max": "max",
+    "memory.high": "max",
+    "memory.swap.max": "0",
+    "memory.events_before": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "zram_mm_stat_before": "7406628864 3003247907 3065483264        0 3145850880   102847   530883   124701  7696028",
+    "zram_io_stat_before": "0 47732577 0 69616888",
+    "zram_mm_stat_after": "7406723072 3003240281 3065483264        0 3145850880   102847   530883   124701  7696028",
+    "zram_io_stat_after": "0 47732577 0 69616940",
+    "memory.events_after": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.peak_after": "6320570368"
+  }
+}

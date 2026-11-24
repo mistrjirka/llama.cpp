@@ -1,0 +1,255 @@
+{
+  "long-text/selected": [
+    {
+      "case": "long_8000",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_8000_repeat",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_8000_followup",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_8000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_8000_restored",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000_repeat",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000_followup",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_32000_restored",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000",
+      "content": "To find the integer codes at the specified reference indices, we analyze the pattern in the catalog:\n\n1. **Reference 00017**:\n   - The code is explicitly given as `0000640`.\n   - **Code**: 640\n\n2. **Reference 02083**:\n   - The code follows the formula: `code = 1 + 37 \u00d7 reference_index`.\n   -",
+      "content_sha256": "d0bdaa65ef041f35e23af1d825d02abffb3429cbcb7a7aec60fad643064d8c35",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_repeat",
+      "content": "To find the integer codes at the specified reference indices, we analyze the pattern in the catalog:\n\n1. **Reference 00017**:\n   - The code is explicitly given as `0000640`.\n   - **Code**: 640\n\n2. **Reference 02083**:\n   - The code follows the formula: `code = 1 + 37 \u00d7 reference_index`.\n   -",
+      "content_sha256": "d0bdaa65ef041f35e23af1d825d02abffb3429cbcb7a7aec60fad643064d8c35",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_followup",
+      "content": "To determine the integer codes at the specified reference indices, we analyze the pattern in the catalog:\n\n1. **Reference 00017**:\n   - The code is explicitly given as `0000640`.\n   - **Code**: 640\n\n2. **Reference 02083**:\n   - The code follows the formula: `code = 1 + 37 \u00d7 reference_index`.\n   -",
+      "content_sha256": "1fa219da127a5bdd063ea7594ad838dcc222c776847be97c81c158f84d62b97c",
+      "expected_match": false,
+      "same_as_first": false
+    },
+    {
+      "case": "long_100000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_100000_restored",
+      "content": "To find the integer codes at the specified reference indices, we analyze the pattern in the catalog:\n\n1. **Reference 00017**:\n   - The code is explicitly given as `0000640`.\n   - **Code**: 640\n\n2. **Reference 02083**:\n   - The code follows the formula: `code = 1 + 37 \u00d7 reference_index`.\n   -",
+      "content_sha256": "d0bdaa65ef041f35e23af1d825d02abffb3429cbcb7a7aec60fad643064d8c35",
+      "expected_match": false,
+      "same_as_first": true
+    }
+  ],
+  "long-control/original": [
+    {
+      "case": "long_100000",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_repeat",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_followup",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_100000_restored",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    }
+  ],
+  "long-draft-q4/draft_q4_only": [
+    {
+      "case": "long_100000",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_repeat",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    },
+    {
+      "case": "long_100000_followup",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": null
+    },
+    {
+      "case": "long_100000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_100000_restored",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 7707,\n  \"last\": 54116\n}",
+      "content_sha256": "430c32a9338c5d3afe1155b3cf32643fe8187909f84dd96741b68f3bd728b6f9",
+      "expected_match": false,
+      "same_as_first": true
+    }
+  ],
+  "long-final-short/selected": [
+    {
+      "case": "long_8000",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_8000_repeat",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_8000_followup",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": null
+    },
+    {
+      "case": "long_8000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_8000_restored",
+      "content": "```json\n{\"first\":640,\"middle\":6153,\"last\":12295}\n```",
+      "content_sha256": "86d411f46c504cf3fb17857212de30178b0c4de5e186834b3fb90dabf71bf5f7",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000_repeat",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    },
+    {
+      "case": "long_32000_followup",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": null
+    },
+    {
+      "case": "long_32000_aux",
+      "content": "READY",
+      "content_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+      "expected_match": null,
+      "same_as_first": null
+    },
+    {
+      "case": "long_32000_restored",
+      "content": "{\n  \"first\": 640,\n  \"middle\": 24653,\n  \"last\": 49295\n}",
+      "content_sha256": "289a0d9a25d81d1fbe4576afbd855eaf9d20d6cc86bf70ca28385e2970a9a88d",
+      "expected_match": true,
+      "same_as_first": true
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Validation of the final RTX 3060 settings
 
-**Final choice: draft Q4 with microbatch 256. The 100K comparison is complete and all eight final 8K/32K answer checks pass. The new final pressure run including vision, and deployment verification, remain pending.**
+**Runtime validation is complete for draft Q4 with microbatch 256. All eight final 8K/32K answer checks pass. The 100K output matches the original, including its known wrong answer.**
 
 Settings: native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 2048, microbatch 256, configured context 110,000, cache budget 4,096 MiB, three checkpoints with a 384 MiB checkpoint cap. The context allocation is 110,080 tokens. The clean release was prepared from `1af6247`.
 
@@ -51,34 +51,31 @@ The final settings completed ten requests, including two auxiliary prompts. All 
 
 Source: `long-final-short/selected/{config,results,long-context-input}.json` under the same experiment directory. This uses the final microbatch 256, unlike the earlier `long-text` run.
 
-## Historical pressure evidence, not final-setting results
+## Completed final pressure and vision test
 
-The earlier microbatch-128 run completed **83 total requests**, including one image request. Its measurements remain useful for diagnosing cache growth, but must not be labeled as the final microbatch-256 result.
+The final microbatch-256 configuration completed **83 requests**, including one image request. All recorded parked-cache accounting stayed within 4,096 MiB. Repeat and cold-control responses matched their corresponding earlier responses. Four catalog answers, branches 1 and 4 in each round, failed the expected-answer check. Those branches also failed in the original short cache baseline. This is a memory/cache consistency pass, not an all-answers-correct claim.
 
-| Earlier microbatch-128 measurement | Observed |
+| Final configuration measurement | Observed |
 | --- | ---: |
-| Peak accounted parked cache | 4,084.972 MiB of 4,096 MiB |
+| Peak accounted parked cache | 4,082.173 MiB of 4,096 MiB |
 | Entries at that point | 17 |
-| Logical snapshot bytes represented | 7,079.433 MiB |
-| Token references at peak bytes | 130,145 |
+| Logical snapshot bytes represented | 7,076.833 MiB |
+| Token references at peak bytes | 130,146 |
 | Maximum token references, at a different point | 131,161 |
-| Kernel peak process RSS | 6,869.406 MiB |
-| Sampled peak process PSS | 6,783.139 MiB |
-| Minimum available host RAM | 5,472.375 MiB |
-| Peak reported GPU memory | 11,089 MiB |
+| Kernel peak process RSS | 6,929.727 MiB |
+| Sampled peak process PSS | 6,843.313 MiB |
+| Minimum available host RAM | 5,378.551 MiB |
+| Peak reported GPU memory | 11,149 MiB |
 | Process swap / cgroup OOM / new zram failed writes | 0 / 0 / 0 |
 
-Entries include retained prefixes and auxiliary prompts. Token references count shared prefixes more than once. They do not represent 130K unique tokens or a larger active-context limit. The process needs RAM beyond the 4 GiB parked-cache budget.
+Request-end maximum PSS was 6,779.674 MiB in round one and 6,630.838 MiB in round two. Cache entries were evicted and reused within the budget. This finite trace supports bounded behavior here, not a promise that every future workload has no leak.
 
-That run's repeated responses were identical, but branch 4 and branch 13 failed the expected-answer check in both rounds. Its basic two-color image check passed in 83.67 seconds. Its earlier 8K and 32K tests passed all expected-answer checks. These results do not replace validation of the final settings.
+Entries include retained prefixes and auxiliary prompts. Token references count shared prefixes more than once. They are not unique tokens or a larger active-context limit. The 4 GiB cache budget is separate from total process RAM.
 
-Raw pressure evidence is under `soak-ub128/selected`. The earlier batch-512 run is separately archived under `soak-b512`. Repository evidence is collected under [results/2026-11-24](results/2026-11-24).
+The image test correctly returned left red and right blue in 86.09 seconds. The full-precision image projector stayed on the CPU. Its latency was not an optimization target in this release.
 
-## Final gates still pending
+Evidence: [final-soak.json](results/2026-11-24/final-soak.json), [validation-checks.json](results/2026-11-24/validation-checks.json), [runtime-limits.json](results/2026-11-24/runtime-limits.json), and the preserved host logs under `final-soak/selected`.
 
-| Gate | Required result |
-| --- | --- |
-| Final pressure, `final-soak` | 83 total requests including vision, cache-budget maximum, retained capacity, memory plateau, swap/OOM counters, image answer and latency |
-| Deployment | Running service and binary, selected flags, installed commit, and post-restart health check |
+## Deployment verification
 
-No claim of final deployment is made here. The short-suite final draft-Q4 result saves 108 MiB of GPU memory. The 56 MiB short-suite CPU RAM reduction belonged to rejected microbatch 128. Checkpoint sharing's separate 446.70 MiB fork peak-RSS saving remains supported by its own workload.
+The runtime validation is complete. The service restart and installed-binary record will be added after deployment.
