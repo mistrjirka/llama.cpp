@@ -1,12 +1,14 @@
 # RTX 3060 hub experiment results
 
-**Draft, 2026-11-24.** Completed measurements are below. Final launch settings, long-context validation, soak results, and the running deployment are not yet confirmed in this report.
+**Draft, 2026-11-24.** Launch settings are selected and the clean release builds. Long-context validation, soak results, vision validation, and the running deployment remain pending.
 
 ## Current decision
 
-Keep native MTP at depth 2, CUDA graphs, lazy recurrent updates, and immutable checkpoint sharing. Draft-only Q4 KV is the preferred memory candidate. Keep target KV at Q8_0 and the current 256-token microbatch unless final tests support a change. Leave adaptive MTP, pinned state staging, and runtime compression disabled.
+Select native MTP2, draft Q4_0 KV, target Q8_0 KV, logical batch 512, and microbatch 128. Keep the 110,000-token configured context, 4,096 MiB cache budget, three checkpoints with a 384 MiB checkpoint cap, CUDA graphs, lazy recurrent updates, immutable checkpoint sharing, and startup warmup. The clean release excludes the adaptive-MTP and pinned-staging runtime experiments. Runtime compression is not enabled.
 
-The original setup already used MTP2. The new measured improvements are checkpoint sharing on a branching workload and smaller draft KV. Do not describe the MTP-versus-disabled comparison as a new speed improvement.
+Against the last control, the selected combination saves 170 MiB of GPU use and about 170 MiB of sampled peak PSS. Decode is 1.03% slower and total request time is 2.23% longer on the short suite. This is the selected memory tradeoff, with final long-context and sustained-load checks still pending.
+
+The original setup already used MTP2. New measured savings come from checkpoint sharing, draft Q4, and batch settings. The MTP-versus-disabled comparison is not a new speed improvement.
 
 ## Test conditions and evidence
 
@@ -25,20 +27,35 @@ The repeated MTP2 controls measured 40.60-40.75 generation tokens/s and 11,255 M
 | Change | Measured result | Decision |
 | --- | --- | --- |
 | MTP depth 0 / 1 / 2 / 3 / 4 | 23.75 / 35.98 / 40.63 / 38.47 / 35.55 tok/s | Keep depth 2. It is about 71% faster than disabled MTP on this suite. |
-| Draft KV Q8_0 -> Q4_0 | 40.45 tok/s. GPU peak 11,255 -> 11,147 MiB, saving 108 MiB. All eight outputs match the MTP2 reference hashes. | Preferred candidate. Target KV and weights are unchanged. Full final validation pending. |
+| Draft KV Q8_0 -> Q4_0 | 40.45 tok/s. GPU peak 11,255 -> 11,147 MiB, saving 108 MiB. All eight outputs match the MTP2 reference hashes. | Keep in the selected combination. Target KV and weights are unchanged. |
 | Adaptive MTP, maximum 2 / 4 | 38.54 / 37.26 tok/s. No VRAM reduction at maximum 2. | Reject for the current workload. |
 | Disable CUDA graphs | 39.20 versus 40.65 tok/s in the paired control. Saves 26 MiB GPU and about 26 MiB sampled PSS. | Keep graphs enabled. |
 | Enable extra graph optimization | 40.61 tok/s, same GPU peak | No demonstrated benefit. Keep the default. |
 | Graph chunk size 128 | 40.68 tok/s, saves 8 MiB GPU | No material benefit established. Keep the default. |
 | CPU threads 2 | 40.70 tok/s, same GPU peak | No material speed or RAM benefit. Keep the existing setting. |
-| Microbatch 128 | 40.74 tok/s. Saves 62 MiB GPU and about 57 MiB sampled PSS. Prompt time rises 19.19 -> 20.01 s. | Alternative if memory is more important. Keep 256 for now. |
+| Microbatch 128 | 40.74 tok/s. Saves 62 MiB GPU and about 57 MiB sampled PSS. Prompt time rises 19.19 -> 20.01 s. | Keep 128 in the selected combination for the memory goal. |
 | Microbatch 512 | 40.09 tok/s, costs 184 MiB GPU. Prompt time falls to 18.63 s. | Reject for the memory goal. |
 | Microbatch 64 | 40.16 tok/s. Saves 106 MiB GPU, but total time rises 56.84 -> 61.26 s. | Reject. |
-| Draft Q4 plus microbatch 128 | 40.28 tok/s, 11,085 MiB GPU. Total time 58.04 s versus 56.84 s control. | Extra 62 MiB saving over draft Q4 alone, with a prompt-speed cost. Not the preferred default. |
+| Draft Q4 plus microbatch 128 | 40.28 tok/s, 11,085 MiB GPU. Total time 58.04 s versus 56.84 s control. | An intermediate result. The selected combination also uses logical batch 512. |
 | Disable lazy recurrent updates | 40.14 tok/s, costs 158 MiB GPU. Prompt processing is about 1.3 s faster on this suite. | Keep lazy updates for the memory goal. |
-| No warmup / logical batch 512 | Final tests underway | Pending. |
+| Logical batch 512 / no warmup | Completed below | Keep batch 512 and normal warmup. |
 
 Some changes produce different greedy output text even though repeated runs are stable. Microbatch changes differ from the MTP2 reference on the catalog prompt. Disabling lazy updates differs on explanation and catalog prompts. MTP depths 0, 1, and 4 also differ on some prompts. Draft Q4, adaptive MTP, graph changes, and two CPU threads match the reference hashes on the recorded cases. These checks are not a broad quality evaluation or proof of universal output identity.
+
+### Last settings comparison
+
+All four runs contain the same eight short-suite requests. Source: `last-settings-summary.json` and `last-settings/*/{config,results}.json`.
+
+| Variant | Generation tok/s | Total seconds | GPU peak MiB | PSS peak MiB | Outputs matching control |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Control: draft Q8, microbatch 256, logical batch 2048 | 40.79 | 56.40 | 11,255 | 2,786.66 | 8/8 |
+| Logical batch 512 only | 40.75 | 56.38 | 11,255 | 2,674.00 | 8/8 |
+| Disable startup warmup | 40.73 | 56.47 | 11,255 | 2,766.04 | 8/8 |
+| Selected: draft Q4, microbatch 128, logical batch 512 | 40.37 | 57.66 | 11,085 | 2,616.62 | 6/8 |
+
+The selected combination's two differing outputs are the repeated catalog prompt, matching the earlier microbatch-128 difference. Each variant remains repeatable. This is not a claim that changing the microbatch preserves every output.
+
+Logical batch 512 saves 112.66 MiB of sampled peak PSS and 112.64 MiB of kernel peak RSS on this suite. Only 24 MiB is the smaller fixed hidden-output reservation. The approximately 6K-token prompt also retains two checkpoints instead of three. Do not promise a fixed 112 MiB saving for every prompt length. Disabling warmup saves only about 20.6 MiB here by deferring allocations, so normal warmup remains enabled.
 
 ## Checkpoint sharing: measured RAM saving
 
@@ -67,10 +84,12 @@ Sources: `fork-summary.json`, `fork/{original,sharing_off,sharing_on}/results.js
 
 - The existing target Q8 cache uses 30,464 bytes per token, or about 35,246 tokens per GiB of KV payload. That density has not changed.
 - A full 110,080-token target KV payload is 3.123 GiB. Checkpoints, metadata, and the draft add separate storage.
+- Including the one-layer MTP draft, combined target-plus-draft KV changes from 32,640 to 31,616 bytes/token. This is **32,896.5 -> 33,962.0 tokens/GiB**, a calculated **3.24%** increase. The exact calculation is `2**30 / bytes_per_token`.
+- At 110,080 tokens, combined KV payload changes from 3.34625 to 3.24127 GiB, saving exactly 107.5 MiB before allocator rounding. The configured context limit remains unchanged.
 - One full recurrent checkpoint is about 87.94 MiB. It captures the recurrent state across the model and does not grow one record per past token.
 - The CPU image projector also holds 875.61 MiB of weights and reserves 248.10 MiB of compute scratch. Reserved scratch is not necessarily resident before an image request. The final vision test will measure its actual peak and idle RAM. No projector lifecycle change was made.
 - Existing block deduplication remains useful. In the 22-request independent-prompt cache trace, peak logical cache reached 2,921.0 MiB while peak accounted storage was 1,891.4 MiB. All recorded entries stayed within the 4,096 MiB cache budget.
-- There is no single guaranteed number of parked conversations per GiB. Their lengths, shared prefixes, checkpoint counts, and branch ancestry determine it.
+- The token-density figures exclude recurrent states, checkpoint copies, weights, scratch, and metadata. A 4 GiB parked-cache budget therefore does not store four times that many tokens automatically. Conversation lengths, shared prefixes, checkpoint counts, and branch ancestry determine actual capacity.
 
 ## Swap failure found and repaired
 
@@ -136,10 +155,10 @@ See [COMPRESSION_RESEARCH.md](COMPRESSION_RESEARCH.md) and [rtx3060-paper-review
 
 | Item | Status to fill before final report |
 | --- | --- |
-| Final no-warmup / logical-batch comparison | Pending |
+| Final no-warmup / logical-batch comparison | Complete. Keep batch 512 and normal warmup. |
 | Approximately 100K-token request | Pending: tokens, answer check, peak RAM/VRAM, latency |
 | Repeated-cache soak | Pending: requests, retained entries, memory plateau, swap-write delta |
 | Vision regression | Pending if included in final gate |
-| Final launcher settings and tested commit | Pending. Current experiment source is `04df977`, with exact-compression evidence integrated as `1968e3c`. |
+| Selected settings and release | MTP2, draft Q4, target Q8, `-b 512 -ub 128`, `--ctx-size 110000`, `--cache-ram 4096`, `--ctx-checkpoints 3`, `--ctx-checkpoint-ram 384`. Clean release source `1af6247` builds successfully. Final runtime validation pending. |
 | Source push | Root reports commit `3f8ed81` pushed and verified. Later changes may supersede it. |
 | Running hub deployment | Pending: service, binary/commit, MTP depth, draft/target types |
