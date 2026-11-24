@@ -6,6 +6,7 @@
 #include "speculative.h"
 
 #include <string>
+#include <memory>
 #include <unordered_set>
 #include <list>
 #include <map>
@@ -688,7 +689,7 @@ struct server_task_result_apply_lora : server_task_result {
 struct server_prompt {
     server_tokens tokens;
 
-    std::list<common_prompt_checkpoint> checkpoints;
+    std::list<std::shared_ptr<const common_prompt_checkpoint>> checkpoints;
 
     void clear() {
         tokens.clear();
@@ -699,11 +700,14 @@ struct server_prompt {
         return tokens.size();
     }
 
-    server_prompt clone() const {
-        return server_prompt {
-            tokens.clone(),
-            checkpoints,
-        };
+    server_prompt clone(bool share_checkpoints = true) const {
+        server_prompt result { tokens.clone(), checkpoints };
+        if (!share_checkpoints) {
+            for (auto & checkpoint : result.checkpoints) {
+                checkpoint = std::make_shared<common_prompt_checkpoint>(*checkpoint);
+            }
+        }
+        return result;
     }
 };
 
@@ -731,7 +735,7 @@ struct server_prompt_cache_state {
     size_t size() const {
         size_t res = data.size();
         for (const auto & ckpt : prompt.checkpoints) {
-            res += ckpt.size();
+            res += ckpt->size();
         }
         return res;
     }
@@ -740,18 +744,16 @@ struct server_prompt_cache_state {
 };
 
 struct server_prompt_cache {
-    server_prompt_cache(int32_t limit_size_mib, size_t limit_tokens) {
-        this->limit_size = 1024ull*1024ull*(limit_size_mib < 0 ? 0 : limit_size_mib);
-        this->limit_tokens = limit_tokens;
-    }
+    server_prompt_cache(int32_t limit_size_mib, size_t limit_tokens);
 
     // Must outlive all recipes.
     server_cache_pool pool;
     std::list<server_prompt_cache_state> states;
     size_t limit_size = 0;
     size_t limit_tokens = 0;
+    bool share_checkpoints = true;
 
-    size_t size() const;
+    size_t size(const server_prompt * incoming = nullptr) const;
     size_t logical_size() const;
     size_t n_tokens() const;
     size_t retained_prefix_size() const;
