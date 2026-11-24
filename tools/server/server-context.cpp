@@ -565,7 +565,9 @@ struct server_slot {
             return;
         }
 
-        generated_token_probs.push_back(token);
+        if (task->params.sampling.n_probs > 0) {
+            generated_token_probs.push_back(token);
+        }
     }
 
     int get_n_draft_max() const {
