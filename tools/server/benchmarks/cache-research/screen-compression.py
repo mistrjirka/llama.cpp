@@ -11,6 +11,8 @@ import ctypes as C
 import ctypes.util
 import json
 import pathlib
+import resource
+import sys
 import statistics
 import struct
 import time
@@ -84,6 +86,7 @@ def parse_layout(path, recurrent_layers=42, total_layers=56):
                 active_end = reader.pos()
                 checkpoint_ranges = []
                 checkpoint_details = []
+                checkpoint_f32 = []
                 if reader.pos() != reader.end:
                     magic, version, count = reader.read('III')
                     if (magic, version) != (0x504b4353, 1) or count > 1000:
@@ -98,6 +101,7 @@ def parse_layout(path, recurrent_layers=42, total_layers=56):
                         if state_magic != 0xaf143cd8 or seq_id != 0: raise ValueError('not a host checkpoint')
                         tensors = recurrent(target, recurrent_layers, total_layers)
                         if target.pos() != target.end: raise ValueError('checkpoint size/layout mismatch')
+                        checkpoint_f32.extend({**t, 'kind':'recurrent_f32'} for t in tensors if t['dtype']==0)
                         checkpoint_ranges.append(dict(kind='recurrent_checkpoint', offset=target_start, bytes=target_size))
                         checkpoint_details.append(dict(index=index, n_tokens=n_tokens, pos_min=pos_min, pos_max=pos_max,
                             offset=target_start, bytes=target_size, tensor_payload=sum(t['bytes'] for t in tensors)))
@@ -114,11 +118,24 @@ def parse_layout(path, recurrent_layers=42, total_layers=56):
                 matches.append(dict(file=str(path), bytes=reader.end, token_words=token_words, kv_cells=cells,
                     cell_extension_bytes=extension, kv_payload_bytes=sum(r['bytes'] for r in kv),
                     active_recurrent_bytes=active_end-active_start, active_tensor_bytes=sum(r['bytes'] for r in active_tensors),
-                    checkpoints=checkpoint_details, ranges={'q8_kv':kv, 'recurrent_checkpoint':checkpoint_ranges}))
+                    checkpoints=checkpoint_details, ranges={'q8_kv':kv, 'recurrent_checkpoint':checkpoint_ranges, 'recurrent_f32':checkpoint_f32}))
         except (ValueError, struct.error) as error:
             failure = str(error)
     if len(matches) != 1: raise ValueError(f'{path.name}: unsupported/ambiguous layout ({failure if not matches else "multiple matches"})')
     return matches[0]
+
+MODES = {'raw':0, 'f32_bytes':1, 'f32_exponent':2, 'f32_xor_bytes':3, 'f32_bits':4,
+         'q8_split':5, 'q8_split_zigzag':6, 'q8_split_bits':7, 'q8_split_zigzag_bits':8}
+
+class Preprocessor:
+    def __init__(self, path):
+        if sys.byteorder != 'little': raise ValueError('The offline helper expects a little-endian host')
+        self.lib = C.CDLL(str(path))
+        self.transform = self.lib.exact_preprocess
+        self.transform.argtypes = [C.c_int,C.c_int,C.c_void_p,C.c_void_p,C.c_size_t,C.c_void_p]
+        self.transform.restype = C.c_int
+    def run(self, mode, inverse, source, destination, size, scratch):
+        if self.transform(mode, inverse, source, destination, size, scratch): raise RuntimeError('Preprocessing failed')
 
 class Codec:
     def __init__(self, name):
@@ -150,30 +167,40 @@ class Codec:
     def close(self):
         if self.cctx: self.cfree(self.cctx); self.cctx = None
         if self.dctx: self.dfree(self.dctx); self.dctx = None
-    def measure(self, raw, repeats):
+    def measure(self, raw, repeats, preprocessor=None, mode=0):
         size = len(raw)
         source = (C.c_uint8 * size).from_buffer(raw)
+        prepared = C.create_string_buffer(size) if mode else source
+        scratch_buffer = C.create_string_buffer(size) if mode else None
         compressed = C.create_string_buffer(self.bound(size))
-        restored = C.create_string_buffer(size)
-        encode, decode = [], []
+        decoded = C.create_string_buffer(size)
+        restored = C.create_string_buffer(size) if mode else decoded
+        timings = {key:[] for key in ['preprocess_ms','encode_ms','decode_ms','inverse_ms','total_encode_ms','total_decode_ms']}
         for iteration in range(repeats + 1):
             start = time.perf_counter_ns()
-            stored = self.compress(source, compressed, size, len(compressed)) if self.name == 'lz4' else \
-                self.compress(self.cctx, compressed, len(compressed), source, size, 1)
-            middle = time.perf_counter_ns()
+            if mode: preprocessor.run(mode,0,source,prepared,size,scratch_buffer)
+            before_encode = time.perf_counter_ns()
+            stored = self.compress(prepared, compressed, size, len(compressed)) if self.name == 'lz4' else \
+                self.compress(self.cctx, compressed, len(compressed), prepared, size, 1)
+            after_encode = time.perf_counter_ns()
             if stored <= 0 or (self.name != 'lz4' and self.is_error(stored)): raise RuntimeError('compression failed')
-            length = self.decompress(compressed, restored, stored, size) if self.name == 'lz4' else \
-                self.decompress(self.dctx, restored, size, compressed, stored)
+            before_decode = time.perf_counter_ns()
+            length = self.decompress(compressed, decoded, stored, size) if self.name == 'lz4' else \
+                self.decompress(self.dctx, decoded, size, compressed, stored)
+            after_decode = time.perf_counter_ns()
+            if length != size: raise RuntimeError('decompressed length differs')
+            if mode: preprocessor.run(mode,1,decoded,restored,size,scratch_buffer)
             end = time.perf_counter_ns()
-            if length != size or self.compare(source, restored, size): raise RuntimeError('restored bytes differ')
+            if self.compare(source, restored, size): raise RuntimeError('restored bytes differ')
             if iteration:
-                encode.append((middle-start)/1e6)
-                decode.append((end-middle)/1e6)
-        scratch = size + len(compressed) + size + (self.csize(self.cctx) + self.dsize(self.dctx) if self.cctx else 65536)
+                values = [(before_encode-start),(after_encode-before_encode),(after_decode-before_decode),
+                          (end-after_decode),(after_encode-start),(end-before_decode)]
+                for key,value in zip(timings,values): timings[key].append(value/1e6)
+        scratch = size + len(compressed) + size + (size*3 if mode else 0) + (self.csize(self.cctx) + self.dsize(self.dctx) if self.cctx else 65536)
         if scratch > 128*MIB: raise MemoryError('scratch budget exceeded')
-        return dict(raw_bytes=size, compressed_bytes=stored, stored_bytes=min(size, stored)+16,
-                    encode_ms=statistics.median(encode), decode_ms=statistics.median(decode),
-                    stored_decode_ms=statistics.median(decode) if stored < size else 0, scratch_bytes=scratch)
+        medians = {key:statistics.median(values) for key,values in timings.items()}
+        return dict(raw_bytes=size, compressed_bytes=stored, stored_bytes=min(size, stored+16), **medians,
+                    stored_decode_ms=medians['total_decode_ms'] if stored+16 < size else 0, scratch_bytes=scratch)
 
 def windows(ranges, sample_bytes, window_bytes):
     if not ranges: return []
@@ -189,6 +216,9 @@ def windows(ranges, sample_bytes, window_bytes):
         multiplicity = multiplicities[index]
         size = min(window_bytes, region['bytes'] // multiplicity)
         offset = region['offset'] + (2*occurrence+1)*region['bytes']//(2*multiplicity) - size//2
+        alignment = 34 if region['kind']=='q8_kv' else 4
+        offset = region['offset'] + ((offset-region['offset'])//alignment)*alignment
+        size = (size//alignment)*alignment
         if size: result.append((offset, size))
     return result
 
@@ -196,6 +226,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('files', nargs='+', type=pathlib.Path)
     ap.add_argument('--inspect', action='store_true')
+    ap.add_argument('--preprocess-lib', type=pathlib.Path)
     ap.add_argument('--sample-mib', type=int, default=32)
     ap.add_argument('--block-kib', type=int, nargs='+', default=[128, 4096])
     ap.add_argument('--repeats', type=int, default=3)
@@ -206,38 +237,49 @@ def main():
     layouts = [parse_layout(path) for path in args.files]
     result = {'layout':[ {k:v for k,v in layout.items() if k!='ranges'} for layout in layouts ], 'measurements':[],
               'notes':['Times exclude file I/O, buffer allocation, and byte verification. One warmup and median repeated codec calls per block.',
-                       'Codec contexts are reused. Payloads stay local. Stored size includes raw fallback plus 16 bytes per block.',
+                       'Codec contexts are reused. Payloads stay local. Compressed blocks pay 16 bytes metadata and fall back to original raw bytes if larger.',
+                       'Preprocessing uses exact integer/byte operations. Total timings include forward/inverse transforms. Bitshuffle is a scalar screening helper, not a tuned SIMD library.',
                        'Samples are evenly spread across parsed tensor/checkpoint ranges. These are sample estimates, not whole-cache ratios.']}
     if not args.inspect:
+        preprocessor = Preprocessor(args.preprocess_lib) if args.preprocess_lib else None
         codecs = [Codec('lz4'), Codec('zstd1')]
         try:
             for layout in layouts:
                 with pathlib.Path(layout['file']).open('rb') as file:
-                    for group, ranges in layout['ranges'].items():
+                    selected_groups = ['q8_kv','recurrent_f32'] if preprocessor else ['q8_kv','recurrent_checkpoint']
+                    for group in selected_groups:
+                        ranges = layout['ranges'][group]
                         sample = windows(ranges, args.sample_mib*MIB, max(args.block_kib)*1024)
+                        modes = ['raw']
+                        if preprocessor: modes += [name for name in MODES if name.startswith('q8_' if group=='q8_kv' else 'f32_')]
                         for block_kib in args.block_kib:
-                            for codec in codecs:
-                                sums = {key:0 for key in ['raw_bytes','compressed_bytes','stored_bytes','encode_ms','decode_ms','stored_decode_ms']}
-                                peak = blocks = 0
-                                for offset, available in sample:
-                                    file.seek(offset)
-                                    while available:
-                                        size = min(available,block_kib*1024)
-                                        raw = bytearray(size)
-                                        if file.readinto(raw) != size: raise EOFError('sample read failed')
-                                        measured = codec.measure(raw, args.repeats)
-                                        for key in sums: sums[key] += measured[key]
-                                        peak = max(peak,measured['scratch_bytes'])
-                                        available -= size
-                                        blocks += 1
-                                if sums['raw_bytes']:
-                                    row = dict(file=pathlib.Path(layout['file']).name, group=group, codec=codec.name,
-                                        block_kib=block_kib, blocks=blocks, **sums, scratch_peak_bytes=peak,
-                                        stored_fraction=sums['stored_bytes']/sums['raw_bytes'], verified_exact=True)
-                                    result['measurements'].append(row)
-                                    print(json.dumps(row),flush=True)
+                            for mode_name in modes:
+                                for codec in codecs:
+                                    sums = {key:0 for key in ['raw_bytes','compressed_bytes','stored_bytes','preprocess_ms','encode_ms','decode_ms','inverse_ms','total_encode_ms','total_decode_ms','stored_decode_ms']}
+                                    peak = blocks = 0
+                                    alignment = 34 if group=='q8_kv' else 4
+                                    block_size = block_kib*1024//alignment*alignment
+                                    for offset, available in sample:
+                                        file.seek(offset)
+                                        while available:
+                                            size = min(available,block_size)
+                                            raw = bytearray(size)
+                                            if file.readinto(raw) != size: raise EOFError('sample read failed')
+                                            measured = codec.measure(raw, args.repeats, preprocessor, MODES[mode_name])
+                                            for key in sums: sums[key] += measured[key]
+                                            peak = max(peak,measured['scratch_bytes'])
+                                            available -= size
+                                            blocks += 1
+                                    if sums['raw_bytes']:
+                                        row = dict(file=pathlib.Path(layout['file']).name, group=group, codec=codec.name,
+                                            preprocess=mode_name, block_kib=block_kib, blocks=blocks, **sums, scratch_peak_bytes=peak,
+                                            process_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+                                            stored_fraction=sums['stored_bytes']/sums['raw_bytes'], verified_exact=True)
+                                        result['measurements'].append(row)
+                                        print(json.dumps(row),flush=True)
         finally:
             for codec in codecs: codec.close()
+    result['process_peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
     if args.output: args.output.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result if args.inspect else {'verified_rows':len(result['measurements'])},indent=2))
 
