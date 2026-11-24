@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -49,7 +50,13 @@ llama_memory_recurrent::llama_memory_recurrent(
         // conv state: (d_conv - 1) time steps of n_embd_r / (d_conv - 1) channels
         const int64_t n_state = (int64_t) hparams.ssm_d_conv - 1;
 
-        rs_lazy = n_rs_seq > 0 && mem_size == 1 && n_seq_max == 1 && llm_arch_supports_rs_lazy(model.arch) &&
+        const char * disable_env = std::getenv("LLAMA_RECURRENT_DISABLE_LAZY");
+        const bool disable_lazy = disable_env && std::strcmp(disable_env, "1") == 0;
+        if (disable_lazy && n_rs_seq > 0) {
+            LLAMA_LOG_INFO("%s: experimental conventional recurrent rollback forced\n", __func__);
+        }
+
+        rs_lazy = !disable_lazy && n_rs_seq > 0 && mem_size == 1 && n_seq_max == 1 && llm_arch_supports_rs_lazy(model.arch) &&
             S_v > 0 && H_k > 0 && H_v > 0 && hparams.n_embd_s() == S_v*S_v*H_v &&
             n_state > 0 && hparams.n_embd_r() % n_state == 0 && K >= n_state;
 
