@@ -19,3 +19,5 @@ The original launcher and complete original binary/library directory are preserv
 The release branch omits the adaptive-MTP, pinned-copy, and rollback-ablation runtime prototypes. Those experiments remain on `rtx3060-experiments-20261124`. Use that branch to reproduce their flags. The checked-in benchmark configurations record the exact paths and environments used on this host.
 
 Deployment verification is recorded in `../results/2026-11-24/deployment.json`: service state, effective flags, loaded binary identity, memory policy, health, and a real MTP completion.
+
+Deployed and verified at 2026-11-24 22:50:03 CET, build `6e18c2356721`. The subsequent verification commit contains documentation and recorded evidence only.

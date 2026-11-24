@@ -1,6 +1,6 @@
 # RTX 3060 hub experiment results
 
-**Validated configuration, 2026-11-24.** Keep microbatch 256 and change only the draft KV to Q4. The final pressure, image, and long-text comparisons are complete. Deployment verification is recorded separately after the service restart.
+**Deployed and verified on the hub at 2026-11-24 22:50:03 CET.** The running build is `6e18c2356721`. Keep microbatch 256 and change only the draft KV to Q4. Pressure, image, and long-text comparisons are complete. The existing 100K answer-quality limitation remains.
 
 ## Current decision
 
@@ -189,6 +189,6 @@ See [COMPRESSION_RESEARCH.md](COMPRESSION_RESEARCH.md) and [rtx3060-paper-review
 - Peak process RSS was 6,929.727 MiB. Host available RAM stayed above 5,378.551 MiB. Process swap, OOM events, and new failed zram writes were zero.
 - All eight final 8K/32K answer checks passed. All five final 100K response hashes matched the original. Both original and final give wrong middle/last values at 100K, so this is not a 100K quality pass.
 - The original-compatible V100 probability-history fix is pushed at `3f8ed81a3b40e72ecc42a34a6cfdc3dc238715b4` on `v100-optimized`. The hub release is separate because the V100 deferred checkpoint implementation still mutates its checkpoint objects.
-- Runtime code tested here is `1af6247cab8e4f079422431332bf0b81a5362399`. Later report and harness commits do not change it. Deployment status and the final build identity will be recorded after the service restart.
+- Runtime code tested here is `1af6247cab8e4f079422431332bf0b81a5362399`. Later report and harness commits do not change it. The production binary was rebuilt from `6e18c2356721ca2c9fe58061c8e5e99ad607958d` and is running with the verified settings. Health returned `ok`, vision is enabled, and the post-restart request accepted 70 of 113 proposed MTP tokens.
 
 Full data: [VALIDATION.md](VALIDATION.md), [all measurements](results/2026-11-24), and [deployment settings](deployment/README.md). The experimental runtime variants are preserved on `rtx3060-experiments-20261124`.

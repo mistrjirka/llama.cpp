@@ -78,4 +78,13 @@ Evidence: [final-soak.json](results/2026-11-24/final-soak.json), [validation-che
 
 ## Deployment verification
 
-The runtime validation is complete. The service restart and installed-binary record will be added after deployment.
+Verified at **2026-11-24 22:50:03 CET**. The normal hub service is active on port 2345, its health endpoint returns `ok`, and its slot was idle after the verification request.
+
+- Running build: `6e18c2356721ca2c9fe58061c8e5e99ad607958d`.
+- Native MTP depth 2 is active. The real post-restart request accepted **70 of 113 proposed tokens** and generated 128 tokens.
+- Effective cache types: target Q8_0, draft Q4_0. Batch 2048, microbatch 256, configured context 110,000, parked cache 4,096 MiB, three checkpoints under 384 MiB.
+- The kernel cgroup reports `memory.swap.max=0`. The zram resident cap remains zero, and its historical failed-write counter remains 47,732,577.
+- Vision is enabled. The selected configuration passed the image test during the final pressure run.
+- The running executable and every loaded llama/ggml library resolve to the production build directory. Their SHA-256 hashes are saved in [deployment.json](results/2026-11-24/deployment.json).
+
+This verification commit adds documentation and evidence only. The deployed runtime code is unchanged from the measured release.
