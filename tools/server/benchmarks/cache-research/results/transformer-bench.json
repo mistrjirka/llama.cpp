@@ -1,0 +1,58 @@
+[
+  {
+    "mode": "fixed",
+    "chunk": 4096,
+    "owned": true,
+    "snapshots": 5,
+    "logical_bytes": 1181660,
+    "unique_bytes": 1181660,
+    "blocks": 290,
+    "refs": 290,
+    "saved_pct": 0,
+    "ingest_s": 0.000695967,
+    "restore_verify_s": 0.000114377,
+    "verified": true
+  },
+  {
+    "mode": "gear",
+    "chunk": 4096,
+    "owned": true,
+    "snapshots": 5,
+    "logical_bytes": 1181660,
+    "unique_bytes": 986770,
+    "blocks": 166,
+    "refs": 218,
+    "saved_pct": 16.4929,
+    "ingest_s": 0.00145211,
+    "restore_verify_s": 0.00013845,
+    "verified": true
+  },
+  {
+    "mode": "tensor",
+    "chunk": 16,
+    "owned": true,
+    "snapshots": 5,
+    "logical_bytes": 1181660,
+    "unique_bytes": 737740,
+    "blocks": 713,
+    "refs": 1190,
+    "saved_pct": 37.5675,
+    "ingest_s": 0.00113379,
+    "restore_verify_s": 0.000157324,
+    "verified": true
+  },
+  {
+    "mode": "tensor",
+    "chunk": 64,
+    "owned": true,
+    "snapshots": 5,
+    "logical_bytes": 1181660,
+    "unique_bytes": 812492,
+    "blocks": 216,
+    "refs": 350,
+    "saved_pct": 31.2415,
+    "ingest_s": 0.00102971,
+    "restore_verify_s": 0.00016033,
+    "verified": true
+  }
+]

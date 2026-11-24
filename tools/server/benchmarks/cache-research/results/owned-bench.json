@@ -1,0 +1,16 @@
+[
+  {
+    "mode": "tensor",
+    "chunk": 256,
+    "owned": true,
+    "snapshots": 5,
+    "logical_bytes": 4659929076,
+    "unique_bytes": 2418640425,
+    "blocks": 8259,
+    "refs": 16373,
+    "saved_pct": 48.0971,
+    "ingest_s": 2.39902,
+    "restore_verify_s": 0.682909,
+    "verified": true
+  }
+]

@@ -1,0 +1,94 @@
+[
+  {
+    "name": "a",
+    "prompt": 22023,
+    "cached": 0,
+    "completion": 2,
+    "seconds": 27.055,
+    "save": {
+      "id_slot": 0,
+      "filename": "a.bin",
+      "n_saved": 22024,
+      "n_written": 1040397072,
+      "timings": {
+        "save_ms": 1451.532
+      }
+    },
+    "bytes": 1040397072
+  },
+  {
+    "name": "a2",
+    "prompt": 23415,
+    "cached": 22019,
+    "completion": 2,
+    "seconds": 2.523,
+    "save": {
+      "id_slot": 0,
+      "filename": "a2.bin",
+      "n_saved": 23416,
+      "n_written": 1082841936,
+      "timings": {
+        "save_ms": 4916.867
+      }
+    },
+    "bytes": 1082841936
+  },
+  {
+    "name": "b",
+    "prompt": 22023,
+    "cached": 20570,
+    "completion": 2,
+    "seconds": 2.572,
+    "save": {
+      "id_slot": 0,
+      "filename": "b.bin",
+      "n_saved": 22024,
+      "n_written": 1040397072,
+      "timings": {
+        "save_ms": 11667.734
+      }
+    },
+    "bytes": 1040397072
+  },
+  {
+    "name": "b2",
+    "prompt": 23415,
+    "cached": 22019,
+    "completion": 2,
+    "seconds": 2.508,
+    "save": {
+      "id_slot": 0,
+      "filename": "b2.bin",
+      "n_saved": 23416,
+      "n_written": 1082841936,
+      "timings": {
+        "save_ms": 5715.6
+      }
+    },
+    "bytes": 1082841936
+  },
+  {
+    "name": "aux",
+    "prompt": 1462,
+    "cached": 0,
+    "completion": 2,
+    "seconds": 3.497,
+    "save": {
+      "id_slot": 0,
+      "filename": "aux.bin",
+      "n_saved": 1463,
+      "n_written": 413451060,
+      "timings": {
+        "save_ms": 2388.402
+      }
+    },
+    "bytes": 413451060
+  },
+  {
+    "name": "a2_resume",
+    "prompt": 23415,
+    "cached": 20570,
+    "completion": 2,
+    "seconds": 5.35
+  }
+]
