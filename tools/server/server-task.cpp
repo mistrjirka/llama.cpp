@@ -2022,6 +2022,18 @@ void server_prompt_cache::update() {
     SRV_INF("prompt cache memory: %zu entries, %.3f MiB accounted, %.3f MiB logical, %.3f MiB unique payload, %zu blocks, %.3f MiB limit\n",
             states.size(), size()/1048576.0, logical_size()/1048576.0, pool.payload_size()/1048576.0,
             pool.blocks(), limit_size/1048576.0);
+    std::unordered_set<const common_prompt_checkpoint *> checkpoint_ids;
+    size_t checkpoint_refs = 0, checkpoint_logical = 0, checkpoint_unique = 0;
+    for (const auto & state : states) {
+        for (const auto & checkpoint : state.prompt.checkpoints) {
+            const size_t bytes = checkpoint->data_tgt.capacity() + checkpoint->data_dft.capacity() + checkpoint->data_spec.capacity();
+            ++checkpoint_refs;
+            checkpoint_logical += bytes;
+            if (checkpoint_ids.insert(checkpoint.get()).second) { checkpoint_unique += bytes; }
+        }
+    }
+    SRV_INF("parked checkpoint memory: %zu references, %zu unique, %.3f MiB logical, %.3f MiB unique payload\n",
+            checkpoint_refs, checkpoint_ids.size(), checkpoint_logical / 1048576.0, checkpoint_unique / 1048576.0);
     SRV_TRC(" - cache state: %zu prompts, %.3f MiB (limits: %.3f MiB, %zu tokens, %zu est)\n",
             states.size(), size() / (1024.0 * 1024.0), limit_size / (1024.0 * 1024.0), limit_tokens, limit_tokens_cur);
 
