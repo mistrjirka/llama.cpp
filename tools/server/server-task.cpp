@@ -1721,139 +1721,203 @@ size_t server_prompt_cache::n_tokens() const {
     return res;
 }
 
-server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & prompt, size_t state_size_tgt, size_t state_size_dft, size_t state_size_spec) {
-    // first check if the current state is contained fully in the cache
-    for (auto it = states.begin(); it != states.end(); ++it) {
-        const int cur_lcp_len = it->prompt.tokens.get_common_prefix(prompt.tokens);
+size_t server_prompt_cache::retained_prefix_size() const {
+    size_t result = 0;
+    for (const auto & state : states) {
+        if (state.retained_prefix) {
+            result += state.size();
+        }
+    }
+    return result;
+}
 
-        if (cur_lcp_len == (int) prompt.tokens.size()) {
-            SRV_TRC("%s", " - prompt is already in the cache, skipping\n");
+size_t server_prompt_cache::retained_prefix_limit() const {
+    constexpr size_t max_prefix = 2ull * 1024 * 1024 * 1024;
+    return limit_size ? std::min(limit_size / 3, max_prefix) : max_prefix;
+}
+
+server_prompt_cache_state * server_prompt_cache::alloc(const server_prompt & prompt, size_t state_size_tgt,
+        size_t state_size_dft, size_t state_size_spec, llama_pos pos_min, bool retained_prefix,
+        const server_prompt_cache_state * protect) {
+    for (auto it = states.begin(); it != states.end(); ++it) {
+        if (it->retained_prefix != retained_prefix) {
+            continue;
+        }
+        const size_t lcp = it->prompt.tokens.get_common_prefix(prompt.tokens);
+        // A longer recurrent state does not necessarily represent the exact
+        // earlier boundary. Retained prefixes require exact equality.
+        if (lcp == prompt.tokens.size() && (!retained_prefix || lcp == it->prompt.tokens.size())) {
+            if (retained_prefix) {
+                states.splice(states.end(), states, it);
+            }
             return nullptr;
         }
     }
 
-    // Device-backed checkpoints are transient views into llama_context::mem_storage. They cannot
-    // outlive/migrate with a prompt-cache entry. The full sequence state saved below already
-    // contains the recurrent rollback planes, so persist only portable host-backed checkpoints.
-    std::list<common_prompt_checkpoint> portable_checkpoints;
+    // Device-backed checkpoints reference transient context memory. Count
+    // host-backed checkpoints before copying, so admission respects the budget.
     size_t checkpoints_size = 0;
-    for (const auto & ckpt : prompt.checkpoints) {
-        if (ckpt.data_tgt_on_device) {
-            continue;
+    if (!retained_prefix) {
+        for (const auto & ckpt : prompt.checkpoints) {
+            if (!ckpt.data_tgt_on_device) {
+                checkpoints_size += ckpt.size();
+            }
         }
-        checkpoints_size += ckpt.size();
-        portable_checkpoints.push_back(ckpt);
     }
-
     const size_t state_size_new = state_size_tgt + state_size_dft + state_size_spec + checkpoints_size;
-
-    // skip over-limit entries to avoid disturbing the cache
-    if (limit_size > 0 && state_size_new > limit_size) {
-        SRV_WRN(" - prompt state size %.3f MiB exceeds cache size limit %.3f MiB, skipping\n",
-                state_size_new / (1024.0 * 1024.0), limit_size / (1024.0 * 1024.0));
+    if (state_size_new == 0 || (limit_size && state_size_new > limit_size)) {
         return nullptr;
     }
 
-    // remove any cached prompts that are fully contained in the current prompt
-    for (auto it = states.begin(); it != states.end();) {
-        const int len = it->prompt.tokens.get_common_prefix(prompt.tokens);
-
-        if (len == (int) it->prompt.tokens.size()) {
-            SRV_TRC(" - removing obsolete cached prompt with length %d\n", len);
-
-            it = states.erase(it);
-        } else {
-            ++it;
+    if (retained_prefix) {
+        const size_t cap = retained_prefix_limit();
+        if (state_size_new > cap) {
+            return nullptr;
+        }
+        while (retained_prefix_size() + state_size_new > cap) {
+            auto it = std::find_if(states.begin(), states.end(), [&](const auto & st) {
+                return st.retained_prefix && &st != protect;
+            });
+            if (it == states.end()) {
+                return nullptr;
+            }
+            states.erase(it);
         }
     }
 
-    if (limit_size > 0) {
-        // make room before allocating the new vectors to avoid breaching the limit
-        while (!states.empty() && size() + state_size_new > limit_size) {
-            SRV_WRN(" - making room for prompt cache entry, removing oldest entry (size = %.3f MiB)\n",
-                    states.front().size() / (1024.0 * 1024.0));
-
-            states.pop_front();
+    if (limit_size) {
+        size_t reserved = 0;
+        for (const auto & state : states) {
+            if (state.retained_prefix || &state == protect) {
+                reserved += state.size();
+            }
+        }
+        if (reserved > limit_size - state_size_new) {
+            return nullptr;
         }
     }
 
-    std::vector<uint8_t> state_data_tgt;
-    std::vector<uint8_t> state_data_dft;
-    std::vector<uint8_t> state_data_spec;
+    // Preserve the existing whole-state subsumption policy, but never delete
+    // a retained prefix or the state selected for the impending restore.
+    if (!retained_prefix) {
+        for (auto it = states.begin(); it != states.end();) {
+            if (!it->retained_prefix && &*it != protect &&
+                    it->prompt.tokens.get_common_prefix(prompt.tokens) == it->prompt.tokens.size()) {
+                it = states.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    if (limit_size) {
+        while (size() > limit_size - state_size_new) {
+            auto it = std::find_if(states.begin(), states.end(), [&](const auto & st) {
+                return !st.retained_prefix && &st != protect;
+            });
+            if (it == states.end()) {
+                return nullptr;
+            }
+            states.erase(it);
+        }
+    }
 
-    // check if we can allocate enough memory for the new state
     try {
-        state_data_tgt.resize(state_size_tgt);
-        state_data_dft.resize(state_size_dft);
-        state_data_spec.resize(state_size_spec);
+        server_prompt saved { prompt.tokens.clone(), {} };
+        if (!retained_prefix) {
+            for (const auto & ckpt : prompt.checkpoints) {
+                if (!ckpt.data_tgt_on_device) {
+                    saved.checkpoints.push_back(ckpt);
+                }
+            }
+        }
+        states.push_back({
+            std::move(saved),
+            { std::vector<uint8_t>(state_size_tgt), std::vector<uint8_t>(state_size_dft),
+              std::vector<uint8_t>(state_size_spec) },
+            retained_prefix,
+            pos_min,
+        });
     } catch (const std::bad_alloc & e) {
         SRV_ERR("failed to allocate memory for prompt cache state: %s\n", e.what());
-
-        limit_size = std::max<size_t>(1, 0.4*size());
-
-        SRV_WRN(" - cache size limit reduced to %.3f MiB\n", limit_size / (1024.0 * 1024.0));
-
-        update();
-
         return nullptr;
     }
-
-    states.push_back({
-        /*.prompt =*/ {
-            /*.tokens      =*/ prompt.tokens.clone(),
-            /*.checkpoints =*/ std::move(portable_checkpoints),
-        },
-        /*.data   =*/ {
-            /*.main =*/ std::move(state_data_tgt),
-            /*.drft =*/ std::move(state_data_dft),
-            /*.spec =*/ std::move(state_data_spec),
-        },
-    });
-
     return &states.back();
+}
+
+// Estimate the usable prefix using the same rewind constraints as the
+// generation path. A raw LCP overestimates recurrent-state reuse.
+static size_t cache_reusable_tokens(const server_prompt & prompt, const server_tokens & input,
+        llama_pos pos_min, int32_t n_swa, bool can_remove_suffix) {
+    const size_t lcp = prompt.tokens.get_common_prefix(input);
+    if (lcp == 0) {
+        return 0;
+    }
+    const bool append = lcp == prompt.tokens.size() && lcp < input.size();
+    if (append) {
+        return lcp;
+    }
+    if (pos_min < 0) {
+        return can_remove_suffix && n_swa == 0 ? lcp : 0;
+    }
+    const llama_pos next = prompt.tokens.pos_next(lcp);
+    const llama_pos threshold = std::max(0, next - n_swa - (lcp == input.size() ? 1 : 0));
+    if (pos_min < threshold) {
+        return lcp;
+    }
+    for (auto it = prompt.checkpoints.rbegin(); it != prompt.checkpoints.rend(); ++it) {
+        if (it->n_tokens <= (int64_t) lcp && it->pos_max <= next &&
+                (it->pos_min < threshold || it->pos_min == 0)) {
+            const llama_pos restore_pos = std::min(next, std::max(it->pos_min + 1, it->pos_max));
+            return std::min(prompt.tokens.size_up_to_pos(restore_pos), (size_t) it->n_tokens);
+        }
+    }
+    return 0;
+}
+
+std::list<server_prompt_cache_state>::iterator server_prompt_cache::find_best(
+        const server_prompt & prompt, const server_tokens & tokens_new,
+        llama_context * ctx_tgt, int32_t id_slot, int32_t n_swa, bool allow_retained_prefix) {
+    // Preserve the established policy for speculative/adapter paths that
+    // have not yet been validated with retained-prefix snapshots.
+    const auto * model = llama_get_model(ctx_tgt);
+    const bool can_remove_suffix = !llama_model_is_hybrid(model) && !llama_model_is_recurrent(model);
+    const auto active_min = llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id_slot);
+    size_t best = allow_retained_prefix
+            ? (active_min < 0 ? 0 : cache_reusable_tokens(prompt, tokens_new, active_min, n_swa, can_remove_suffix))
+            : prompt.tokens.get_common_prefix(tokens_new);
+    auto it_best = states.end();
+    for (auto it = states.begin(); it != states.end(); ++it) {
+        const size_t lcp = it->prompt.tokens.get_common_prefix(tokens_new);
+        if (it->retained_prefix) {
+            if (!allow_retained_prefix || lcp != it->prompt.tokens.size() || lcp >= tokens_new.size()) {
+                continue;
+            }
+        } else if (!allow_retained_prefix && (double) lcp < 0.25 * it->prompt.tokens.size()) {
+            continue;
+        }
+        const size_t reusable = allow_retained_prefix
+                ? cache_reusable_tokens(it->prompt, tokens_new, it->pos_min, n_swa, can_remove_suffix)
+                : lcp;
+        if (reusable > best) {
+            best = reusable;
+            it_best = it;
+        }
+    }
+    return it_best;
 }
 
 bool server_prompt_cache::load(
         server_prompt & prompt, const server_tokens & tokens_new,
         llama_context * ctx_tgt, llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
-        int32_t prefix_seq_id, const server_tokens * prefix_tokens) {
-    int lcp_best = prompt.tokens.get_common_prefix(tokens_new);
-
-    float f_keep_best = prompt.tokens.size() > 0 ? float(lcp_best) / prompt.tokens.size() : -1.0f; // empty slot: any cache entry wins
-    float f_sim_best  = float(lcp_best) / tokens_new.size();
-
-    SRV_TRC(" - looking for better prompt, base f_keep = %.3f, f_sim = %.3f\n", f_keep_best, f_sim_best);
-
-    auto it_best = states.end();
-
-    // Prefer the usable cache entry with the deepest absolute prefix.
-    for (auto it = states.begin(); it != states.end(); ++it) {
-        const int lcp_cur = it->prompt.tokens.get_common_prefix(tokens_new);
-
-        const float f_keep_cur = float(lcp_cur) / it->prompt.tokens.size();
-        const float f_sim_cur  = float(lcp_cur) / tokens_new.size();
-
-        SRV_TRC("   - prompt with length %7zu, lcp = %7d, f_keep = %.3f, f_sim = %.3f\n", it->prompt.tokens.size(), lcp_cur, f_keep_cur, f_sim_cur);
-
-        // don't trash large prompts
-        if (f_keep_cur < 0.25f) {
-            continue;
-        }
-
-        if (lcp_cur > lcp_best) {
-            lcp_best    = lcp_cur;
-            f_keep_best = f_keep_cur;
-            f_sim_best  = f_sim_cur;
-
-            it_best = it;
-        }
-    }
-
+        int32_t prefix_seq_id, const server_tokens * prefix_tokens, int32_t n_swa, bool allow_retained_prefix) {
+    auto it_best = find_best(prompt, tokens_new, ctx_tgt, id_slot, n_swa, allow_retained_prefix);
     if (it_best != states.end()) {
-        SRV_TRC(" - found better prompt with f_keep = %.3f, f_sim = %.3f\n", f_keep_best, f_sim_best);
+        const size_t lcp = it_best->prompt.tokens.get_common_prefix(tokens_new);
+        SRV_TRC(" - found better prompt with f_keep = %.3f, f_sim = %.3f\n",
+                (double) lcp / it_best->prompt.tokens.size(), (double) lcp / tokens_new.size());
 
         int restore_lcp = 0;
-        if (prefix_seq_id >= 0 && prefix_tokens != nullptr) {
+        if (!it_best->retained_prefix && prefix_seq_id >= 0 && prefix_tokens != nullptr) {
             restore_lcp = (int) it_best->prompt.tokens.get_common_prefix(*prefix_tokens);
         }
 
@@ -1874,11 +1938,9 @@ bool server_prompt_cache::load(
             if (n != size) {
                 SRV_ERR("failed to restore state with size %zu\n", size);
 
+                states.erase(it_best);
                 return false;
             }
-
-            data.clear();
-            data.shrink_to_fit();
         }
 
         {
@@ -1901,25 +1963,26 @@ bool server_prompt_cache::load(
                 if (n != size) {
                     SRV_WRN("failed to restore state with size %zu\n", size);
 
+                    states.erase(it_best);
                     return false;
                 }
-
-                data.clear();
-                data.shrink_to_fit();
             }
         }
 
         if (!it_best->data.spec.empty()) {
             common_speculative_set_state(spec, id_slot, it_best->data.spec);
-            it_best->data.spec.clear();
-            it_best->data.spec.shrink_to_fit();
         }
 
-        prompt = std::move(it_best->prompt);
-
-        states.erase(it_best);
+        if (it_best->retained_prefix) {
+            prompt = it_best->prompt.clone();
+            SRV_INF("restored retained system prefix: %d tokens, %.3f MiB\n",
+                    prompt.n_tokens(), it_best->size() / (1024.0 * 1024.0));
+            states.splice(states.end(), states, it_best);
+        } else {
+            prompt = std::move(it_best->prompt);
+            states.erase(it_best);
+        }
     }
-
     return true;
 }
 
@@ -2027,9 +2090,12 @@ size_t server_prompt_cache::load_file(const std::string & filepath, bool has_mtm
 void server_prompt_cache::update() {
     if (limit_size > 0) {
         while (!states.empty() && size() > limit_size) {
-            SRV_WRN(" - cache size limit reached, removing oldest entry (size = %.3f MiB)\n", states.front().size() / (1024.0 * 1024.0));
-
-            states.pop_front();
+            auto it = std::find_if(states.begin(), states.end(), [](const auto & st) { return !st.retained_prefix; });
+            if (it == states.end()) {
+                it = states.begin();
+            }
+            SRV_WRN(" - cache size limit reached, removing entry (size = %.3f MiB)\n", it->size() / (1024.0 * 1024.0));
+            states.erase(it);
         }
     }
 
@@ -2041,10 +2107,13 @@ void server_prompt_cache::update() {
 
     if (limit_tokens > 0) {
         while (!states.empty() && n_tokens() > limit_tokens_cur) {
-            SRV_WRN(" - cache token limit (%zu, est: %zu) reached, removing oldest entry (size = %.3f MiB)\n",
-                    limit_tokens, limit_tokens_cur, states.front().size() / (1024.0 * 1024.0));
-
-            states.pop_front();
+            auto it = std::find_if(states.begin(), states.end(), [](const auto & st) { return !st.retained_prefix; });
+            if (it == states.end()) {
+                it = states.begin();
+            }
+            SRV_WRN(" - cache token limit (%zu, est: %zu) reached, removing entry (size = %.3f MiB)\n",
+                    limit_tokens, limit_tokens_cur, it->size() / (1024.0 * 1024.0));
+            states.erase(it);
         }
     }
 

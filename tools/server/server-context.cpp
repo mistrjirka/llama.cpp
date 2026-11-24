@@ -300,7 +300,7 @@ struct server_slot {
 
     server_prompt prompt;
 
-    bool prompt_save(server_prompt_cache & prompt_cache) const {
+    bool prompt_save(server_prompt_cache & prompt_cache, const server_prompt_cache_state * protect = nullptr) const {
         if (prompt.tokens.size() == 0) {
             return false;
         }
@@ -317,14 +317,16 @@ struct server_slot {
                 (int) prompt.tokens.size(), cur_size / (1024.0 * 1024.0), cur_size_dft / (1024.0 * 1024.0),
                 cur_size_spec / (1024.0 * 1024.0));
 
-        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft, cur_size_spec);
+        auto * cur = prompt_cache.alloc(prompt, cur_size_tgt, cur_size_dft, cur_size_spec,
+                llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), id), false, protect);
         if (cur == nullptr) {
             return false;
         }
 
-        llama_state_seq_get_data_ext(ctx_tgt, cur->data.main.data(), cur_size_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE);
-        if (ctx_dft) {
-            llama_state_seq_get_data_ext(ctx_dft, cur->data.drft.data(), cur_size_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE);
+        if (llama_state_seq_get_data_ext(ctx_tgt, cur->data.main.data(), cur_size_tgt, id, LLAMA_STATE_SEQ_FLAGS_NONE) != cur_size_tgt ||
+                (ctx_dft && llama_state_seq_get_data_ext(ctx_dft, cur->data.drft.data(), cur_size_dft, id, LLAMA_STATE_SEQ_FLAGS_NONE) != cur_size_dft)) {
+            prompt_cache.states.pop_back();
+            return false;
         }
         cur->data.spec = std::move(spec_state);
 
@@ -333,8 +335,10 @@ struct server_slot {
 
     bool prompt_load(
             server_prompt_cache & prompt_cache, const server_tokens & tokens,
-            int32_t prefix_seq_id = -1, const server_tokens * prefix_tokens = nullptr) {
-        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, spec, id, prefix_seq_id, prefix_tokens);
+            int32_t prefix_seq_id = -1, const server_tokens * prefix_tokens = nullptr,
+            int32_t n_swa = 0, bool allow_retained_prefix = false) {
+        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, spec, id, prefix_seq_id, prefix_tokens,
+                n_swa, allow_retained_prefix);
         if (!res) {
             SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
         }
@@ -1741,18 +1745,18 @@ private:
             }
         }
 
-        if (ret) {
-            update_cache = update_cache && prompt_cache;
-
-            // cache prompts only for completion tasks
-            update_cache = update_cache && task.type == SERVER_TASK_TYPE_COMPLETION;
-
-            if (update_cache) {
+        if (ret && prompt_cache && task.type == SERVER_TASK_TYPE_COMPLETION && task.params.cache_prompt) {
+            const bool allow_retained_prefix = can_retain_system_prefix(*ret, task);
+            auto best = (update_cache || allow_retained_prefix)
+                    ? prompt_cache->find_best(ret->prompt, task.tokens, ctx_tgt, ret->id, n_swa, allow_retained_prefix)
+                    : prompt_cache->states.end();
+            if (update_cache || (allow_retained_prefix && best != prompt_cache->states.end())) {
                 SRV_TRC("%s", "updating prompt cache\n");
 
                 const int64_t t_start = ggml_time_us();
 
-                ret->prompt_save(*prompt_cache);
+                const auto * protect = best == prompt_cache->states.end() ? nullptr : &*best;
+                ret->prompt_save(*prompt_cache, protect);
 
                 server_slot * cache_donor = nullptr;
                 size_t cache_donor_lcp = 0;
@@ -1774,7 +1778,8 @@ private:
                 if (!ret->prompt_load(
                             *prompt_cache, task.tokens,
                             cache_donor ? cache_donor->id : -1,
-                            cache_donor ? &cache_donor->prompt.tokens : nullptr)) {
+                            cache_donor ? &cache_donor->prompt.tokens : nullptr,
+                            n_swa, allow_retained_prefix)) {
                     ret->prompt_clear();
                 }
 
@@ -2442,12 +2447,55 @@ private:
         return true;
     }
 
+    // Exact whole-sequence snapshots for the validated non-speculative text
+    // path. Existing speculative and sliding-window policies remain intact.
+    bool can_retain_system_prefix(const server_slot & slot, const server_task & task) const {
+        return prompt_cache && params_base.cache_system_prefix &&
+                task.type == SERVER_TASK_TYPE_COMPLETION && task.params.cache_prompt &&
+                !full_request_prefill && !ctx_dft && !spec && n_swa == 0 &&
+                params_base.lora_adapters.empty() && task.params.lora.empty() && slot.lora.empty() &&
+                !task.tokens.has_media() && task.params.message_spans.first_user_message_pos() >= 1024;
+    }
+
+    void retain_system_prefix(server_slot & slot, int64_t boundary, llama_pos pos_min, llama_pos pos_max) {
+        if (!can_retain_system_prefix(slot, *slot.task) ||
+                boundary != slot.task->params.message_spans.first_user_message_pos() ||
+                pos_min < 0 || slot.prompt.tokens.pos_next(boundary) != pos_max + 1) {
+            return;
+        }
+        server_prompt prefix { slot.prompt.tokens.clone(), {} };
+        prefix.tokens.keep_first(boundary);
+        // Check for an existing exact snapshot before querying/copying state.
+        for (auto it = prompt_cache->states.begin(); it != prompt_cache->states.end(); ++it) {
+            if (it->retained_prefix && it->prompt.tokens.size() == prefix.tokens.size() &&
+                    it->prompt.tokens.get_common_prefix(prefix.tokens) == prefix.tokens.size()) {
+                prompt_cache->states.splice(prompt_cache->states.end(), prompt_cache->states, it);
+                return;
+            }
+        }
+        const size_t bytes = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE);
+        auto * saved = prompt_cache->alloc(prefix, bytes, 0, 0, pos_min, true);
+        if (!saved) {
+            return;
+        }
+        if (llama_state_seq_get_data_ext(ctx_tgt, saved->data.main.data(), bytes, slot.id, LLAMA_STATE_SEQ_FLAGS_NONE) != bytes) {
+            prompt_cache->states.pop_back();
+            return;
+        }
+        SLT_INF(slot, "retained system prefix: %" PRId64 " tokens, %.3f MiB\n",
+                boundary, saved->size() / (1024.0 * 1024.0));
+        prompt_cache->update();
+    }
+
     // n_tokens_cur: the number of tokens added to the batch for the current slot
     void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max,
                            bool is_replay_boundary, llama_state_seq_flags tgt_extra_flags = 0,
                            bool target_only = false) {
         const int id_task = slot.task->id;
         const int64_t checkpoint_n_tokens = slot.prompt.n_tokens() - n_tokens_cur;
+        const int64_t system_boundary = params_base.cache_system_prefix
+                ? slot.task->params.message_spans.first_user_message_pos() : -1;
+        is_replay_boundary = is_replay_boundary || checkpoint_n_tokens == system_boundary;
 
         if (tgt_extra_flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) {
             for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end();) {
@@ -2524,7 +2572,9 @@ private:
                         ? it_next->n_tokens
                         : checkpoint_n_tokens;
                     const bool current_request_boundary = it->is_replay_boundary && it->id_task == id_task;
-                    if (pass == 0 && current_request_boundary) {
+                    // The first-user checkpoint is an unusually useful rewind
+                    // point after compaction, including for MTP paths.
+                    if (pass == 0 && (current_request_boundary || it->n_tokens == system_boundary)) {
                         prev_pos = it->n_tokens;
                         continue;
                     }
@@ -3971,6 +4021,8 @@ private:
 
                     const auto & spans = slot.task->params.message_spans;
                     const auto last_user_pos = spans.last_user_message_pos();
+                    const auto first_user_pos = spans.first_user_message_pos();
+                    const bool retain_prefix = can_retain_system_prefix(slot, *slot.task);
 
                     // add prompt tokens for processing in the current batch
                     while (slot.prompt.n_tokens() < slot.task->n_tokens() && batch.size() < n_batch) {
@@ -3997,6 +4049,10 @@ private:
                             /* output    = */ slot.need_embd(),
                             /* is_prompt = */ true);
                         slot.prompt.tokens.push_back(cur_tok);
+
+                        if (retain_prefix && (int64_t) slot.prompt.n_tokens() == first_user_pos) {
+                            break;
+                        }
 
                         // break at the last user message, or at user messages at least min step past the last checkpoint
                         if (!full_request_prefill && do_checkpoint && spans.is_user_start(slot.prompt.n_tokens())) {
@@ -4104,6 +4160,10 @@ private:
                             is_last_user_message || near_prompt_end ||
                             n_tokens_start > slot.prompt.checkpoints.back().n_tokens + params_base.checkpoint_min_step);
                     SLT_DBG(slot, "main/do_checkpoint = %s, pos_min = %d, pos_max = %d\n", do_checkpoint ? "yes" : "no", pos_min, pos_max);
+
+                    if (retain_prefix && !has_mtmd && n_tokens_start == first_user_pos) {
+                        retain_system_prefix(slot, n_tokens_start, pos_min, pos_max);
+                    }
 
                     // note: we create the checkpoint before calling llama_decode(), so the current batch is not
                     //       yet processed and therefore it is not part of the checkpoint.

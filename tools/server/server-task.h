@@ -619,6 +619,11 @@ struct server_prompt_data {
 struct server_prompt_cache_state {
     server_prompt prompt;
     server_prompt_data data;
+    // A complete, independent state at the first user boundary. Unlike an
+    // ordinary parked conversation, loading it does not consume the entry.
+    bool retained_prefix = false;
+    // -1 means the position is unknown (e.g. an older persisted cache file).
+    llama_pos pos_min = -1;
 
     size_t size() const {
         size_t res = data.size();
@@ -649,12 +654,22 @@ struct server_prompt_cache {
 
     size_t n_tokens() const;
 
-    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft, size_t state_size_spec);
+    size_t retained_prefix_size() const;
+    size_t retained_prefix_limit() const;
+
+    server_prompt_cache_state * alloc(const server_prompt & prompt, size_t state_size_main, size_t state_size_drft,
+            size_t state_size_spec, llama_pos pos_min, bool retained_prefix = false,
+            const server_prompt_cache_state * protect = nullptr);
+
+    std::list<server_prompt_cache_state>::iterator find_best(
+            const server_prompt & prompt, const server_tokens & tokens_new,
+            llama_context * ctx_tgt, int32_t id_slot, int32_t n_swa, bool allow_retained_prefix);
 
     bool load(
             server_prompt & prompt, const server_tokens & tokens_new,
             llama_context * ctx_tgt, llama_context * ctx_dft, common_speculative * spec, int32_t id_slot,
-            int32_t prefix_seq_id = -1, const server_tokens * prefix_tokens = nullptr);
+            int32_t prefix_seq_id = -1, const server_tokens * prefix_tokens = nullptr,
+            int32_t n_swa = 0, bool allow_retained_prefix = false);
 
     // Persist the parked-agent RAM cache. Checkpoints are intentionally omitted: the full
     // target/draft sequence states are sufficient for correctness and portable across process restarts.
