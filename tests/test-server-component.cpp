@@ -3,6 +3,7 @@
 #include "../tools/server/server-common.h"
 #include "../tools/server/server-decision.h"
 #include "../tools/server/server-schema.h"
+#include "../tools/server/server-task.h"
 
 #include <algorithm>
 #include <cmath>
@@ -665,6 +666,155 @@ static void test_glob_match(testing & t) {
     });
 }
 
+//
+// checkpoint retention
+//
+
+static void test_server_checkpoint_retention(testing & t) {
+    common_params defaults;
+    defaults.n_ctx_checkpoints = 3;
+    defaults.ctx_checkpoint_ram_mib = 384;
+    defaults.checkpoint_min_step = 8192;
+    constexpr size_t kib = 1024;
+    constexpr size_t mib = 1024 * kib;
+    constexpr int64_t base = 20570;
+    constexpr int current_task = 2;
+
+    const auto checkpoint = [](int64_t n_tokens, int id_task = 1) {
+        auto result = std::make_shared<common_prompt_checkpoint>();
+        result->n_tokens = n_tokens;
+        result->pos_min = result->pos_max = n_tokens - 1;
+        result->id_task = id_task;
+        result->data_tgt.resize(32);
+        return result;
+    };
+    const auto positions = [](const server_prompt & prompt) {
+        std::vector<int64_t> result;
+        for (const auto & entry : prompt.checkpoints) {
+            result.push_back(entry->n_tokens);
+        }
+        return result;
+    };
+    const auto full_prompt = [&]() {
+        server_prompt result;
+        result.checkpoints = {checkpoint(base), checkpoint(63643), checkpoint(72470)};
+        return result;
+    };
+
+    t.test("retain distant checkpoint when incoming replaces a nearby old one", [&](testing & t) {
+        auto prompt = full_prompt();
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32));
+        t.assert_true("keep base and distant boundary", positions(prompt) == std::vector<int64_t>({base, 63643}));
+    });
+
+    t.test("no pressure preserves all existing checkpoints", [&](testing & t) {
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(63643)};
+        const auto before = prompt.checkpoints;
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 68000, base, 32));
+        t.assert_true("all three fit without pruning", prompt.checkpoints == before);
+    });
+
+    t.test("exact refresh does not evict an unrelated checkpoint", [&](testing & t) {
+        auto prompt = full_prompt();
+        t.assert_true("refresh admitted", prompt.prepare_checkpoint(defaults, current_task, 72470, base, 32));
+        t.assert_true("only refreshed checkpoint removed", positions(prompt) == std::vector<int64_t>({base, 63643}));
+    });
+
+    t.test("exact base refresh does not evict another checkpoint", [&](testing & t) {
+        auto prompt = full_prompt();
+        t.assert_true("base refresh admitted", prompt.prepare_checkpoint(defaults, current_task, base, base, 32));
+        t.assert_true("only old base removed", positions(prompt) == std::vector<int64_t>({63643, 72470}));
+    });
+
+    t.test("oversized admission leaves existing state unchanged", [&](testing & t) {
+        auto params = defaults;
+        params.ctx_checkpoint_ram_mib = 1;
+        for (const int64_t incoming : {int64_t(72798), int64_t(72470), base}) {
+            auto prompt = full_prompt();
+            const auto before = prompt.checkpoints;
+            t.assert_true("oversized checkpoint rejected", !prompt.prepare_checkpoint(params, current_task, incoming, base, mib + 1));
+            t.assert_true("rejection preserves checkpoint identities", prompt.checkpoints == before);
+        }
+    });
+
+    t.test("byte pressure counts all vector capacities", [&](testing & t) {
+        auto params = defaults;
+        params.n_ctx_checkpoints = 8;
+        params.ctx_checkpoint_ram_mib = 1;
+        auto nearby = checkpoint(72470);
+        nearby->data_tgt.reserve(128 * kib);
+        nearby->data_tgt.resize(1);
+        nearby->data_dft.reserve(320 * kib);
+        nearby->data_dft.resize(1);
+        nearby->data_spec.reserve(320 * kib);
+        nearby->data_spec.resize(1);
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(63643), nearby};
+        t.assert_true("incoming admitted after byte eviction", prompt.prepare_checkpoint(params, current_task, 72798, base, 384 * kib));
+        t.assert_true("retained capacity cannot hide behind size", positions(prompt) == std::vector<int64_t>({base, 63643}));
+    });
+
+    t.test("current task checkpoint is not a proximity victim", [&](testing & t) {
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(63643), checkpoint(72470, current_task)};
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32));
+        t.assert_true("hard count evicts older task boundary", positions(prompt) == std::vector<int64_t>({base, 72470}));
+    });
+
+    t.test("base protection does not bypass the count limit", [&](testing & t) {
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(21000, current_task), checkpoint(21200, current_task)};
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 21500, base, 32));
+        t.assert_true("keep base and enforce room for incoming", positions(prompt) == std::vector<int64_t>({base, 21200}));
+    });
+
+    t.test("byte limit can evict current task checkpoints", [&](testing & t) {
+        auto params = defaults;
+        params.n_ctx_checkpoints = 8;
+        params.ctx_checkpoint_ram_mib = 1;
+        auto retained_base = checkpoint(base);
+        retained_base->data_tgt.resize(400 * kib);
+        auto tail = checkpoint(72470, current_task);
+        tail->data_tgt.resize(500 * kib);
+        server_prompt prompt;
+        prompt.checkpoints = {retained_base, tail};
+        t.assert_true("incoming admitted after hard byte eviction", prompt.prepare_checkpoint(params, current_task, 72798, base, 400 * kib));
+        t.assert_true("base retained within byte budget", positions(prompt) == std::vector<int64_t>({base}));
+    });
+
+    t.test("older redundant pair is preferred over distant coverage", [&](testing & t) {
+        auto params = defaults;
+        params.n_ctx_checkpoints = 4;
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(30000), checkpoint(30100), checkpoint(60000)};
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(params, current_task, 90000, base, 32));
+        t.assert_true("remove redundant old boundary", positions(prompt) == std::vector<int64_t>({base, 30000, 60000}));
+    });
+
+    t.test("pruning stops as soon as the incoming checkpoint fits", [&](testing & t) {
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(70000), checkpoint(72470)};
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32));
+        t.assert_true("keep other nearby point once space exists", positions(prompt) == std::vector<int64_t>({base, 70000}));
+    });
+
+    t.test("zero count or byte capacity rejects without mutation", [&](testing & t) {
+        for (const bool zero_count : {false, true}) {
+            auto params = defaults;
+            if (zero_count) {
+                params.n_ctx_checkpoints = 0;
+            } else {
+                params.ctx_checkpoint_ram_mib = 0;
+            }
+            auto prompt = full_prompt();
+            const auto before = prompt.checkpoints;
+            t.assert_true("disabled checkpoint rejected", !prompt.prepare_checkpoint(params, current_task, 72798, base, 32));
+            t.assert_true("old checkpoints unchanged", prompt.checkpoints == before);
+        }
+    });
+}
+
 int main(int argc, char ** argv) {
     testing t;
 
@@ -690,6 +840,7 @@ int main(int argc, char ** argv) {
     t.test("decision_depth",  test_decision_depth);
     t.test("glob_match",      test_glob_match);
     t.test("dry_sequence_breakers", test_dry_sequence_breakers);
+    t.test("checkpoint_retention", test_server_checkpoint_retention);
 
     return t.summary();
 }

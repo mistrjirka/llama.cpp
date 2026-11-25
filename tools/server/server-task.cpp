@@ -11,6 +11,7 @@
 #include "server-common.h"
 
 #include <sstream>
+#include <cinttypes>
 #include <cstdlib>
 #include <cstring>
 
@@ -1730,6 +1731,80 @@ json server_task_result_get_lora::to_json() {
 
 json server_task_result_apply_lora::to_json() {
     return json {{ "success", true }};
+}
+
+//
+// server_prompt
+//
+
+bool server_prompt::prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes) {
+    const size_t max_count = std::max(0, params.n_ctx_checkpoints);
+    const size_t max_bytes = params.ctx_checkpoint_ram_mib < 0 ? SIZE_MAX :
+        size_t(params.ctx_checkpoint_ram_mib) * 1024 * 1024;
+    if (max_count == 0 || max_bytes == 0 || next_bytes > max_bytes) {
+        return false;
+    }
+
+    // Replacing a boundary needs no extra checkpoint slot.
+    for (auto it = checkpoints.begin(); it != checkpoints.end(); ) {
+        if ((*it)->n_tokens == n_tokens_new) {
+            it = checkpoints.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    const auto used = [&]() {
+        size_t bytes = 0;
+        for (const auto & c : checkpoints) {
+            bytes += c->data_tgt.capacity() + c->data_dft.capacity() + c->data_spec.capacity();
+        }
+        return bytes;
+    };
+
+    while (checkpoints.size() >= max_count || used() > max_bytes - next_bytes) {
+        auto victim = checkpoints.end();
+        const char * reason = "oldest";
+
+        // Prefer a nearby old boundary to a distant checkpoint that covers a larger prefix change.
+        for (auto it = checkpoints.end(); it != checkpoints.begin(); ) {
+            --it;
+            const auto & c = **it;
+            if (c.id_task != id_task && c.n_tokens != n_tokens_base && c.n_tokens >= 0 &&
+                    c.n_tokens < n_tokens_new && n_tokens_new - c.n_tokens <= params.checkpoint_min_step) {
+                victim = it;
+                reason = "near incoming";
+                break;
+            }
+        }
+
+        if (victim == checkpoints.end()) {
+            int64_t last = -1;
+            for (auto it = checkpoints.begin(); it != checkpoints.end(); ++it) {
+                const auto & c = **it;
+                if (c.id_task != id_task && c.n_tokens != n_tokens_base && last >= 0 &&
+                        c.n_tokens >= last && c.n_tokens - last <= params.checkpoint_min_step) {
+                    victim = it;
+                    reason = "near previous";
+                    break;
+                }
+                last = c.n_tokens;
+            }
+        }
+
+        if (victim == checkpoints.end()) {
+            victim = checkpoints.begin();
+            // Keep the system prefix until no other checkpoint can be removed.
+            if ((*victim)->n_tokens == n_tokens_base && std::next(victim) != checkpoints.end()) {
+                ++victim;
+            }
+        }
+
+        SRV_WRN("erasing context checkpoint for capacity (id_task = %d, n_tokens = %" PRId64 ", incoming = %" PRId64 ", reason = %s, size = %.3f MiB)\n",
+                id_task, (*victim)->n_tokens, n_tokens_new, reason, (*victim)->size() / (1024.0 * 1024.0));
+        checkpoints.erase(victim);
+    }
+    return true;
 }
 
 //

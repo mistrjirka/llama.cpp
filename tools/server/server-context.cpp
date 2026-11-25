@@ -2761,78 +2761,18 @@ private:
     void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max) {
         const int id_task = slot.task->id;
 
-        // the checkpoint at the start of the first user message sits right after the system prompt and
-        // the tool definitions. a new conversation with the same ones resumes from it instead of
-        // re-processing them, so it is the last checkpoint to be evicted
+        const int64_t n_tokens_new = slot.prompt.n_tokens() - n_tokens_cur;
         const int64_t n_tokens_base = slot.task->params.message_spans.first_user_message_pos();
-
-        // evict checkpoints within min-step of a previous checkpoint, unless they were
-        // created by the current task
-        // only when the list is full, otherwise short prompts keep just the oldest checkpoint
-        int64_t last = -1;
-        for (auto it = slot.prompt.checkpoints.begin();
-                slot.prompt.checkpoints.size() + 1 >= (size_t) params_base.n_ctx_checkpoints &&
-                it != slot.prompt.checkpoints.end(); ) {
-            if ((*it)->id_task != id_task && (*it)->n_tokens != n_tokens_base && last >= 0 && (*it)->n_tokens <= last + params_base.checkpoint_min_step) {
-                SLT_TRC(slot, "erasing context checkpoint too close to an earlier one (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
-                        (*it)->pos_min, (*it)->pos_max, (*it)->n_tokens, (float) (*it)->size() / 1024 / 1024);
-
-                it = slot.prompt.checkpoints.erase(it);
-                continue;
-            }
-
-            last = (*it)->n_tokens;
-            ++it;
-        }
-
-        while (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints) {
-            // make room for the new checkpoint, if needed: the oldest one that is not the base
-            auto it = slot.prompt.checkpoints.begin();
-            if ((*it)->n_tokens == n_tokens_base && std::next(it) != slot.prompt.checkpoints.end()) {
-                ++it;
-            }
-
-            SLT_WRN(slot, "erasing old context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
-                    (*it)->pos_min, (*it)->pos_max, (*it)->n_tokens, (float) (*it)->size() / 1024 / 1024);
-
-            slot.prompt.checkpoints.erase(it);
-        }
-
-        // replace an existing checkpoint at the same n_tokens instead of appending a duplicate
-        {
-            const int64_t n_tokens_new = slot.prompt.n_tokens() - n_tokens_cur;
-            for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ) {
-                if ((*it)->n_tokens == n_tokens_new) {
-                    SLT_TRC(slot, "superseding context checkpoint at n_tokens = %" PRId64 "\n", (*it)->n_tokens);
-                    it = slot.prompt.checkpoints.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-        }
-
-        // Check the byte budget before allocating. Count capacity, not just
-        // size, so allocator-retained checkpoint vectors cannot hide bytes.
+        size_t needed = 0;
         if (params_base.ctx_checkpoint_ram_mib >= 0) {
-            const size_t cap = size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024;
-            const size_t next_bytes = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) +
+            needed = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) +
                 (ctx_dft ? llama_state_seq_get_size_ext(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) : 0);
             std::vector<uint8_t> draft_state;
             common_speculative_get_state(spec.get(), slot.id, draft_state);
-            const size_t needed = next_bytes + draft_state.capacity();
-            if (needed > cap || cap == 0) { return; }
-            const auto used = [&]() {
-                size_t bytes = 0;
-                for (const auto & c : slot.prompt.checkpoints) {
-                    bytes += c->data_tgt.capacity() + c->data_dft.capacity() + c->data_spec.capacity();
-                }
-                return bytes;
-            };
-            while (used() > cap - needed && !slot.prompt.checkpoints.empty()) {
-                auto victim = slot.prompt.checkpoints.begin();
-                if ((*victim)->n_tokens == n_tokens_base && std::next(victim) != slot.prompt.checkpoints.end()) { ++victim; }
-                slot.prompt.checkpoints.erase(victim);
-            }
+            needed += draft_state.capacity();
+        }
+        if (!slot.prompt.prepare_checkpoint(params_base, id_task, n_tokens_new, n_tokens_base, needed)) {
+            return;
         }
 
         auto checkpoint = std::make_shared<common_prompt_checkpoint>();
