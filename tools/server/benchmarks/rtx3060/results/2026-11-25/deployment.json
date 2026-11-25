@@ -1,0 +1,45 @@
+{
+  "started_utc": "2026-11-25T00:17:39.939517+00:00",
+  "healthy_utc": "2026-11-25T00:18:09.533954+00:00",
+  "old_pid": 2238825,
+  "pid": 2256312,
+  "source_commit": "dafcd5a627664491f4c95e2f8a21f612df722d74",
+  "health": {
+    "status": "ok"
+  },
+  "options": {
+    "--spec-type": "draft-mtp",
+    "--spec-draft-n-max": "2",
+    "--spec-draft-type-k": "q4_0",
+    "--spec-draft-type-v": "q4_0",
+    "--cache-ram": "4096",
+    "--ctx-checkpoints": "3",
+    "--ctx-checkpoint-ram": "384",
+    "--ctx-size": "110000",
+    "--cache-type-k": "q8_0",
+    "--cache-type-v": "q8_0"
+  },
+  "loaded_files_sha256": {
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml-base.so.0.28.0": "52f48eac9c1a5a167d0355b664f95053ab092a84d0b6c01593e97b44ae9d1471",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml-cpu.so.0.28.0": "4d6ff2ffa8c16c06c96975311d00d9f173e1ef71ae61ebec39c86283dd9a3362",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml-cuda.so.0.28.0": "331c23e6668454a6b3c7aaec529bb47a0271da08366125a7cd727c7476c7209f",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml.so.0.28.0": "f66df711e9bf00d0842d31fb408dbe24c567024971df524aa2db22dd09164bd0",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libllama-common.so.0.8.0": "4b94685db0c75568e42174d0e600a709cc1125318df5925d10b77302d2ad573e",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libllama-server-impl.so": "d66ad571e79d7ef1be5ee10c346de3d78ed3a701d53a6c1489f27efe0f4a595b",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libllama.so.0.8.0": "bcf49d2acf4ecba2a78c691ed1e07a2f067601842aa3753e6a31a6432e67094d",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libmtmd.so.0.8.0": "bc676ceaff70555a1505382c42e3a60cef9ed548194e7dfe7e714af78e81c517",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/llama-server": "b13699adb66857fc66a94742aa884c0b330077dd6d8185a8d4c0ed8c173379e9"
+  },
+  "loaded_deleted_files": [],
+  "service": [
+    "ActiveState=active",
+    "NRestarts=0",
+    "MemoryCurrent=8363515904",
+    "MemoryPeak=8700755968"
+  ],
+  "gpu": "NVIDIA GeForce RTX 3060, 11147 MiB, 12288 MiB, 41, 210 MHz",
+  "memory_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+  "memory_swap_bytes": 0,
+  "zram_mm_stat": "7233937408 2989280531 3054944256        0 3145850880    97017   581058   131590  7735747",
+  "zram_io_stat": "0 47732577 0 70305493"
+}
