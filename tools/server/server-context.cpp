@@ -2771,7 +2771,10 @@ private:
             common_speculative_get_state(spec.get(), slot.id, draft_state);
             needed += draft_state.capacity();
         }
-        if (!slot.prompt.prepare_checkpoint(params_base, id_task, n_tokens_new, n_tokens_base, needed, llama_n_ubatch(ctx_tgt))) {
+        const auto anchors = params_base.checkpoint_whole_turns ?
+                slot.task->params.checkpoint_anchors : server_checkpoint_anchors{};
+        if (!slot.prompt.prepare_checkpoint(params_base, id_task, n_tokens_new, n_tokens_base,
+                needed, llama_n_ubatch(ctx_tgt), anchors)) {
             return;
         }
 
@@ -4586,6 +4589,13 @@ private:
                             break;
                         }
 
+                        // Exact anchors precede reasoning and tool cycles, where a rerendered
+                        // continuation can diverge even if the message history is unchanged.
+                        if (whole_turns && do_checkpoint &&
+                                slot.task->params.checkpoint_anchors.contains(slot.prompt.n_tokens())) {
+                            break;
+                        }
+
                         // break at the last user message, or at user messages at least min step past the last checkpoint
                         if (do_checkpoint && spans.is_user_start(slot.prompt.n_tokens())) {
                             const auto pos = slot.prompt.n_tokens();
@@ -4648,6 +4658,8 @@ private:
 
                     const bool is_user_start = spans.is_user_start(n_tokens_start) || user_start_in_batch;
                     const bool is_last_user_message = n_tokens_start == last_user_pos || last_user_start_in_batch;
+                    const bool is_checkpoint_anchor = whole_turns &&
+                        slot.task->params.checkpoint_anchors.contains(n_tokens_start);
 
                     // entire prompt has been processed
                     if (slot.prompt.n_tokens() == slot.task->n_tokens()) {
@@ -4666,13 +4678,14 @@ private:
                     } else {
                         // skip ordinary mid-prompt checkpoints, unless the batch starts a user
                         // message or we are near the end of the prompt
-                        if (!is_user_start && !near_prompt_end) {
+                        if (!is_user_start && !near_prompt_end && !is_checkpoint_anchor) {
                             do_checkpoint = false;
                         }
                     }
 
                     // the rest of a prompt that was cut for --prompt-tile: the checkpoint before the cut does
-                    if (slot.prompt_tile_cut && n_tokens_start > 0 && slot.prompt.n_tokens() == slot.task->n_tokens()) {
+                    if (slot.prompt_tile_cut && !is_checkpoint_anchor && n_tokens_start > 0 &&
+                            slot.prompt.n_tokens() == slot.task->n_tokens()) {
                         do_checkpoint = false;
                     }
                     if (slot.prompt.n_tokens() == slot.task->n_tokens()) {
@@ -4694,7 +4707,7 @@ private:
                     // no need to create checkpoints that are too close together, unless it's the last user message
                     do_checkpoint = do_checkpoint && (
                             slot.prompt.checkpoints.empty() ||
-                            is_last_user_message || near_prompt_end ||
+                            is_last_user_message || near_prompt_end || is_checkpoint_anchor ||
                             n_tokens_start > slot.prompt.checkpoints.back()->n_tokens + params_base.checkpoint_min_step);
                     SLT_DBG(slot, "main/do_checkpoint = %s, pos_min = %d, pos_max = %d\n", do_checkpoint ? "yes" : "no", pos_min, pos_max);
 
@@ -5486,7 +5499,7 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                     meta->logit_bias_eog,
                     data);
 
-            task.apply_chat_session(chat_session);
+            task.apply_chat_session(chat_session, ctx_server.vocab);
 
             task.id_slot = json_value(data, "id_slot", -1);
             sse_ping_interval = task.params.sse_ping_interval;

@@ -1737,12 +1737,124 @@ json server_task_result_apply_lora::to_json() {
 // server_prompt
 //
 
-bool server_prompt::prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes, uint32_t n_ubatch) {
+server_checkpoint_anchors server_checkpoint_anchors::find(const server_tokens & tokens,
+        const common_chat_msg_spans & spans, const llama_tokens & tool_user_start) {
+    server_checkpoint_anchors out;
+    int64_t user = -1;
+    for (const auto & span : spans.spans) {
+        const int64_t pos = span.pos;
+        if (span.role == COMMON_CHAT_ROLE_USER) {
+            bool is_tool = !tool_user_start.empty() &&
+                span.len >= tool_user_start.size() &&
+                span.pos + tool_user_start.size() <= tokens.size();
+            for (size_t i = 0; is_tool && i < tool_user_start.size(); ++i) {
+                is_tool = tokens[span.pos + i] == tool_user_start[i];
+            }
+            if (!is_tool) {
+                user = pos;
+                out.turn = -1;
+            }
+        } else if (span.role == COMMON_CHAT_ROLE_ASSISTANT) {
+            out.edit = out.latest;
+            out.latest = pos;
+            if (user >= 0 && out.turn < 0) {
+                out.turn = pos;
+            }
+        }
+    }
+    if (out.turn < 0) {
+        out.turn = user;
+    }
+    return out;
+}
+
+// Plan admission without touching the existing list. A proposed tail snapshot
+// is a candidate too, and may be less valuable than a retained edit boundary.
+static bool prepare_checkpoint_anchors(server_prompt & prompt, int id_task,
+        int64_t n_new, int64_t n_base, size_t next_bytes, size_t max_count, size_t max_bytes,
+        const server_checkpoint_anchors & anchors) {
+    using iterator = decltype(prompt.checkpoints)::iterator;
+    struct candidate {
+        iterator it;
+        int64_t pos;
+        size_t bytes;
+    };
+    std::vector<candidate> keep;
+    std::vector<iterator> remove;
+    size_t bytes = next_bytes;
+    for (auto it = prompt.checkpoints.begin(); it != prompt.checkpoints.end(); ++it) {
+        const auto & c = **it;
+        if (c.n_tokens == n_new) {
+            remove.push_back(it);
+            continue;
+        }
+        const size_t size = c.data_tgt.capacity() + c.data_dft.capacity() + c.data_spec.capacity();
+        keep.push_back({it, c.n_tokens, size});
+        bytes += size;
+    }
+    keep.push_back({prompt.checkpoints.end(), n_new, next_bytes});
+    std::stable_sort(keep.begin(), keep.end(), [](const candidate & a, const candidate & b) {
+        return a.pos < b.pos;
+    });
+    const int64_t horizon = std::max<int64_t>({1, n_new, anchors.latest, keep.back().pos});
+    while (keep.size() > max_count || bytes > max_bytes) {
+        std::vector<int> priority(keep.size(), 0);
+        const int64_t targets[] = {anchors.latest, anchors.edit, anchors.turn, n_base};
+        // The deepest recoverable checkpoint before each target gets priority.
+        // A later snapshot cannot recover an earlier edited token.
+        for (size_t role = 0; role < 4; ++role) {
+            if (targets[role] < 0) {
+                continue;
+            }
+            for (size_t i = keep.size(); i > 0; --i) {
+                if (keep[i - 1].pos <= targets[role]) {
+                    priority[i - 1] = std::max(priority[i - 1], int(role + 1));
+                    break;
+                }
+            }
+        }
+        size_t victim = 0;
+        double victim_value = 0;
+        for (size_t i = 0; i < keep.size(); ++i) {
+            const int64_t prev = i == 0 ? 0 : keep[i - 1].pos;
+            const int64_t next = i + 1 == keep.size() ? horizon + 1 : keep[i + 1].pos;
+            // Uniform edit-position estimate of marginal replay saved per byte.
+            const double value = double(std::max<int64_t>(0, keep[i].pos - prev)) *
+                double(std::max<int64_t>(1, next - keep[i].pos)) /
+                double(horizon) / double(std::max<size_t>(1, keep[i].bytes));
+            if (i == 0 || priority[i] < priority[victim] ||
+                    (priority[i] == priority[victim] && value < victim_value)) {
+                victim = i;
+                victim_value = value;
+            }
+        }
+        if (keep[victim].it == prompt.checkpoints.end()) {
+            return false;
+        }
+        remove.push_back(keep[victim].it);
+        bytes -= keep[victim].bytes;
+        keep.erase(keep.begin() + victim);
+    }
+    for (const auto it : remove) {
+        SRV_WRN("erasing context checkpoint for coverage (id_task = %d, n_tokens = %" PRId64 ", incoming = %" PRId64 ")\n",
+                id_task, (*it)->n_tokens, n_new);
+        prompt.checkpoints.erase(it);
+    }
+    return true;
+}
+
+bool server_prompt::prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new,
+        int64_t n_tokens_base, size_t next_bytes, uint32_t n_ubatch, const server_checkpoint_anchors & anchors) {
     const size_t max_count = std::max(0, params.n_ctx_checkpoints);
     const size_t max_bytes = params.ctx_checkpoint_ram_mib < 0 ? SIZE_MAX :
         size_t(params.ctx_checkpoint_ram_mib) * 1024 * 1024;
     if (max_count == 0 || max_bytes == 0 || next_bytes > max_bytes) {
         return false;
+    }
+
+    if (anchors.valid()) {
+        return prepare_checkpoint_anchors(*this, id_task, n_tokens_new, n_tokens_base,
+                next_bytes, max_count, max_bytes, anchors);
     }
 
     // Replacing a boundary needs no extra checkpoint slot.

@@ -16,6 +16,25 @@
 #include "mtmd-helper.h"
 
 
+// Exact rendered-token boundaries used only to guide checkpoint retention.
+struct server_checkpoint_anchors {
+    int64_t turn   = -1;
+    int64_t edit   = -1;
+    int64_t latest = -1;
+
+    bool contains(int64_t pos) const {
+        return pos >= 0 && (pos == turn || pos == edit || pos == latest);
+    }
+
+    bool valid() const {
+        return turn >= 0 || edit >= 0 || latest >= 0;
+    }
+
+    static server_checkpoint_anchors find(const server_tokens & tokens,
+            const common_chat_msg_spans & spans,
+            const llama_tokens & tool_user_start = {});
+};
+
 enum server_task_type {
     SERVER_TASK_TYPE_COMPLETION,
     SERVER_TASK_TYPE_EMBEDDING,
@@ -125,6 +144,7 @@ struct task_params {
 
     // message spans for checkpointing
     common_chat_msg_spans message_spans;
+    server_checkpoint_anchors checkpoint_anchors;
 
     // Embeddings
     int32_t embd_normalize = 2; // (-1=none, 0=max absolute int16, 1=taxicab, 2=Euclidean/L2, >2=p-norm)
@@ -304,7 +324,7 @@ struct server_task {
         return ids;
     }
 
-    void apply_chat_session(const common_chat_session & session) {
+    void apply_chat_session(const common_chat_session & session, const llama_vocab * vocab) {
         if (!session.has_template()) {
             return;
         }
@@ -313,6 +333,28 @@ struct server_task {
         params.chat_format = session.format();
         params.antiprompt.insert(params.antiprompt.end(), session.additional_stops().begin(), session.additional_stops().end());
         params.message_spans = tokens.find_message_spans(session.message_delimiters());
+
+        // Some ChatML templates serialize tool results with a user header.
+        // Use exact role headers for the anchors, not reasoning delimiters.
+        bool chatml_user = false;
+        bool chatml_assistant = false;
+        for (const auto & d : session.message_delimiters().delimiters) {
+            chatml_user |= d.role == COMMON_CHAT_ROLE_USER &&
+                d.delimiter.find("<|im_start|>user") == 0;
+            chatml_assistant |= d.role == COMMON_CHAT_ROLE_ASSISTANT &&
+                d.delimiter.find("<|im_start|>assistant") == 0;
+        }
+        if (vocab && chatml_user && chatml_assistant) {
+            common_chat_msg_delimiters exact;
+            exact.add(COMMON_CHAT_ROLE_USER, "<|im_start|>user\n");
+            exact.add(COMMON_CHAT_ROLE_ASSISTANT, "<|im_start|>assistant\n");
+            exact.tokenize(vocab);
+            params.checkpoint_anchors = server_checkpoint_anchors::find(tokens,
+                tokens.find_message_spans(exact),
+                common_tokenize(vocab, "<|im_start|>user\n<tool_response>", false, true));
+        } else {
+            params.checkpoint_anchors = server_checkpoint_anchors::find(tokens, params.message_spans);
+        }
     }
 
     void add_child(int id_parent, int id_child) {
@@ -700,7 +742,8 @@ struct server_prompt {
         return tokens.size();
     }
 
-    bool prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes, uint32_t n_ubatch);
+    bool prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base,
+            size_t next_bytes, uint32_t n_ubatch, const server_checkpoint_anchors & anchors = {});
 
     server_prompt clone(bool share_checkpoints = true) const {
         server_prompt result { tokens.clone(), checkpoints };

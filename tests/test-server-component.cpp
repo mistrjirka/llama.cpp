@@ -702,6 +702,83 @@ static void test_server_checkpoint_retention(testing & t) {
         return result;
     };
 
+    t.test("rendered turn anchors ignore ChatML tool results", [&](testing & t) {
+        // Header tokens are synthetic. Only the user header followed by the
+        // tool-response marker identifies a tool result.
+        server_tokens tokens(llama_tokens{
+            10, 20, 30, 41, 90,
+            10, 21, 30, 42,
+            10, 20, 30, 99, 43,
+            10, 21, 30, 44,
+            10, 20, 30, 99, 45,
+            10, 21, 30
+        }, false);
+        common_chat_msg_spans spans;
+        spans.add(COMMON_CHAT_ROLE_USER, 0, 5);
+        spans.add(COMMON_CHAT_ROLE_ASSISTANT, 5, 4);
+        spans.add(COMMON_CHAT_ROLE_USER, 9, 5);
+        spans.add(COMMON_CHAT_ROLE_ASSISTANT, 14, 4);
+        spans.add(COMMON_CHAT_ROLE_USER, 18, 5);
+        spans.add(COMMON_CHAT_ROLE_ASSISTANT, 23, 3);
+        const auto anchors = server_checkpoint_anchors::find(tokens, spans, {10, 20, 30, 99});
+        t.assert_true("turn starts before first assistant", anchors.turn == 5);
+        t.assert_true("edit precedes current generation", anchors.edit == 14);
+        t.assert_true("latest is generation boundary", anchors.latest == 23);
+        const auto normal = server_checkpoint_anchors::find(tokens, spans);
+        t.assert_true("ordinary user spans remain valid", normal.turn == 23);
+    });
+
+    t.test("long reasoning turn survives successive tool cycles", [&](testing & t) {
+        auto params = defaults;
+        params.n_ctx_checkpoints = 4;
+        constexpr int64_t system_base = 14981;
+        constexpr int64_t turn = 61948;
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(system_base), checkpoint(turn), checkpoint(84468), checkpoint(85349)};
+        const auto original_turn = *std::next(prompt.checkpoints.begin());
+        const server_checkpoint_anchors anchors{turn, 85349, 86111};
+        t.assert_true("next generation anchor admitted",
+            prompt.prepare_checkpoint(params, current_task, 86111, system_base, 32, n_ubatch, anchors));
+        prompt.checkpoints.push_back(checkpoint(86111, current_task));
+        t.assert_true("system turn edit and generation retained",
+            positions(prompt) == std::vector<int64_t>({system_base, turn, 85349, 86111}));
+        t.assert_true("turn state remains immutable", *std::next(prompt.checkpoints.begin()) == original_turn);
+
+        const auto before = prompt.checkpoints;
+        t.assert_true("redundant end-of-prompt capture rejected",
+            !prompt.prepare_checkpoint(params, current_task, 86112, system_base, 32, n_ubatch, anchors));
+        t.assert_true("rejection leaves every checkpoint intact", prompt.checkpoints == before);
+
+        const server_checkpoint_anchors continued{turn, 86111, 90500};
+        t.assert_true("continued generation anchor admitted",
+            prompt.prepare_checkpoint(params, current_task, 90500, system_base, 32, n_ubatch, continued));
+        prompt.checkpoints.push_back(checkpoint(90500, current_task));
+        t.assert_true("old turn is not displaced by newer tail",
+            positions(prompt) == std::vector<int64_t>({system_base, turn, 86111, 90500}));
+    });
+
+    t.test("semantic priorities obey actual byte limit", [&](testing & t) {
+        auto params = defaults;
+        params.n_ctx_checkpoints = 4;
+        params.ctx_checkpoint_ram_mib = 1;
+        server_prompt prompt;
+        auto b = checkpoint(base);
+        auto turn = checkpoint(61948);
+        auto edit = checkpoint(85349);
+        for (auto & c : {b, turn, edit}) {
+            c->data_tgt.reserve(256 * kib);
+        }
+        prompt.checkpoints = {b, turn, edit};
+        const auto before = prompt.checkpoints;
+        const server_checkpoint_anchors anchors{61948, 85349, 86111};
+        t.assert_true("fourth fits byte budget",
+            prompt.prepare_checkpoint(params, current_task, 86111, base, 256 * kib, n_ubatch, anchors));
+        t.assert_true("admission with free capacity is nondestructive", prompt.checkpoints == before);
+        t.assert_true("oversized fourth cannot sacrifice higher priorities",
+            !prompt.prepare_checkpoint(params, current_task, 86111, base, 300 * kib, n_ubatch, anchors));
+        t.assert_true("failed byte admission preserves old states", prompt.checkpoints == before);
+    });
+
     t.test("retain distant checkpoint when incoming replaces a nearby old one", [&](testing & t) {
         auto prompt = full_prompt();
         t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32, n_ubatch));
