@@ -2771,7 +2771,7 @@ private:
             common_speculative_get_state(spec.get(), slot.id, draft_state);
             needed += draft_state.capacity();
         }
-        if (!slot.prompt.prepare_checkpoint(params_base, id_task, n_tokens_new, n_tokens_base, needed)) {
+        if (!slot.prompt.prepare_checkpoint(params_base, id_task, n_tokens_new, n_tokens_base, needed, llama_n_ubatch(ctx_tgt))) {
             return;
         }
 

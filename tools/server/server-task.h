@@ -700,7 +700,7 @@ struct server_prompt {
         return tokens.size();
     }
 
-    bool prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes);
+    bool prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes, uint32_t n_ubatch);
 
     server_prompt clone(bool share_checkpoints = true) const {
         server_prompt result { tokens.clone(), checkpoints };

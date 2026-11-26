@@ -1737,7 +1737,7 @@ json server_task_result_apply_lora::to_json() {
 // server_prompt
 //
 
-bool server_prompt::prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes) {
+bool server_prompt::prepare_checkpoint(const common_params & params, int id_task, int64_t n_tokens_new, int64_t n_tokens_base, size_t next_bytes, uint32_t n_ubatch) {
     const size_t max_count = std::max(0, params.n_ctx_checkpoints);
     const size_t max_bytes = params.ctx_checkpoint_ram_mib < 0 ? SIZE_MAX :
         size_t(params.ctx_checkpoint_ram_mib) * 1024 * 1024;
@@ -1762,6 +1762,7 @@ bool server_prompt::prepare_checkpoint(const common_params & params, int id_task
         return bytes;
     };
 
+    const int64_t same_task_step = std::min<int64_t>(params.checkpoint_min_step, n_ubatch);
     while (checkpoints.size() >= max_count || used() > max_bytes - next_bytes) {
         auto victim = checkpoints.end();
         const char * reason = "oldest";
@@ -1770,10 +1771,12 @@ bool server_prompt::prepare_checkpoint(const common_params & params, int id_task
         for (auto it = checkpoints.end(); it != checkpoints.begin(); ) {
             --it;
             const auto & c = **it;
-            if (c.id_task != id_task && c.n_tokens != n_tokens_base && c.n_tokens >= 0 &&
-                    c.n_tokens < n_tokens_new && n_tokens_new - c.n_tokens <= params.checkpoint_min_step) {
+            // Same-task tail checkpoints can coalesce only within one physical batch.
+            const int64_t max_step = c.id_task == id_task ? same_task_step : params.checkpoint_min_step;
+            if (c.n_tokens != n_tokens_base && c.n_tokens >= 0 &&
+                    c.n_tokens < n_tokens_new && n_tokens_new - c.n_tokens <= max_step) {
                 victim = it;
-                reason = "near incoming";
+                reason = c.id_task == id_task ? "same-task microbatch" : "near incoming";
                 break;
             }
         }

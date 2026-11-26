@@ -679,6 +679,7 @@ static void test_server_checkpoint_retention(testing & t) {
     constexpr size_t mib = 1024 * kib;
     constexpr int64_t base = 20570;
     constexpr int current_task = 2;
+    constexpr uint32_t n_ubatch = 256;
 
     const auto checkpoint = [](int64_t n_tokens, int id_task = 1) {
         auto result = std::make_shared<common_prompt_checkpoint>();
@@ -703,7 +704,7 @@ static void test_server_checkpoint_retention(testing & t) {
 
     t.test("retain distant checkpoint when incoming replaces a nearby old one", [&](testing & t) {
         auto prompt = full_prompt();
-        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32));
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32, n_ubatch));
         t.assert_true("keep base and distant boundary", positions(prompt) == std::vector<int64_t>({base, 63643}));
     });
 
@@ -711,19 +712,19 @@ static void test_server_checkpoint_retention(testing & t) {
         server_prompt prompt;
         prompt.checkpoints = {checkpoint(base), checkpoint(63643)};
         const auto before = prompt.checkpoints;
-        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 68000, base, 32));
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 68000, base, 32, n_ubatch));
         t.assert_true("all three fit without pruning", prompt.checkpoints == before);
     });
 
     t.test("exact refresh does not evict an unrelated checkpoint", [&](testing & t) {
         auto prompt = full_prompt();
-        t.assert_true("refresh admitted", prompt.prepare_checkpoint(defaults, current_task, 72470, base, 32));
+        t.assert_true("refresh admitted", prompt.prepare_checkpoint(defaults, current_task, 72470, base, 32, n_ubatch));
         t.assert_true("only refreshed checkpoint removed", positions(prompt) == std::vector<int64_t>({base, 63643}));
     });
 
     t.test("exact base refresh does not evict another checkpoint", [&](testing & t) {
         auto prompt = full_prompt();
-        t.assert_true("base refresh admitted", prompt.prepare_checkpoint(defaults, current_task, base, base, 32));
+        t.assert_true("base refresh admitted", prompt.prepare_checkpoint(defaults, current_task, base, base, 32, n_ubatch));
         t.assert_true("only old base removed", positions(prompt) == std::vector<int64_t>({63643, 72470}));
     });
 
@@ -733,7 +734,7 @@ static void test_server_checkpoint_retention(testing & t) {
         for (const int64_t incoming : {int64_t(72798), int64_t(72470), base}) {
             auto prompt = full_prompt();
             const auto before = prompt.checkpoints;
-            t.assert_true("oversized checkpoint rejected", !prompt.prepare_checkpoint(params, current_task, incoming, base, mib + 1));
+            t.assert_true("oversized checkpoint rejected", !prompt.prepare_checkpoint(params, current_task, incoming, base, mib + 1, n_ubatch));
             t.assert_true("rejection preserves checkpoint identities", prompt.checkpoints == before);
         }
     });
@@ -751,21 +752,85 @@ static void test_server_checkpoint_retention(testing & t) {
         nearby->data_spec.resize(1);
         server_prompt prompt;
         prompt.checkpoints = {checkpoint(base), checkpoint(63643), nearby};
-        t.assert_true("incoming admitted after byte eviction", prompt.prepare_checkpoint(params, current_task, 72798, base, 384 * kib));
+        t.assert_true("incoming admitted after byte eviction", prompt.prepare_checkpoint(params, current_task, 72798, base, 384 * kib, n_ubatch));
         t.assert_true("retained capacity cannot hide behind size", positions(prompt) == std::vector<int64_t>({base, 63643}));
     });
 
-    t.test("current task checkpoint is not a proximity victim", [&](testing & t) {
+    t.test("current task checkpoint beyond a physical batch is protected", [&](testing & t) {
         server_prompt prompt;
         prompt.checkpoints = {checkpoint(base), checkpoint(63643), checkpoint(72470, current_task)};
-        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32));
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32, n_ubatch));
         t.assert_true("hard count evicts older task boundary", positions(prompt) == std::vector<int64_t>({base, 72470}));
+    });
+
+    t.test("same-task tail captures preserve earlier multimodal coverage", [&](testing & t) {
+        constexpr int64_t image_base = 14981;
+        auto retained = checkpoint(52293, current_task);
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(image_base, current_task), checkpoint(42434, current_task), retained};
+        for (const int64_t incoming : {int64_t(65387), int64_t(65507), int64_t(65643)}) {
+            t.assert_true("tail admitted", prompt.prepare_checkpoint(defaults, current_task, incoming, image_base, 32, n_ubatch));
+            prompt.checkpoints.push_back(checkpoint(incoming, current_task));
+            t.assert_true("checkpoint count remains bounded", prompt.checkpoints.size() <= 3);
+        }
+        t.assert_true("keep base, earlier coverage, and latest tail", positions(prompt) == std::vector<int64_t>({image_base, 52293, 65643}));
+        t.assert_true("earlier state is preserved unchanged", *std::next(prompt.checkpoints.begin()) == retained);
+    });
+
+    t.test("same-task proximity uses the effective physical batch boundary", [&](testing & t) {
+        auto params = defaults;
+        params.n_ubatch = 512;
+        for (const int64_t distance : {int64_t(256), int64_t(257)}) {
+            server_prompt prompt;
+            prompt.checkpoints = {checkpoint(base), checkpoint(63643), checkpoint(72470, current_task)};
+            t.assert_true("incoming admitted", prompt.prepare_checkpoint(params, current_task, 72470 + distance, base, 32, n_ubatch));
+            const int64_t retained = distance == 256 ? 63643 : 72470;
+            t.assert_true("runtime batch limits same-task coalescing", positions(prompt) == std::vector<int64_t>({base, retained}));
+        }
+    });
+
+    t.test("same-task proximity also respects the configured minimum step", [&](testing & t) {
+        auto params = defaults;
+        params.checkpoint_min_step = 64;
+        for (const int64_t distance : {int64_t(64), int64_t(65)}) {
+            server_prompt prompt;
+            prompt.checkpoints = {checkpoint(base), checkpoint(63643), checkpoint(72470, current_task)};
+            t.assert_true("incoming admitted", prompt.prepare_checkpoint(params, current_task, 72470 + distance, base, 32, n_ubatch));
+            const int64_t retained = distance == 64 ? 63643 : 72470;
+            t.assert_true("smaller configured step remains the limit", positions(prompt) == std::vector<int64_t>({base, retained}));
+        }
+    });
+
+    t.test("same-task proximity does not prune when capacity is free", [&](testing & t) {
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(72470, current_task)};
+        const auto before = prompt.checkpoints;
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72598, base, 32, n_ubatch));
+        t.assert_true("nearby same-task state remains available", prompt.checkpoints == before);
+    });
+
+    t.test("same-task microbatch coalescing also handles byte pressure", [&](testing & t) {
+        auto params = defaults;
+        params.n_ctx_checkpoints = 8;
+        params.ctx_checkpoint_ram_mib = 1;
+        auto nearby = checkpoint(72470, current_task);
+        nearby->data_tgt.reserve(768 * kib);
+        nearby->data_tgt.resize(1);
+        server_prompt prompt;
+        prompt.checkpoints = {checkpoint(base), checkpoint(63643), nearby};
+        t.assert_true("incoming admitted after byte eviction", prompt.prepare_checkpoint(params, current_task, 72598, base, 384 * kib, n_ubatch));
+        t.assert_true("byte pressure removes only the nearby same-task state", positions(prompt) == std::vector<int64_t>({base, 63643}));
+        size_t used = 384 * kib;
+        for (const auto & entry : prompt.checkpoints) {
+            used += entry->data_tgt.capacity() + entry->data_dft.capacity() + entry->data_spec.capacity();
+        }
+        t.assert_true("incoming state fits the unchanged byte cap", used <= mib);
     });
 
     t.test("base protection does not bypass the count limit", [&](testing & t) {
         server_prompt prompt;
         prompt.checkpoints = {checkpoint(base), checkpoint(21000, current_task), checkpoint(21200, current_task)};
-        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 21500, base, 32));
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 21500, base, 32, n_ubatch));
         t.assert_true("keep base and enforce room for incoming", positions(prompt) == std::vector<int64_t>({base, 21200}));
     });
 
@@ -779,7 +844,7 @@ static void test_server_checkpoint_retention(testing & t) {
         tail->data_tgt.resize(500 * kib);
         server_prompt prompt;
         prompt.checkpoints = {retained_base, tail};
-        t.assert_true("incoming admitted after hard byte eviction", prompt.prepare_checkpoint(params, current_task, 72798, base, 400 * kib));
+        t.assert_true("incoming admitted after hard byte eviction", prompt.prepare_checkpoint(params, current_task, 72798, base, 400 * kib, n_ubatch));
         t.assert_true("base retained within byte budget", positions(prompt) == std::vector<int64_t>({base}));
     });
 
@@ -788,14 +853,14 @@ static void test_server_checkpoint_retention(testing & t) {
         params.n_ctx_checkpoints = 4;
         server_prompt prompt;
         prompt.checkpoints = {checkpoint(base), checkpoint(30000), checkpoint(30100), checkpoint(60000)};
-        t.assert_true("incoming admitted", prompt.prepare_checkpoint(params, current_task, 90000, base, 32));
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(params, current_task, 90000, base, 32, n_ubatch));
         t.assert_true("remove redundant old boundary", positions(prompt) == std::vector<int64_t>({base, 30000, 60000}));
     });
 
     t.test("pruning stops as soon as the incoming checkpoint fits", [&](testing & t) {
         server_prompt prompt;
         prompt.checkpoints = {checkpoint(base), checkpoint(70000), checkpoint(72470)};
-        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32));
+        t.assert_true("incoming admitted", prompt.prepare_checkpoint(defaults, current_task, 72798, base, 32, n_ubatch));
         t.assert_true("keep other nearby point once space exists", positions(prompt) == std::vector<int64_t>({base, 70000}));
     });
 
@@ -809,7 +874,7 @@ static void test_server_checkpoint_retention(testing & t) {
             }
             auto prompt = full_prompt();
             const auto before = prompt.checkpoints;
-            t.assert_true("disabled checkpoint rejected", !prompt.prepare_checkpoint(params, current_task, 72798, base, 32));
+            t.assert_true("disabled checkpoint rejected", !prompt.prepare_checkpoint(params, current_task, 72798, base, 32, n_ubatch));
             t.assert_true("old checkpoints unchanged", prompt.checkpoints == before);
         }
     });
