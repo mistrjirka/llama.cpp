@@ -400,6 +400,10 @@ endif()
 add_executable(test-request-prefill test-request-prefill.cpp)
 add_test(NAME test-request-prefill COMMAND test-request-prefill)
 
+# Metadata-only checkpoint admission policy; no model/GPU needed.
+add_executable(test-server-checkpoint-policy test-server-checkpoint-policy.cpp)
+add_test(NAME test-server-checkpoint-policy COMMAND test-server-checkpoint-policy)
+
 # Full-request expert workspace: real rows scatter once; padded rows stay private.
 llama_build(test-layer-first-workspace.cpp)
 llama_test(test-layer-first-workspace)

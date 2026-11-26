@@ -3,6 +3,7 @@
 #include "common.h"
 #include "llama.h"
 #include "server-cache-store.h"
+#include "server-checkpoint-policy.h"
 
 #include <string>
 #include <unordered_set>
@@ -13,6 +14,9 @@
 #include "server-common.h"
 
 struct common_speculative;
+
+server_checkpoint_anchors server_find_checkpoint_anchors(const server_tokens & tokens,
+        const common_chat_msg_delimiters & delimiters, const llama_vocab * vocab);
 
 
 enum server_task_type {
@@ -98,6 +102,7 @@ struct task_params {
 
     // message spans for checkpointing
     common_chat_msg_spans message_spans;
+    server_checkpoint_anchors checkpoint_anchors;
 
     // Embeddings
     int32_t embd_normalize = 2; // (-1=none, 0=max absolute int16, 1=taxicab, 2=Euclidean/L2, >2=p-norm)

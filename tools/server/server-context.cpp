@@ -2479,170 +2479,74 @@ private:
                 ? slot.task->params.message_spans.first_user_message_pos() : -1;
         is_replay_boundary = is_replay_boundary || checkpoint_n_tokens == system_boundary;
 
-        if (tgt_extra_flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) {
-            for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end();) {
-                if (it->data_tgt_on_device && it->n_tokens != checkpoint_n_tokens) {
-                    it = slot.prompt.checkpoints.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-        }
-
         const auto host_bytes = [](const common_prompt_checkpoint & c) {
             return c.data_tgt.capacity() + c.data_dft.capacity() + c.data_spec.capacity();
         };
-        const auto used_bytes = [&]() {
-            size_t total = 0;
-            for (const auto & c : slot.prompt.checkpoints) { total += host_bytes(c); }
-            return total;
-        };
-        const bool bounded = params_base.ctx_checkpoint_ram_mib >= 0;
-        const size_t cap = bounded ? size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024 : 0;
-        size_t required = 0;
-        if (bounded) {
-            required = llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
-            if (ctx_dft && ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
-                required += llama_state_seq_get_size_ext(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-            }
-            std::vector<uint8_t> spec_state;
-            common_speculative_get_state(spec.get(), slot.id, spec_state);
-            required += spec_state.capacity();
-            if (!cap || required > cap) { return; }
-        }
-
-        // If this exact prefix is already represented, refresh it in place instead of
-        // consuming another ~constant-size recurrent checkpoint slot. A checkpoint that
-        // survived invalidation is guaranteed to lie inside the current common prefix.
-        for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ++it) {
-            auto & cur = *it;
-            if (cur.n_tokens != checkpoint_n_tokens) {
-                continue;
-            }
-            if (bounded && used_bytes() > cap - required) {
-                slot.prompt.checkpoints.erase(it);
-                break;
-            }
-
-            cur.id_task = id_task;
-            cur.is_replay_boundary = cur.is_replay_boundary || is_replay_boundary;
-            cur.update_pos(checkpoint_n_tokens, pos_min, pos_max);
-            cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags);
-            if (target_only) {
-                cur.clear_dft();
-                return;
-            }
-            if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
-                cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-            }
-            common_speculative_get_state(spec.get(), slot.id, cur.data_spec);
-
-            SLT_TRC(slot,
-                    "refreshed context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", replay_boundary = %d, hits = %u, size = %.3f MiB)\n",
-                    cur.pos_min, cur.pos_max, cur.n_tokens, cur.is_replay_boundary ? 1 : 0,
-                    cur.replay_hits, (float) cur.size() / 1024 / 1024);
+        const size_t cap = params_base.ctx_checkpoint_ram_mib < 0 ? SIZE_MAX :
+                size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024;
+        const size_t count = std::max(0, params_base.n_ctx_checkpoints);
+        if (!cap || !count) {
             return;
         }
 
-        // Evict ordinary periodic checkpoints that are redundant at the configured
-        // spacing. Semantic/exact replay boundaries survive this cheap first pass.
-        int64_t last = -1;
-        for (auto it = slot.prompt.checkpoints.begin();
-                slot.prompt.checkpoints.size() + 1 >= (size_t) params_base.n_ctx_checkpoints &&
-                it != slot.prompt.checkpoints.end(); ) {
-            if (it->id_task != id_task && !it->is_replay_boundary && last >= 0 && it->n_tokens <= last + params_base.checkpoint_min_step) {
-                SLT_TRC(slot, "erasing context checkpoint too close to an earlier one (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
-                        it->pos_min, it->pos_max, it->n_tokens, (float) it->size() / 1024 / 1024);
+        const auto flags = LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY | tgt_extra_flags;
+        const bool on_device = (tgt_extra_flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) != 0;
+        const size_t tgt_size = llama_state_seq_get_size_ext(ctx_tgt, slot.id, flags);
+        const size_t logical_tgt = on_device ? llama_state_seq_get_size_ext(ctx_tgt, slot.id,
+                flags & ~(LLAMA_STATE_SEQ_FLAGS_ON_DEVICE | LLAMA_STATE_SEQ_FLAGS_ASYNC_DEVICE)) : tgt_size;
+        const size_t dft_size = ctx_dft && ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART ?
+                llama_state_seq_get_size_ext(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) : 0;
+        std::vector<uint8_t> spec_state;
+        common_speculative_get_state(spec.get(), slot.id, spec_state);
+        const size_t required = tgt_size + dft_size + spec_state.capacity();
+
+        auto anchors = slot.task->params.checkpoint_anchors;
+        // Full-request prefill and device N-4 snapshots have an exact end
+        // boundary instead of splitting the request at every assistant role.
+        if (full_request_prefill || on_device) {
+            anchors.latest = checkpoint_n_tokens;
+        }
+        is_replay_boundary = is_replay_boundary || anchors.contains(checkpoint_n_tokens);
+
+        uint32_t hits = 0;
+        std::vector<server_checkpoint_candidate> candidates;
+        for (const auto & c : slot.prompt.checkpoints) {
+            candidates.push_back({c.n_tokens, host_bytes(c), c.size(),
+                                  c.is_replay_boundary, c.replay_hits, c.data_tgt_on_device});
+            if (c.n_tokens == checkpoint_n_tokens) {
+                hits = std::max(hits, c.replay_hits);
+                is_replay_boundary |= c.is_replay_boundary;
+            }
+        }
+        const server_checkpoint_candidate incoming{checkpoint_n_tokens, required,
+                logical_tgt + dft_size + spec_state.size(), is_replay_boundary, hits, on_device};
+        const auto admission = server_plan_checkpoint(candidates, incoming, system_boundary,
+                anchors, count, cap, params_base.checkpoint_min_step);
+        if (!admission.admit) {
+            SLT_TRC(slot, "rejecting lower-value checkpoint at %" PRId64 "\n", checkpoint_n_tokens);
+            return;
+        }
+
+        size_t index = 0;
+        for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end();) {
+            if (std::find(admission.evict.begin(), admission.evict.end(), index++) != admission.evict.end()) {
+                SLT_WRN(slot, "value-evicting context checkpoint (n_tokens = %" PRId64
+                        ", incoming = %" PRId64 ", hits = %u, size = %.3f MiB)\n",
+                        it->n_tokens, checkpoint_n_tokens, it->replay_hits, (float) it->size() / 1024 / 1024);
                 it = slot.prompt.checkpoints.erase(it);
-                continue;
-            }
-            last = it->n_tokens;
-            ++it;
-        }
-
-        while (!slot.prompt.checkpoints.empty() &&
-                (slot.prompt.checkpoints.size() >= (size_t) params_base.n_ctx_checkpoints ||
-                 (bounded && used_bytes() > cap - required))) {
-            // Constant-size recurrent checkpoints make compute-saved-per-byte close to
-            // compute saved. Under a locally uniform overlap distribution, removing a
-            // checkpoint c between neighbors p,n loses (c-p)*(n-c) token-replay area.
-            // Semantic boundaries are much more likely agent replay points; actual hits
-            // provide stronger evidence, following Marconi-style demand-driven retention.
-            auto victim = slot.prompt.checkpoints.end();
-            long double victim_value = std::numeric_limits<long double>::infinity();
-
-            // First pass protects semantic boundaries materialized by this request. They
-            // have not had an opportunity to record a hit yet, but are exactly the points
-            // the immediately following agent turn is likely to replay. If every slot is
-            // such a boundary, fall back to the same value rule across all checkpoints.
-            for (int pass = 0; pass < 2 && victim == slot.prompt.checkpoints.end(); ++pass) {
-                int64_t prev_pos = 0;
-                for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ++it) {
-                    auto it_next = std::next(it);
-                    const int64_t next_pos = it_next != slot.prompt.checkpoints.end()
-                        ? it_next->n_tokens
-                        : checkpoint_n_tokens;
-                    const bool current_request_boundary = it->is_replay_boundary && it->id_task == id_task;
-                    // The first-user checkpoint is an unusually useful rewind
-                    // point after compaction, including for MTP paths.
-                    if (pass == 0 && (current_request_boundary || it->n_tokens == system_boundary)) {
-                        prev_pos = it->n_tokens;
-                        continue;
-                    }
-
-                    const int64_t gap_l = std::max<int64_t>(1, it->n_tokens - prev_pos);
-                    const int64_t gap_r = std::max<int64_t>(1, next_pos - it->n_tokens);
-                    long double value;
-                    if (it->is_replay_boundary) {
-                        // Semantic checkpoints represent concentrated probability mass at
-                        // agent replay boundaries. Their value is the prefix compute they
-                        // skip, weighted like several periodic intervals; actual restores
-                        // then provide direct evidence that the prefix is hot.
-                        const int64_t semantic_span = std::max<int64_t>(1, params_base.checkpoint_min_step);
-                        value = (long double) std::max<int64_t>(1, it->n_tokens)
-                              * (long double) semantic_span * 8.0L;
-                    } else {
-                        // Periodic checkpoints cover a continuous range of possible overlap
-                        // depths; uniform-within-the-gap marginal saved work is proportional
-                        // to the product of the left and right gaps.
-                        value = (long double) gap_l * (long double) gap_r;
-                    }
-                    value *= 1.0L + 4.0L * (long double) it->replay_hits;
-
-                    if (value < victim_value) {
-                        victim_value = value;
-                        victim = it;
-                    }
-                    prev_pos = it->n_tokens;
-                }
-            }
-
-            GGML_ASSERT(victim != slot.prompt.checkpoints.end());
-            SLT_WRN(slot,
-                    "value-evicting context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", replay_boundary = %d, hits = %u, value = %.0Lf, size = %.3f MiB)\n",
-                    victim->pos_min, victim->pos_max, victim->n_tokens,
-                    victim->is_replay_boundary ? 1 : 0, victim->replay_hits,
-                    victim_value, (float) victim->size() / 1024 / 1024);
-            slot.prompt.checkpoints.erase(victim);
-        }
-
-        // replace an existing checkpoint at the same n_tokens instead of appending a duplicate
-        {
-            const int64_t n_tokens_new = slot.prompt.n_tokens() - n_tokens_cur;
-            for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ) {
-                if (it->n_tokens == n_tokens_new) {
-                    SLT_TRC(slot, "superseding context checkpoint at n_tokens = %" PRId64 "\n", it->n_tokens);
-                    it = slot.prompt.checkpoints.erase(it);
-                } else {
-                    ++it;
-                }
+            } else {
+                ++it;
             }
         }
 
-        auto & cur = slot.prompt.checkpoints.emplace_back();
+        // Allocate a fresh payload so a refreshed checkpoint does not retain
+        // a larger old vector capacity. Keep token order and measured hits.
+        const auto where = std::find_if(slot.prompt.checkpoints.begin(), slot.prompt.checkpoints.end(),
+                [&](const common_prompt_checkpoint & c) { return c.n_tokens > checkpoint_n_tokens; });
+        auto & cur = *slot.prompt.checkpoints.emplace(where);
         cur.id_task = id_task;
         cur.is_replay_boundary = is_replay_boundary;
-        cur.replay_hits = 0;
+        cur.replay_hits = hits;
 
         // [TAG_CHECKPOINTS_FIX_POS_MIN]
         // TODO: here we incorrectly deterimne that the saved checkpoint data covers the [pos_min, pos_max] range
@@ -2660,7 +2564,7 @@ private:
         if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
             cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         }
-        common_speculative_get_state(spec.get(), slot.id, cur.data_spec);
+        cur.data_spec = std::move(spec_state);
 
         SLT_TRC(slot,
                 "created context checkpoint %d of %d (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", replay_boundary = %d, size = %.3f MiB)\n",
@@ -2671,15 +2575,42 @@ private:
 
     void complete_checkpoint(server_slot & slot, int64_t checkpoint_n_tokens) {
         auto it = std::find_if(slot.prompt.checkpoints.begin(), slot.prompt.checkpoints.end(),
-                [&](const common_prompt_checkpoint & cur) { return cur.n_tokens == checkpoint_n_tokens; });
+                [&](const common_prompt_checkpoint & cur) {
+                    return cur.n_tokens == checkpoint_n_tokens && cur.id_task == slot.task->id;
+                });
         if (it == slot.prompt.checkpoints.end()) { return; }
+
+        // Deferred draft catch-up can change the serialized state size.
+        // Check the completed snapshot against the same host-byte budget.
+        std::vector<uint8_t> state;
+        common_speculative_get_state(spec.get(), slot.id, state);
+        const size_t dft_size = ctx_dft && ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART ?
+                llama_state_seq_get_size_ext(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) : 0;
+        if (params_base.ctx_checkpoint_ram_mib >= 0) {
+            size_t remaining = size_t(params_base.ctx_checkpoint_ram_mib) * 1024 * 1024;
+            bool fits = true;
+            for (auto old = slot.prompt.checkpoints.begin(); old != slot.prompt.checkpoints.end(); ++old) {
+                const size_t bytes = old->data_tgt.capacity() +
+                    (old == it ? dft_size + state.capacity() :
+                     old->data_dft.capacity() + old->data_spec.capacity());
+                if (bytes > remaining) {
+                    fits = false;
+                    break;
+                }
+                remaining -= bytes;
+            }
+            if (!fits) {
+                SLT_WRN(slot, "dropping deferred checkpoint at %" PRId64 " (completed state exceeds RAM cap)\n",
+                        checkpoint_n_tokens);
+                slot.prompt.checkpoints.erase(it);
+                return;
+            }
+        }
 
         if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
             it->update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         }
-        it->data_spec.clear();
-        common_speculative_get_state(spec.get(), slot.id, it->data_spec);
-
+        it->data_spec = std::move(state);
     }
 
     // returns false to decline the task, it is offered again after the decode is done
@@ -4034,6 +3965,9 @@ private:
                     const auto last_user_pos = spans.last_user_message_pos();
                     const auto first_user_pos = spans.first_user_message_pos();
                     const bool retain_prefix = can_retain_system_prefix(slot, *slot.task);
+                    const auto & anchors = slot.task->params.checkpoint_anchors;
+                    const bool capture_anchors = !full_request_prefill &&
+                            !(params_base.speculative.mtp_defer_prompt && common_speculative_can_defer_prompt(spec.get()));
 
                     // add prompt tokens for processing in the current batch
                     while (slot.prompt.n_tokens() < slot.task->n_tokens() && batch.size() < n_batch) {
@@ -4062,6 +3996,10 @@ private:
                         slot.prompt.tokens.push_back(cur_tok);
 
                         if (retain_prefix && (int64_t) slot.prompt.n_tokens() == first_user_pos) {
+                            break;
+                        }
+
+                        if (capture_anchors && do_checkpoint && anchors.contains(slot.prompt.n_tokens())) {
                             break;
                         }
 
@@ -4131,6 +4069,7 @@ private:
 
                     const bool is_user_start = spans.is_user_start(n_tokens_start);
                     const bool is_last_user_message = n_tokens_start == last_user_pos;
+                    const bool is_checkpoint_anchor = capture_anchors && anchors.contains(n_tokens_start);
 
                     // entire prompt has been processed
                     if (slot.prompt.n_tokens() == slot.task->n_tokens()) {
@@ -4148,7 +4087,7 @@ private:
                     } else {
                         // skip ordinary mid-prompt checkpoints, unless the batch starts a user
                         // message or we are near the end of the prompt
-                        if (!is_user_start && !near_prompt_end) {
+                        if (!is_user_start && !near_prompt_end && !is_checkpoint_anchor) {
                             do_checkpoint = false;
                         }
                     }
@@ -4168,7 +4107,7 @@ private:
                     // no need to create checkpoints that are too close together, unless it's the last user message
                     do_checkpoint = do_checkpoint && (
                             slot.prompt.checkpoints.empty() ||
-                            is_last_user_message || near_prompt_end ||
+                            is_last_user_message || near_prompt_end || is_checkpoint_anchor ||
                             n_tokens_start > slot.prompt.checkpoints.back().n_tokens + params_base.checkpoint_min_step);
                     SLT_DBG(slot, "main/do_checkpoint = %s, pos_min = %d, pos_max = %d\n", do_checkpoint ? "yes" : "no", pos_min, pos_max);
 
@@ -4195,7 +4134,8 @@ private:
                                     LLAMA_STATE_SEQ_FLAGS_ON_DEVICE | LLAMA_STATE_SEQ_FLAGS_ASYNC_DEVICE,
                                     /* target_only = */ true);
                         } else {
-                            create_checkpoint(slot, n_tokens_cur, pos_min, pos_max, is_last_user_message || is_exact_prompt_end);
+                            create_checkpoint(slot, n_tokens_cur, pos_min, pos_max,
+                                    is_last_user_message || is_exact_prompt_end || is_checkpoint_anchor);
                         }
                     }
                 }
@@ -4961,6 +4901,7 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                     data);
 
             task.params.message_spans = task.tokens.find_message_spans(delimiters);
+            task.params.checkpoint_anchors = server_find_checkpoint_anchors(task.tokens, delimiters, ctx_server.vocab);
 
             task.id_slot = json_value(data, "id_slot", -1);
             sse_ping_interval = task.params.sse_ping_interval;

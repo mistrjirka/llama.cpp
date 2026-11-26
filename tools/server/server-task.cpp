@@ -2141,3 +2141,42 @@ void server_prompt_cache::update() {
                 (const void *)&state, state.prompt.n_tokens(), state.prompt.checkpoints.size(), state.size() / (1024.0 * 1024.0));
     }
 }
+
+server_checkpoint_anchors server_find_checkpoint_anchors(const server_tokens & tokens,
+        const common_chat_msg_delimiters & delimiters, const llama_vocab * vocab) {
+    common_chat_msg_delimiters exact = delimiters;
+    llama_tokens tool_user_start;
+    bool chatml_user = false;
+    bool chatml_assistant = false;
+    for (const auto & d : delimiters.delimiters) {
+        chatml_user |= d.role == COMMON_CHAT_ROLE_USER &&
+            d.delimiter.find("<|im_start|>user") == 0;
+        chatml_assistant |= d.role == COMMON_CHAT_ROLE_ASSISTANT &&
+            d.delimiter.find("<|im_start|>assistant") == 0;
+    }
+    if (vocab && chatml_user && chatml_assistant) {
+        exact = {};
+        exact.add(COMMON_CHAT_ROLE_USER, "<|im_start|>user\n");
+        exact.add(COMMON_CHAT_ROLE_ASSISTANT, "<|im_start|>assistant\n");
+        exact.tokenize(vocab);
+        tool_user_start = common_tokenize(vocab, "<|im_start|>user\n<tool_response>", false, true);
+    }
+    server_checkpoint_anchor_tracker tracker;
+    const auto spans = tokens.find_message_spans(exact);
+    for (const auto & span : spans.spans) {
+        if (span.role == COMMON_CHAT_ROLE_USER) {
+            bool is_tool = !tool_user_start.empty() &&
+                span.len >= tool_user_start.size() &&
+                span.pos + tool_user_start.size() <= tokens.size();
+            for (size_t i = 0; is_tool && i < tool_user_start.size(); ++i) {
+                is_tool = tokens[span.pos + i] == tool_user_start[i];
+            }
+            if (!is_tool) {
+                tracker.on_user(span.pos);
+            }
+        } else if (span.role == COMMON_CHAT_ROLE_ASSISTANT) {
+            tracker.on_assistant(span.pos);
+        }
+    }
+    return tracker.finish();
+}
