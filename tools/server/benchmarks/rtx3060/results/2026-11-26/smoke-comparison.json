@@ -1,0 +1,45 @@
+{
+  "cases": [
+    {
+      "case": "cold_A",
+      "before_cached_tokens": 0,
+      "after_cached_tokens": 0,
+      "before_processed_tokens": 10162,
+      "after_processed_tokens": 10162,
+      "before_wall_s": 15.197573225945234,
+      "after_wall_s": 15.214144608005881,
+      "after_expected_match": true
+    },
+    {
+      "case": "repeat_A",
+      "before_cached_tokens": 10158,
+      "after_cached_tokens": 10158,
+      "before_processed_tokens": 4,
+      "after_processed_tokens": 4,
+      "before_wall_s": 0.47643312020227313,
+      "after_wall_s": 0.49786312598735094,
+      "after_expected_match": true
+    },
+    {
+      "case": "fork_B",
+      "before_cached_tokens": 539,
+      "after_cached_tokens": 2974,
+      "before_processed_tokens": 9623,
+      "after_processed_tokens": 7188,
+      "before_wall_s": 14.80254921875894,
+      "after_wall_s": 11.72871355805546,
+      "after_expected_match": true
+    },
+    {
+      "case": "revisit_A",
+      "before_cached_tokens": 10158,
+      "after_cached_tokens": 10158,
+      "before_processed_tokens": 4,
+      "after_processed_tokens": 4,
+      "before_wall_s": 1.8169906758703291,
+      "after_wall_s": 1.9728747690096498,
+      "after_expected_match": true
+    }
+  ],
+  "caveat": "Single observations on consecutive days. The after check overlapped bot candidate validation. Token reuse counts are exact for the fixture; elapsed times are not an isolated throughput benchmark."
+}

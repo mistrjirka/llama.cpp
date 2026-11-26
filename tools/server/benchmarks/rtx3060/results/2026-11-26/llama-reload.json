@@ -1,0 +1,22 @@
+{
+  "started_utc": "2026-11-26T14:34:56.707218+00:00",
+  "healthy_utc": "2026-11-26T14:35:28.443092+00:00",
+  "old_pid": 2256312,
+  "pid": 2537357,
+  "source_commit": "e28d562cc5f99f471dacb5965d8991a89c916e28",
+  "health": {
+    "status": "ok"
+  },
+  "options": {
+    "--spec-type": "draft-mtp",
+    "--spec-draft-n-max": "2",
+    "--spec-draft-type-k": "q4_0",
+    "--spec-draft-type-v": "q4_0",
+    "--cache-ram": "4096",
+    "--ctx-checkpoints": "3",
+    "--ctx-checkpoint-ram": "384",
+    "--ctx-size": "110000",
+    "--cache-type-k": "q8_0",
+    "--cache-type-v": "q8_0"
+  }
+}

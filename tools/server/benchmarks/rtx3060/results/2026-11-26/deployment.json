@@ -1,0 +1,69 @@
+{
+  "verified_utc": "2026-11-26T14:44:11.644834+00:00",
+  "bot": {
+    "source_commit": "6a189970acc6ec792e6f97c0841e09f0f27a263d",
+    "release": "/home/jirka/.blackdogbot/deploy/releases/6a189970acc6ec792e6f97c0841e09f0f27a263d",
+    "activation_status": "committed",
+    "source_files_verified": 5,
+    "guard_status": "healthy",
+    "backup": {
+      "status": "verified",
+      "fileCount": 12864,
+      "totalBytes": 714606456,
+      "manifestSha256": "93d507f479f239ee1b7aa77637a14cbbf90a017d9cf14a4f0849029b8aefef1d"
+    },
+    "ready_markers": {
+      "BlackDogBot daemon is running.": "1795704081196966",
+      "BLACKDOGBOT_READY daemon ready": "1795704081197141",
+      "Telegram bot is now receiving updates.": "1795704081298645",
+      "BLACKDOGBOT_READY telegram ready": "1795704081298787"
+    }
+  },
+  "services": {
+    "llama-server.service": {
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "2537357",
+      "NRestarts": "0",
+      "ExecMainStartTimestamp": "Thu 2026-11-26 15:34:57 CET",
+      "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/llama-server.service",
+      "memory_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+      "swap_bytes": 0,
+      "process_cwds": [
+        "/home/jirka"
+      ]
+    },
+    "blackdogbot.service": {
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "2544084",
+      "NRestarts": "0",
+      "ExecMainStartTimestamp": "Thu 2026-11-26 15:40:58 CET",
+      "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/blackdogbot.service",
+      "memory_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+      "swap_bytes": 1003520,
+      "process_cwds": [
+        "/home/jirka/.blackdogbot/deploy/releases/6a189970acc6ec792e6f97c0841e09f0f27a263d"
+      ]
+    }
+  },
+  "llama_loaded_hashes": {
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml-base.so.0.28.0": "25528596b6ab3e607019724ce40ff0f4f18644be435d50c6c5c873b1d979fef2",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml-cpu.so.0.28.0": "4d6ff2ffa8c16c06c96975311d00d9f173e1ef71ae61ebec39c86283dd9a3362",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml-cuda.so.0.28.0": "331c23e6668454a6b3c7aaec529bb47a0271da08366125a7cd727c7476c7209f",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libggml.so.0.28.0": "f66df711e9bf00d0842d31fb408dbe24c567024971df524aa2db22dd09164bd0",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libllama-common.so.0.8.0": "11ec5805cd03fb113b53c8979ff823cdecf9a6998f2b55e8756553293139e390",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libllama-server-impl.so": "10fc7154d544a89562a180f79330a5ed90bd7c8bdddcd54fb2a2d5b4b2fcd7fe",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libllama.so.0.8.0": "bcf49d2acf4ecba2a78c691ed1e07a2f067601842aa3753e6a31a6432e67094d",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/libmtmd.so.0.8.0": "bc676ceaff70555a1505382c42e3a60cef9ed548194e7dfe7e714af78e81c517",
+    "/home/jirka/programy/llama-sensenova-abliterated-build/build-cuda/bin/llama-server": "b13699adb66857fc66a94742aa884c0b330077dd6d8185a8d4c0ed8c173379e9"
+  },
+  "llama_health": {
+    "status": "ok"
+  },
+  "llama_build_info": "b49-e28d562",
+  "llama_n_ctx": 110080,
+  "gpu": "NVIDIA GeForce RTX 3060, 11149 MiB, 12288 MiB",
+  "zram_io_stat": "0 47732577 0 74226836",
+  "memory_pressure": "some avg10=0.00 avg60=0.09 avg300=0.61 total=703519815\nfull avg10=0.00 avg60=0.09 avg300=0.60 total=678809516\n"
+}

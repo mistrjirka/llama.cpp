@@ -1,0 +1,7 @@
+{
+  "original_status": 400,
+  "repaired_status": 200,
+  "repaired_token_count": 1,
+  "caller_body_unchanged": true,
+  "inference_submitted": false
+}

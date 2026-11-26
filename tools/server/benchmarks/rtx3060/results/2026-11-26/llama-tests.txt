@@ -1,0 +1,155 @@
+server_tokens
+  basic
+  basic (10 assertion(s))                                                       [PASS]
+  pos
+  pos (6 assertion(s))                                                          [PASS]
+  keep_first
+  keep_first (3 assertion(s))                                                   [PASS]
+  common_prefix
+  common_prefix (7 assertion(s))                                                [PASS]
+  serialize
+    roundtrip
+    roundtrip (2 assertion(s))                                                  [PASS]
+    roundtrip empty
+    roundtrip empty (1 assertion(s))                                            [PASS]
+    legacy plain token list
+    legacy plain token list (1 assertion(s))                                    [PASS]
+    corrupted
+    corrupted (5 assertion(s))                                                  [PASS]
+  serialize (9 assertion(s))                                                    [PASS]
+  clone
+  clone (3 assertion(s))                                                        [PASS]
+server_tokens (38 assertion(s))                                                 [PASS]
+utf8
+  validate_utf8
+  validate_utf8 (13 assertion(s))                                               [PASS]
+  is_valid_utf8
+  is_valid_utf8 (7 assertion(s))                                                [PASS]
+utf8 (20 assertion(s))                                                          [PASS]
+sse
+  oai
+  oai (3 assertion(s))                                                          [PASS]
+  oai_resp
+  oai_resp (2 assertion(s))                                                     [PASS]
+  anthropic
+  anthropic (2 assertion(s))                                                    [PASS]
+sse (7 assertion(s))                                                            [PASS]
+json_helpers
+  json_is_array_of_numbers
+  json_is_array_of_numbers (5 assertion(s))                                     [PASS]
+  json_is_array_of_mixed_numbers_strings
+  json_is_array_of_mixed_numbers_strings (4 assertion(s))                       [PASS]
+  json_is_array_and_contains_numbers
+  json_is_array_and_contains_numbers (3 assertion(s))                           [PASS]
+  json_get_nested_values
+  json_get_nested_values (6 assertion(s))                                       [PASS]
+json_helpers (18 assertion(s))                                                  [PASS]
+lora_helpers
+  parse_lora_request
+  parse_lora_request (4 assertion(s))                                           [PASS]
+  are_lora_equal
+  are_lora_equal (5 assertion(s))                                               [PASS]
+  lora_get_enabled_ids
+  lora_get_enabled_ids (1 assertion(s))                                         [PASS]
+lora_helpers (10 assertion(s))                                                  [PASS]
+server_pipe
+  drain then eof
+  drain then eof (5 assertion(s))                                               [PASS]
+  broken pipe
+  broken pipe (1 assertion(s))                                                  [PASS]
+  max_size drops oldest
+  max_size drops oldest (3 assertion(s))                                        [PASS]
+  queued data wins over should_stop
+  queued data wins over should_stop (1 assertion(s))                            [PASS]
+  should_stop closes the pipe
+  should_stop closes the pipe (2 assertion(s))                                  [PASS]
+  should_stop as deadline keeps the pipe open
+  should_stop as deadline keeps the pipe open (3 assertion(s))                  [PASS]
+  cross thread
+  cross thread (2 assertion(s))                                                 [PASS]
+server_pipe (17 assertion(s))                                                   [PASS]
+decision_escape
+  cases
+  cases (11 assertion(s))                                                       [PASS]
+  same as std::regex
+  same as std::regex (1 assertion(s))                                           [PASS]
+  long input
+  long input (2 assertion(s))                                                   [PASS]
+decision_escape (14 assertion(s))                                               [PASS]
+rerank_tempsrv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72798, reason = near incoming, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72798, reason = near incoming, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 63643, incoming = 72798, reason = oldest, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 42434, incoming = 65387, reason = oldest, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 65387, incoming = 65507, reason = same-task microbatch, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 65507, incoming = 65643, reason = same-task microbatch, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72726, reason = same-task microbatch, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 63643, incoming = 72727, reason = oldest, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72534, reason = same-task microbatch, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 63643, incoming = 72535, reason = oldest, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72598, reason = same-task microbatch, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 21000, incoming = 21500, reason = oldest, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72798, reason = oldest, size = 0.488 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 30100, incoming = 90000, reason = near previous, size = 0.000 MiB)
+srv  prepare_chec: erasing context checkpoint for capacity (id_task = 2, n_tokens = 72470, incoming = 72798, reason = near incoming, size = 0.000 MiB)
+late
+rerank_template (14 assertion(s))                                               [PASS]
+decision_class_scores
+decision_class_scores (27 assertion(s))                                         [PASS]
+decision_ocr_jev_validation
+decision_ocr_jev_validation (8 assertion(s))                                    [PASS]
+decision_depth
+  state at the limit
+  state at the limit (1 assertion(s))                                           [PASS]
+  deep state
+  deep state (1 assertion(s))                                                   [PASS]
+decision_depth (2 assertion(s))                                                 [PASS]
+glob_match
+  patterns
+  patterns (11 assertion(s))                                                    [PASS]
+  long input
+  long input (3 assertion(s))                                                   [PASS]
+glob_match (14 assertion(s))                                                    [PASS]
+dry_sequence_breakers
+dry_sequence_breakers (2 assertion(s))                                          [PASS]
+checkpoint_retention
+  retain distant checkpoint when incoming replaces a nearby old one
+  retain distant checkpoint when incoming replaces a nearby old one (2 assertion(s)) [PASS]
+  no pressure preserves all existing checkpoints
+  no pressure preserves all existing checkpoints (2 assertion(s))               [PASS]
+  exact refresh does not evict an unrelated checkpoint
+  exact refresh does not evict an unrelated checkpoint (2 assertion(s))         [PASS]
+  exact base refresh does not evict another checkpoint
+  exact base refresh does not evict another checkpoint (2 assertion(s))         [PASS]
+  oversized admission leaves existing state unchanged
+  oversized admission leaves existing state unchanged (6 assertion(s))          [PASS]
+  byte pressure counts all vector capacities
+  byte pressure counts all vector capacities (2 assertion(s))                   [PASS]
+  current task checkpoint beyond a physical batch is protected
+  current task checkpoint beyond a physical batch is protected (2 assertion(s)) [PASS]
+  same-task tail captures preserve earlier multimodal coverage
+  same-task tail captures preserve earlier multimodal coverage (8 assertion(s)) [PASS]
+  same-task proximity uses the effective physical batch boundary
+  same-task proximity uses the effective physical batch boundary (4 assertion(s)) [PASS]
+  same-task proximity also respects the configured minimum step
+  same-task proximity also respects the configured minimum step (4 assertion(s)) [PASS]
+  same-task proximity does not prune when capacity is free
+  same-task proximity does not prune when capacity is free (2 assertion(s))     [PASS]
+  same-task microbatch coalescing also handles byte pressure
+  same-task microbatch coalescing also handles byte pressure (3 assertion(s))   [PASS]
+  base protection does not bypass the count limit
+  base protection does not bypass the count limit (2 assertion(s))              [PASS]
+  byte limit can evict current task checkpoints
+  byte limit can evict current task checkpoints (2 assertion(s))                [PASS]
+  older redundant pair is preferred over distant coverage
+  older redundant pair is preferred over distant coverage (2 assertion(s))      [PASS]
+  pruning stops as soon as the incoming checkpoint fits
+  pruning stops as soon as the incoming checkpoint fits (2 assertion(s))        [PASS]
+  zero count or byte capacity rejects without mutation
+  zero count or byte capacity rejects without mutation (4 assertion(s))         [PASS]
+checkpoint_retention (51 assertion(s))                                          [PASS]
+
+tests      : 67
+assertions : 242
+failures   : 0
+exceptions : 0
+skipped    : 0

@@ -1,0 +1,104 @@
+{
+  "incident_date": "2026-11-26",
+  "timezone": "Europe/Prague",
+  "finding": "The bot run failed on malformed Unicode in its model request. Neither service crashed.",
+  "run": {
+    "start_cet": "14:44:33",
+    "finish_cet": "14:58:32",
+    "duration_s": 838.65,
+    "provider_attempts": 18,
+    "provider_http_200": 17,
+    "provider_http_400": 1,
+    "provider_wait_s": 797.885,
+    "shell_commands": 8,
+    "shell_commands_all_succeeded": true,
+    "shell_total_s": 25.715,
+    "other_overhead_s": 15.05,
+    "timeout_retries": 0,
+    "first_model_request_s": 305.21,
+    "compaction_s": 220.161
+  },
+  "unicode": {
+    "status": 400,
+    "type": "invalid_request_error",
+    "parser": "json.exception.parse_error.101",
+    "column": 101643,
+    "unpaired_code_unit": "U+DF3F",
+    "derived_slice_offset_utf16": 4800,
+    "parent_length_utf16": 12574,
+    "derived_length_utf16": 7774,
+    "parent_pair_offsets": [
+      4799,
+      4800
+    ],
+    "parent_pair": [
+      "U+D83C",
+      "U+DF3F"
+    ],
+    "source_kind": "derived",
+    "exposed_by_tool": "inspect_variable",
+    "inspect_offset": 0,
+    "inspect_max_chars": 3000,
+    "persisted_in_history": true,
+    "request_estimated_tokens": 48383,
+    "bot_context_window": 100000,
+    "bot_hard_limit": 95000,
+    "model_context_window": 110080
+  },
+  "image_delay": {
+    "progress_gap_s": 155.9,
+    "direct_encoder_timer_available": false,
+    "existing_history_image": true,
+    "width": 1234,
+    "height": 1194,
+    "file_bytes": 168527,
+    "image_tokens": 1443,
+    "cpu_projection": true,
+    "cross_request_embedding_cache": false,
+    "classification": "CPU image encoding is the likely cause of the measured gap, not directly timed."
+  },
+  "compaction_replay": {
+    "request_task": 133553,
+    "prefix_match_bounds": [
+      60471,
+      60484
+    ],
+    "reused_tokens_before": 14981,
+    "processed_tokens_before": 58007,
+    "prompt_processing_s": 115.59,
+    "checkpoint_positions_before": [
+      14981,
+      65507,
+      65643
+    ],
+    "checkpoint_positions_after_regression": [
+      14981,
+      52293,
+      65643
+    ],
+    "avoided_token_evaluations_counterfactual": 37312,
+    "original_user_request_replayed": false,
+    "effective_microbatch_tokens": 256,
+    "checkpoint_count_limit": 3,
+    "checkpoint_cap_mib": 384,
+    "parked_cache_mib": 4096,
+    "tradeoff": "A future edit inside a coalesced interval can need more replay from an older checkpoint."
+  },
+  "validation": {
+    "llama_tests": 67,
+    "llama_assertions": 242,
+    "llama_failures": 0,
+    "bot_fast_passed": 1506,
+    "bot_fast_skipped": 2,
+    "python_passed": 191,
+    "bot_focused_passed": 98,
+    "unicode_focused_regressions_failed_before": 7,
+    "live_parser_original_status": 400,
+    "live_parser_repaired_status": 200
+  },
+  "sources": {
+    "llama_commit": "e28d562cc5f99f471dacb5965d8991a89c916e28",
+    "bot_commit": "6a189970acc6ec792e6f97c0841e09f0f27a263d"
+  },
+  "privacy": "No user prompts, tool output text, chat IDs, credentials, or raw production request bodies are included."
+}
